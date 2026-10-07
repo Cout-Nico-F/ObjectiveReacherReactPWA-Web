@@ -2,9 +2,11 @@ namespace ObjectiveReacherMAUI.Models;
 
 public sealed class DashboardState
 {
-    public int Version { get; set; } = 1;
+    public int Version { get; set; } = 5;
 
-    public Objective Objective { get; set; } = new();
+    public List<Objective> Objectives { get; set; } = [];
 
-    public List<ObjectiveEntry> Entries { get; set; } = [];
+    public Guid SelectedObjectiveId { get; set; }
+
+    public GamificationState Gamification { get; set; } = new();
 }

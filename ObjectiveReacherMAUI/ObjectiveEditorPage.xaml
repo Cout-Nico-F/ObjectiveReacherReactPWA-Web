@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="ObjectiveReacherMAUI.ObjectiveEditorPage"
+             Title="Editar objetivo"
+             BackgroundColor="{StaticResource DashboardBackground}">
+    <ScrollView>
+        <VerticalStackLayout Padding="24" Spacing="16" VerticalOptions="Center">
+            <Label Text="Personaliza tu objetivo" FontSize="24" FontAttributes="Bold" TextColor="{StaticResource DashboardText}" />
+            <Label Text="Todo queda junto en un solo formulario." FontSize="13" TextColor="{StaticResource DashboardMutedText}" />
+
+            <VerticalStackLayout Spacing="6">
+                <Label Text="Nombre" TextColor="{StaticResource DashboardText}" />
+                <Entry x:Name="TitleEntry" Placeholder="Ej. Viaje a Japón" TextColor="{StaticResource DashboardText}" BackgroundColor="{StaticResource DashboardPanel}" />
+            </VerticalStackLayout>
+
+            <VerticalStackLayout Spacing="6">
+                <Label Text="Descripción" TextColor="{StaticResource DashboardText}" />
+                <Entry x:Name="DescriptionEntry" Placeholder="¿Para qué estás ahorrando o avanzando?" TextColor="{StaticResource DashboardText}" BackgroundColor="{StaticResource DashboardPanel}" />
+            </VerticalStackLayout>
+
+            <VerticalStackLayout Spacing="6">
+                <Label Text="Monto objetivo" TextColor="{StaticResource DashboardText}" />
+                <Entry x:Name="GoalAmountEntry" Keyboard="Numeric" Placeholder="0" TextColor="{StaticResource DashboardText}" BackgroundColor="{StaticResource DashboardPanel}" />
+            </VerticalStackLayout>
+
+            <VerticalStackLayout Spacing="6">
+                <Label Text="Unidad" TextColor="{StaticResource DashboardText}" />
+                <Picker x:Name="UnitPicker" Title="Selecciona una unidad" TextColor="{StaticResource DashboardText}" BackgroundColor="{StaticResource DashboardPanel}" SelectedIndexChanged="OnUnitSelectionChanged" />
+            </VerticalStackLayout>
+
+            <VerticalStackLayout x:Name="CustomUnitContainer" IsVisible="False" Spacing="6">
+                <Label Text="Unidad personalizada" TextColor="{StaticResource DashboardText}" />
+                <Entry x:Name="CustomUnitEntry" Placeholder="kg, libros, pasos…" TextColor="{StaticResource DashboardText}" BackgroundColor="{StaticResource DashboardPanel}" />
+            </VerticalStackLayout>
+
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="12" Margin="0,12,0,0">
+                <Button Text="Cancelar" Clicked="OnCancelClicked" BackgroundColor="#302E42" TextColor="{StaticResource DashboardText}" />
+                <Button Grid.Column="1" Text="Guardar" Clicked="OnSaveClicked" BackgroundColor="{StaticResource DashboardAccent}" TextColor="White" FontAttributes="Bold" />
+            </Grid>
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

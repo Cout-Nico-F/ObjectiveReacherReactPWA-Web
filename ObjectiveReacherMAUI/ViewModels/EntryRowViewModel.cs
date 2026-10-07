@@ -6,10 +6,12 @@ namespace ObjectiveReacherMAUI.ViewModels;
 
 public sealed class EntryRowViewModel
 {
-    public EntryRowViewModel(ObjectiveEntry entry)
+    public EntryRowViewModel(ObjectiveEntry entry, Objective objective)
     {
+        Id = entry.Id;
         Description = entry.Description;
         Amount = entry.Amount;
+        AmountText = $"{(Amount >= 0 ? "+" : "−")}{ObjectiveAmountFormatter.Format(Math.Abs(Amount), objective)}";
         var localTime = entry.CreatedAt.LocalDateTime;
         TimeText = localTime.Date == DateTime.Today
             ? $"Hoy, {localTime:HH:mm}"
@@ -17,6 +19,8 @@ public sealed class EntryRowViewModel
                 ? $"Ayer, {localTime:HH:mm}"
                 : localTime.ToString("MMM d, HH:mm", CultureInfo.GetCultureInfo("es-ES"));
     }
+
+    public Guid Id { get; }
 
     public string Description { get; }
 
@@ -26,9 +30,8 @@ public sealed class EntryRowViewModel
 
     public string Symbol => Amount >= 0 ? "🟢" : "🔴";
 
-    public string AmountText => $"{(Amount >= 0 ? "+" : "−")}{FormatCurrency(Math.Abs(Amount))}";
+    public string AmountText { get; }
 
     public Color AmountColor => Color.FromArgb(Amount >= 0 ? "#65DB85" : "#F27783");
 
-    private static string FormatCurrency(decimal amount) => $"${amount.ToString("N0", CultureInfo.CurrentCulture)}";
 }
