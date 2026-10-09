@@ -49,4 +49,16 @@
     <SolidColorBrush x:Key="Gray600Brush" Color="{StaticResource Gray600}"/>
     <SolidColorBrush x:Key="Gray900Brush" Color="{StaticResource Gray900}"/>
     <SolidColorBrush x:Key="Gray950Brush" Color="{StaticResource Gray950}"/>
+
+    <Color x:Key="PrimaryPurple">#7C3AED</Color>
+    <Color x:Key="PrimaryPink">#EC4899</Color>
+    <Color x:Key="GoldReward">#F59E0B</Color>
+    <Color x:Key="GoldRewardLight">#FBBF24</Color>
+    <Color x:Key="ActionSuccess">#10B981</Color>
+    <Color x:Key="ActionDanger">#EF4444</Color>
+
+    <LinearGradientBrush x:Key="BrandGradient" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Color="{StaticResource PrimaryPurple}" Offset="0.0" />
+        <GradientStop Color="{StaticResource PrimaryPink}" Offset="1.0" />
+    </LinearGradientBrush>
 </ResourceDictionary>

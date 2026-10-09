@@ -2,6 +2,7 @@
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:controls="clr-namespace:ObjectiveReacherMAUI.Controls"
+             xmlns:helpers="clr-namespace:ObjectiveReacherMAUI.Helpers"
              x:Name="MainPageRoot"
              x:Class="ObjectiveReacherMAUI.MainPage"
              Title="ObjectiveReacher"
@@ -92,8 +93,8 @@
                 <Border x:Name="EntriesSection" Padding="14" Stroke="{StaticResource DashboardOutline}" StrokeShape="RoundRectangle 18" BackgroundColor="{StaticResource DashboardPanel}">
                     <VerticalStackLayout Spacing="12">
                         <VerticalStackLayout Spacing="2">
-                            <Label Text="Agregar entrada" FontSize="17" FontAttributes="Bold" TextColor="{StaticResource DashboardText}" />
-                            <Label Text="Suma o resta para avanzar hacia tu objetivo" FontSize="11" TextColor="{StaticResource DashboardMutedText}" />
+                            <Label Text="Registrar Progreso" FontSize="17" FontAttributes="Bold" TextColor="{StaticResource DashboardText}" />
+                            <Label Text="Cada pequeño aporte te acerca a tu meta" FontSize="11" TextColor="{StaticResource DashboardMutedText}" />
                         </VerticalStackLayout>
                         <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
                             <Button Text="＋ SUMAR" Command="{Binding AddModeCommand}" HeightRequest="54" FontAttributes="Bold" BackgroundColor="{Binding AddModeBackground}" TextColor="#BFF5CE" CornerRadius="12" />
@@ -161,7 +162,7 @@
                             <Label Text="{Binding MascotMessage}" FontSize="12" TextColor="{StaticResource DashboardMutedText}" />
                         </VerticalStackLayout>
                         <VerticalStackLayout Grid.Column="2" Spacing="4" HorizontalOptions="End" VerticalOptions="Center">
-                            <Label Text="🔥 Racha" FontSize="11" FontAttributes="Bold" TextColor="#FFC45D" />
+                            <Label Text="{x:Static helpers:IconFont.Fire}" FontFamily="FAFreeSolid" FontSize="11" TextColor="#FFC45D" />
                             <Label Text="{Binding StreakText}" FontSize="11" TextColor="{StaticResource DashboardText}" HorizontalTextAlignment="End" />
                         </VerticalStackLayout>
                     </Grid>
@@ -210,7 +211,7 @@
                     <Button x:Name="SettingsNavigationItem" Text="⚙   Ajustes" CommandParameter="settings" Clicked="OnNavigationItemClicked" HeightRequest="48" HorizontalOptions="Fill" BackgroundColor="Transparent" TextColor="{StaticResource DashboardText}" />
                 </VerticalStackLayout>
                 <Border Grid.Row="2" Padding="12" Stroke="#343046" StrokeShape="RoundRectangle 14" BackgroundColor="#211F30">
-                    <VerticalStackLayout Spacing="4"><Label Text="🔥 Racha actual" FontSize="13" FontAttributes="Bold" TextColor="#FFC45D" /><Label Text="{Binding StreakText}" FontSize="12" TextColor="#E4DFED" /></VerticalStackLayout>
+                    <VerticalStackLayout Spacing="4"><Label Text="{x:Static helpers:IconFont.Fire}" FontFamily="FAFreeSolid" FontSize="13" TextColor="#FFC45D" /><Label Text="{Binding StreakText}" FontSize="12" TextColor="#E4DFED" /></VerticalStackLayout>
                 </Border>
             </Grid>
         </Border>

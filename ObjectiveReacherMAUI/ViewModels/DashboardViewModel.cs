@@ -284,12 +284,12 @@ public sealed class DashboardViewModel : INotifyPropertyChanged
         >= 10 => "¡Eres imparable!",
         >= 5 => "¡Tu esfuerzo está creciendo!",
         >= 2 => "¡Buen comienzo, sigue así!",
-        _ => "Cada paso cuenta. ¡Vamos!"
+        _ => "Tu viaje acaba de comenzar 💪"
     };
 
     public int StreakDays => CalculateCurrentStreak();
 
-    public string StreakText => StreakDays == 1 ? "1 día consecutivo" : $"{StreakDays} días consecutivos";
+    public string StreakText => StreakDays == 0 ? "¡Mantén encendida la llama de tu racha! 🔥" : StreakDays == 1 ? "1 día consecutivo" : $"{StreakDays} días consecutivos";
 
     public string AchievementCountText => $"{_objective.UnlockedAchievementIds.Intersect(AchievementCatalog.All.Select(achievement => achievement.Id)).Count()}/{AchievementCatalog.All.Count} logros";
 
@@ -360,7 +360,7 @@ public sealed class DashboardViewModel : INotifyPropertyChanged
 
     public string RemainingText => _objective.CurrentAmount >= _objective.GoalAmount
         ? "¡Objetivo completado!"
-        : $"Faltan {FormatAmount(_objective.GoalAmount - _objective.CurrentAmount)} para completar el objetivo";
+        : $"¡A solo {FormatAmount(_objective.GoalAmount - _objective.CurrentAmount)} de la meta! Un último impulso 🚀";
 
     public decimal SelectedAmount
     {
