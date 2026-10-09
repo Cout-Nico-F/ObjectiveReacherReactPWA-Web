@@ -321,9 +321,10 @@ public sealed class DashboardViewModel : INotifyPropertyChanged
             _ => null
         };
 
-    public double BannerTranslationX => _objective.BannerOffsetX * 60;
+    // Normalized offsets are converted to bounded pixels by the reusable image control.
+    public double BannerTranslationX => _objective.BannerOffsetX;
 
-    public double BannerTranslationY => _objective.BannerOffsetY * 60;
+    public double BannerTranslationY => _objective.BannerOffsetY;
 
     public Brush HeroBackground => _objective.BannerId switch
     {

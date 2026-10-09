@@ -1,4 +1,5 @@
 using Microsoft.Maui.Storage;
+using ObjectiveReacherMAUI.Controls;
 using ObjectiveReacherMAUI.ViewModels;
 
 namespace ObjectiveReacherMAUI;
@@ -8,7 +9,7 @@ public sealed class BannerPickerPage : ContentPage
     private readonly DashboardViewModel _viewModel;
     private readonly TaskCompletionSource<bool> _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Grid _presetGrid = new() { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Star) }, ColumnSpacing = 12, RowSpacing = 12 };
-    private readonly Image _photoPreview = new() { Aspect = Aspect.AspectFill, InputTransparent = true };
+    private readonly CroppedBannerImage _photoPreview = new() { InputTransparent = true };
     private readonly Label _previewHint = new() { Text = "Selecciona una foto para encuadrarla aquí\narrastra para moverla", HorizontalTextAlignment = TextAlignment.Center, VerticalTextAlignment = TextAlignment.Center, TextColor = Color.FromArgb("#E7E1F0"), FontSize = 13, InputTransparent = true };
     private readonly List<BannerPreset> _presets =
     [
@@ -44,10 +45,12 @@ public sealed class BannerPickerPage : ContentPage
         title.Add(new Label { Text = "Elige un diseño o una foto propia", FontSize = 12, TextColor = Color.FromArgb("#AAA5BB") });
         header.Add(title, 1);
 
-        var previewGrid = new Grid { HeightRequest = 370, InputTransparent = false };
+        // Keep preview dimensions aligned with dashboard banner framing.
+        var previewGrid = new Grid { HeightRequest = 370, InputTransparent = false, IsClippedToBounds = true };
+        previewGrid.BackgroundColor = Colors.Transparent;
         previewGrid.Add(_photoPreview);
-        previewGrid.Add(new BoxView { BackgroundColor = Color.FromArgb("#33000000"), InputTransparent = true });
-        previewGrid.Add(_previewHint);
+        _photoPreview.IsVisible = false;
+        _previewHint.IsVisible = true;
         var pan = new PanGestureRecognizer();
         pan.PanUpdated += OnPreviewPanUpdated;
         previewGrid.GestureRecognizers.Add(pan);
@@ -57,18 +60,18 @@ public sealed class BannerPickerPage : ContentPage
             HeightRequest = 370,
             Stroke = Color.FromArgb("#51436C"),
             StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 18 },
-            BackgroundColor = Color.FromArgb("#211D35"),
+            BackgroundColor = Colors.Transparent,
             Content = previewGrid
         };
-
         var body = new VerticalStackLayout { Spacing = 14 };
         body.Add(SectionLabel("DISEÑOS"));
         body.Add(_presetGrid);
         body.Add(SectionLabel("TU FOTO"));
         body.Add(preview);
+        body.Add(_previewHint);
         body.Add(new Label { Text = "La imagen se recorta al marco; arrástrala para mostrar la parte que quieras.", FontSize = 11, TextColor = Color.FromArgb("#AAA5BB") });
         var choosePhoto = new Button { Text = "Elegir foto de la galería…", HeightRequest = 48, BackgroundColor = Color.FromArgb("#302747"), TextColor = Color.FromArgb("#F5F2FA"), CornerRadius = 12 };
-        choosePhoto.Clicked += OnChoosePhotoClicked;
+        choosePhoto.Clicked += OnChoosePhotoForPreviewClicked;
         body.Add(choosePhoto);
 
         var footer = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Star) }, ColumnSpacing = 10 };
@@ -93,6 +96,58 @@ public sealed class BannerPickerPage : ContentPage
         FontAttributes = FontAttributes.Bold,
         TextColor = Color.FromArgb("#AAA5BB")
     };
+
+    private async void OnChoosePhotoForPreviewClicked(object? sender, EventArgs e)
+    {
+        try
+        {
+            var result = await FilePicker.Default.PickAsync(new PickOptions
+            {
+                PickerTitle = "Selecciona una foto para el banner",
+                FileTypes = FilePickerFileType.Images
+            });
+
+            if (result is null)
+                return;
+
+            var bannerDirectory = Path.Combine(FileSystem.AppDataDirectory, "banners");
+            Directory.CreateDirectory(bannerDirectory);
+
+            var extension = Path.GetExtension(result.FileName);
+            if (string.IsNullOrWhiteSpace(extension))
+                extension = ".img";
+
+            var destinationPath = Path.Combine(bannerDirectory, $"{Guid.NewGuid():N}{extension}");
+            await using (var source = await result.OpenReadAsync())
+            await using (var destination = File.Create(destinationPath))
+                await source.CopyToAsync(destination);
+
+            _photoPath = destinationPath;
+            _panX = _panY = _startX = _startY = 0;
+
+            if (!BannerImageDimensions.TryRead(destinationPath, out _, out _))
+            {
+                _photoPath = null;
+                await DisplayAlertAsync("Imagen no compatible", "No se pudo leer el tamaño de esta foto. Prueba con una imagen JPG, PNG, WebP, BMP o GIF.", "Aceptar");
+                return;
+            }
+
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                _photoPreview.Source = null;
+                _photoPreview.OffsetX = 0;
+                _photoPreview.OffsetY = 0;
+                _photoPreview.Source = ImageSource.FromFile(destinationPath);
+                _photoPreview.IsVisible = true;
+                _previewHint.IsVisible = false;
+                _photoPreview.InvalidateMeasure();
+            });
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlertAsync("No se pudo cargar la imagen", ex.Message, "Aceptar");
+        }
+    }
 
     public async Task ShowAsync(Page parent)
     {
@@ -151,47 +206,6 @@ public sealed class BannerPickerPage : ContentPage
             await DisplayAlertAsync("No se pudo aplicar", "No se pudo guardar el fondo seleccionado.", "OK");
     }
 
-    private async void OnChoosePhotoClicked(object? sender, EventArgs e)
-    {
-        try
-        {
-            var pickedFile = await FilePicker.Default.PickAsync(new PickOptions
-            {
-                PickerTitle = "Elige una imagen para tu banner",
-                FileTypes = FilePickerFileType.Images
-            });
-
-            if (pickedFile is null)
-                return;
-
-            var extension = System.IO.Path.GetExtension(pickedFile.FileName).ToLowerInvariant();
-            if (extension is not (".png" or ".jpg" or ".jpeg" or ".webp" or ".bmp" or ".gif"))
-            {
-                await DisplayAlertAsync("Imagen no compatible", "Elige una imagen PNG, JPG, WebP, BMP o GIF.", "OK");
-                return;
-            }
-
-            var directory = System.IO.Path.Combine(FileSystem.AppDataDirectory, "banners");
-            Directory.CreateDirectory(directory);
-            var fileName = $"{Guid.NewGuid():N}{extension}";
-            _photoPath = System.IO.Path.Combine(directory, fileName);
-
-            await using var source = await pickedFile.OpenReadAsync();
-            await using var destination = File.Create(_photoPath);
-            await source.CopyToAsync(destination);
-
-            _panX = _panY = 0;
-            _photoPreview.TranslationX = _photoPreview.TranslationY = 0;
-            _photoPreview.Source = ImageSource.FromFile(_photoPath);
-            _photoPreview.Scale = 1.5;
-            _previewHint.IsVisible = false;
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException or NotSupportedException)
-        {
-            await DisplayAlertAsync("No se pudo abrir la imagen", "Inténtalo de nuevo con otra imagen.", "OK");
-        }
-    }
-
     private void OnPreviewPanUpdated(object? sender, PanUpdatedEventArgs e)
     {
         if (_photoPath is null)
@@ -204,10 +218,12 @@ public sealed class BannerPickerPage : ContentPage
         }
         else if (e.StatusType == GestureStatus.Running)
         {
-            _panX = Math.Clamp(_startX + e.TotalX / 60, -1, 1);
-            _panY = Math.Clamp(_startY + e.TotalY / 60, -1, 1);
-            _photoPreview.TranslationX = _panX * 60;
-            _photoPreview.TranslationY = _panY * 60;
+            var maxOffsetX = Math.Max(1, _photoPreview.MaxPanX);
+            var maxOffsetY = Math.Max(1, _photoPreview.MaxPanY);
+            _panX = Math.Clamp(_startX + e.TotalX / maxOffsetX, -1, 1);
+            _panY = Math.Clamp(_startY + e.TotalY / maxOffsetY, -1, 1);
+            _photoPreview.OffsetX = _panX;
+            _photoPreview.OffsetY = _panY;
         }
     }
 
