@@ -53,6 +53,8 @@ export interface Objective {
   accentColor?: string;
   targetDate?: string;
   pledge?: string;
+  createdAt?: string;
+  lastUsedAt?: string;
 }
 
 export interface GamificationState {
@@ -60,6 +62,20 @@ export interface GamificationState {
   bonusXp?: number;
   lastPetDateKey?: string;
   claimedQuestsByDay?: Record<string, string[]>;
+  gems?: number;
+  unlockedSkins?: string[];
+  equippedSkinId?: string;
+  unlockedVaultIds?: string[];
+  equippedCardFrameId?: string;
+  equippedSoundPackId?: string;
+  equippedTitleId?: string;
+  streakShields?: number;
+  xpBoostUntil?: string;
+  gemMagnetUntil?: string;
+  isIndieFounder?: boolean;
+  supporterTier?: 'none' | 'coffee' | 'founder';
+  asmrTotalTaps?: number;
+  asmrPreferredTexture?: string;
 }
 
 export interface DashboardState {

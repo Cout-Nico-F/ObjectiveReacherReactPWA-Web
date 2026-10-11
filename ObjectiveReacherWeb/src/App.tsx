@@ -3,24 +3,56 @@ import {
   ACHIEVEMENT_CATALOG,
   ACHIEVEMENT_IDS,
   BANNER_PRESETS,
+  clampSafeAmount,
   CUSTOM_UNIT_ID,
   findObjectiveUnit,
   formatObjectiveAmount,
+  MAX_SAFE_AMOUNT,
   OBJECTIVE_ACCENT_THEMES,
   OBJECTIVE_ICONS,
   OBJECTIVE_TEMPLATES,
   OBJECTIVE_UNITS,
 } from './catalog';
 import {
+  CARD_COSMETICS,
+  CardCosmeticDefinition,
+  CARD_STYLE_VAULT,
+  CardStyleVaultItem,
+  findCardCosmetic,
+  findGuardianTitle,
+  findMascotSkin,
+  formatRemainingBuffTime,
+  GUARDIAN_TITLES,
+  GuardianTitleItem,
+  INDIE_SUPPORT_PACKS,
+  IndieSupportPack,
+  isTimestampActive,
+  MASCOT_SKINS,
+  MascotSkinDefinition,
+  SANCTUARY_BUFFS,
+  SanctuaryBuffDefinition,
+  SOUND_PACKS,
+  SoundPackCatalogItem,
+  triggerStoreCheckout,
+  VAULT_STATS,
+} from './monetization';
+import {
+  ASMR_TEXTURES,
+  getAmbientMusicStyleName,
   loadSensoryPreferences,
   playAddEntrySound,
+  playAsmrClickSound,
   playCelebrationFanfare,
   playMascotVoice,
   playQuestClaimSound,
+  playSoundPackPreview,
   playSubtractEntrySound,
   playUiTap,
   saveSensoryPreferences,
   SensoryPreferences,
+  setActiveSoundPack,
+  setAmbientMusicContext,
+  syncAmbientMusic,
 } from './soundEffects';
 import {
   AchievementCondition,
@@ -35,6 +67,7 @@ const STORAGE_KEY = 'objectivereacher_dashboard_v5';
 
 function createEmptyState(): DashboardState {
   const id = crypto.randomUUID();
+  const nowIso = new Date().toISOString();
   return {
     version: 5,
     objectives: [
@@ -57,6 +90,8 @@ function createEmptyState(): DashboardState {
         accentColor: '#65DB85',
         targetDate: '',
         pledge: '',
+        createdAt: nowIso,
+        lastUsedAt: nowIso,
       },
     ],
     selectedObjectiveId: id,
@@ -65,6 +100,20 @@ function createEmptyState(): DashboardState {
       bonusXp: 0,
       lastPetDateKey: '',
       claimedQuestsByDay: {},
+      gems: 80,
+      unlockedSkins: ['default'],
+      equippedSkinId: 'default',
+      unlockedVaultIds: ['frame_default', 'snd_kalimba_zen', 'title_seed'],
+      equippedCardFrameId: 'frame_default',
+      equippedSoundPackId: 'snd_kalimba_zen',
+      equippedTitleId: 'title_seed',
+      streakShields: 1,
+      xpBoostUntil: '',
+      gemMagnetUntil: '',
+      isIndieFounder: false,
+      supporterTier: 'none',
+      asmrTotalTaps: 0,
+      asmrPreferredTexture: 'bubbles',
     },
   };
 }
@@ -138,6 +187,33 @@ function loadState(): DashboardState {
       parsed.gamification &&
       typeof parsed.gamification.totalXp === 'number'
     ) {
+      const baseTimeMs = Date.now() - parsed.objectives.length * 60000;
+      parsed.objectives = parsed.objectives.map((obj, idx) => {
+        const sanitizedEntries = Array.isArray(obj.entries)
+          ? obj.entries.map((e) => ({
+              ...e,
+              amount: clampSafeAmount(
+                e.amount || 0,
+                -MAX_SAFE_AMOUNT,
+                MAX_SAFE_AMOUNT
+              ),
+            }))
+          : [];
+        const latestEntryIso = sanitizedEntries[0]?.createdAt;
+        const fallbackIso = new Date(baseTimeMs + idx * 60000).toISOString();
+        return {
+          ...obj,
+          goalAmount: clampSafeAmount(obj.goalAmount || 1, 1, MAX_SAFE_AMOUNT),
+          currentAmount: clampSafeAmount(
+            obj.currentAmount || 0,
+            -MAX_SAFE_AMOUNT,
+            MAX_SAFE_AMOUNT * 2
+          ),
+          entries: sanitizedEntries,
+          createdAt: obj.createdAt || fallbackIso,
+          lastUsedAt: obj.lastUsedAt || latestEntryIso || obj.createdAt || fallbackIso,
+        };
+      });
       const bonusXp =
         typeof parsed.gamification.bonusXp === 'number'
           ? parsed.gamification.bonusXp
@@ -152,6 +228,47 @@ function loadState(): DashboardState {
         parsed.gamification.lastPetDateKey || '';
       parsed.gamification.claimedQuestsByDay =
         parsed.gamification.claimedQuestsByDay || {};
+      parsed.gamification.gems =
+        typeof parsed.gamification.gems === 'number'
+          ? parsed.gamification.gems
+          : 80;
+      parsed.gamification.unlockedSkins = Array.isArray(
+        parsed.gamification.unlockedSkins
+      )
+        ? parsed.gamification.unlockedSkins
+        : ['default'];
+      parsed.gamification.equippedSkinId =
+        parsed.gamification.equippedSkinId || 'default';
+      parsed.gamification.unlockedVaultIds = Array.isArray(
+        parsed.gamification.unlockedVaultIds
+      )
+        ? parsed.gamification.unlockedVaultIds
+        : ['frame_default', 'snd_kalimba_zen', 'title_seed'];
+      parsed.gamification.equippedCardFrameId =
+        parsed.gamification.equippedCardFrameId || 'frame_default';
+      parsed.gamification.equippedSoundPackId =
+        parsed.gamification.equippedSoundPackId || 'snd_kalimba_zen';
+      parsed.gamification.equippedTitleId =
+        parsed.gamification.equippedTitleId || 'title_seed';
+      parsed.gamification.streakShields =
+        typeof parsed.gamification.streakShields === 'number'
+          ? parsed.gamification.streakShields
+          : 1;
+      parsed.gamification.xpBoostUntil =
+        parsed.gamification.xpBoostUntil || '';
+      parsed.gamification.gemMagnetUntil =
+        parsed.gamification.gemMagnetUntil || '';
+      parsed.gamification.isIndieFounder = Boolean(
+        parsed.gamification.isIndieFounder
+      );
+      parsed.gamification.supporterTier =
+        parsed.gamification.supporterTier || 'none';
+      parsed.gamification.asmrTotalTaps =
+        typeof parsed.gamification.asmrTotalTaps === 'number'
+          ? parsed.gamification.asmrTotalTaps
+          : 0;
+      parsed.gamification.asmrPreferredTexture =
+        parsed.gamification.asmrPreferredTexture || 'bubbles';
       return parsed;
     }
   } catch {
@@ -167,13 +284,18 @@ function toLocalDateKey(isoString: string): string {
   ).padStart(2, '0')}`;
 }
 
-function calculateCurrentStreak(objectives: Objective[]): number {
+function calculateCurrentStreak(
+  objectives: Objective[],
+  availableShields = 0
+): number {
   const activeDays = new Set<string>();
   for (const obj of objectives) {
     for (const entry of obj.entries) {
       activeDays.add(toLocalDateKey(entry.createdAt));
     }
   }
+
+  if (activeDays.size === 0) return 0;
 
   const day = new Date();
   day.setHours(0, 0, 0, 0);
@@ -184,9 +306,27 @@ function calculateCurrentStreak(objectives: Objective[]): number {
   }
 
   let streak = 0;
-  while (activeDays.has(toLocalDateKey(day.toISOString()))) {
-    streak++;
-    day.setDate(day.getDate() - 1);
+  let shieldsLeft = Math.max(0, availableShields);
+
+  while (true) {
+    const key = toLocalDateKey(day.toISOString());
+    if (activeDays.has(key)) {
+      streak++;
+      day.setDate(day.getDate() - 1);
+    } else if (shieldsLeft > 0 && streak > 0) {
+      // Check if there was activity the day before this gap so a shield bridges it
+      const prevDay = new Date(day);
+      prevDay.setDate(prevDay.getDate() - 1);
+      if (activeDays.has(toLocalDateKey(prevDay.toISOString()))) {
+        shieldsLeft--;
+        streak++;
+        day.setDate(day.getDate() - 1);
+      } else {
+        break;
+      }
+    } else {
+      break;
+    }
   }
   return streak;
 }
@@ -339,12 +479,24 @@ export function App() {
   const [isMascotGalleryOpen, setIsMascotGalleryOpen] = useState<boolean>(false);
   const [mascotGalleryStartLevel, setMascotGalleryStartLevel] = useState<number | null>(null);
   const [isArchivedModalOpen, setIsArchivedModalOpen] = useState<boolean>(false);
+  const [isIndieShopOpen, setIsIndieShopOpen] = useState<boolean>(false);
+  const [indieShopInitialTab, setIndieShopInitialTab] = useState<
+    'skins' | 'cards_audio' | 'buffs' | 'support'
+  >('skins');
 
-  // Interactive Mascot Sanctuary & Daily Ritual (Unified A + B + C)
+  // Interactive Mascot Sanctuary, ASMR Clicker & Daily Ritual
   const [mascotJoyId, setMascotJoyId] = useState<number>(0);
   const [mascotSpeech, setMascotSpeech] = useState<string | null>(null);
   const mascotSpeechTimerRef = useRef<number | null>(null);
   const [isDailyRitualOpen, setIsDailyRitualOpen] = useState<boolean>(false);
+  const [isAsmrSanctuaryOpen, setIsAsmrSanctuaryOpen] = useState<boolean>(false);
+  const [asmrFloatingSparks, setAsmrFloatingSparks] = useState<
+    Array<{ id: number; text: string; color: string; xOffset: number }>
+  >([]);
+  const [lastAsmrPrizeNotice, setLastAsmrPrizeNotice] = useState<string | null>(
+    null
+  );
+  const asmrTapCooldownCounterRef = useRef<number>(0);
   const [sensoryPrefs, setSensoryPrefs] = useState<SensoryPreferences>(() =>
     loadSensoryPreferences()
   );
@@ -354,11 +506,28 @@ export function App() {
     const nextPrefs: SensoryPreferences = {
       soundEnabled: nextEnabled,
       hapticsEnabled: nextEnabled,
+      musicEnabled: nextEnabled ? sensoryPrefs.musicEnabled : false,
     };
     saveSensoryPreferences(nextPrefs);
     setSensoryPrefs(nextPrefs);
+    syncAmbientMusic();
     if (nextEnabled) {
       playUiTap(2);
+    }
+  };
+
+  const toggleAmbientMusic = () => {
+    const nextMusic = !sensoryPrefs.musicEnabled;
+    const nextPrefs: SensoryPreferences = {
+      soundEnabled: nextMusic ? true : sensoryPrefs.soundEnabled,
+      hapticsEnabled: nextMusic ? true : sensoryPrefs.hapticsEnabled,
+      musicEnabled: nextMusic,
+    };
+    saveSensoryPreferences(nextPrefs);
+    setSensoryPrefs(nextPrefs);
+    syncAmbientMusic();
+    if (nextMusic) {
+      playUiTap(3);
     }
   };
 
@@ -420,10 +589,55 @@ export function App() {
     }
   }, [state]);
 
-  const activeObjectives = useMemo(
-    () => state.objectives.filter((o) => !o.isArchived),
-    [state.objectives]
-  );
+  // Smart Objective Tab Ordering:
+  // 1st position: Newest created objective (highest createdAt)
+  // 1st/2nd position: Last used objective (highest lastUsedAt — 1st if it is the newest, 2nd right after the newest otherwise)
+  // Remaining objectives: ordered by lastUsedAt desc, then createdAt desc
+  const activeObjectives = useMemo(() => {
+    const unarchived = state.objectives.filter((o) => !o.isArchived);
+    if (unarchived.length <= 1) return unarchived;
+
+    const getCreatedMs = (o: Objective, idx: number) => {
+      const t = o.createdAt ? new Date(o.createdAt).getTime() : 0;
+      return Number.isNaN(t) || t === 0 ? idx : t;
+    };
+    const getUsedMs = (o: Objective, idx: number) => {
+      const t = o.lastUsedAt ? new Date(o.lastUsedAt).getTime() : 0;
+      return Number.isNaN(t) || t === 0 ? getCreatedMs(o, idx) : t;
+    };
+
+    const indexed = unarchived.map((obj, idx) => ({
+      obj,
+      createdMs: getCreatedMs(obj, idx),
+      usedMs: getUsedMs(obj, idx),
+    }));
+
+    const newestEntry = [...indexed].sort((a, b) => b.createdMs - a.createdMs)[0];
+    const lastUsedEntry = [...indexed].sort((a, b) => b.usedMs - a.usedMs)[0];
+
+    const result: Objective[] = [];
+    const placedIds = new Set<string>();
+
+    if (newestEntry) {
+      result.push(newestEntry.obj);
+      placedIds.add(newestEntry.obj.id);
+    }
+
+    if (lastUsedEntry && !placedIds.has(lastUsedEntry.obj.id)) {
+      result.push(lastUsedEntry.obj);
+      placedIds.add(lastUsedEntry.obj.id);
+    }
+
+    const remaining = indexed
+      .filter((item) => !placedIds.has(item.obj.id))
+      .sort((a, b) => b.usedMs - a.usedMs || b.createdMs - a.createdMs);
+
+    for (const item of remaining) {
+      result.push(item.obj);
+    }
+
+    return result;
+  }, [state.objectives]);
 
   const archivedObjectives = useMemo(
     () => state.objectives.filter((o) => o.isArchived),
@@ -504,8 +718,12 @@ export function App() {
   const mascotMessage = mascotMessages[mascotTier] || mascotMessages[0];
 
   const streakDays = useMemo(
-    () => calculateCurrentStreak(state.objectives),
-    [state.objectives]
+    () =>
+      calculateCurrentStreak(
+        state.objectives,
+        state.gamification.streakShields || 0
+      ),
+    [state.objectives, state.gamification.streakShields]
   );
   const streakText =
     streakDays === 0
@@ -513,6 +731,90 @@ export function App() {
       : streakDays === 1
       ? '1 día consecutivo'
       : `${streakDays} días consecutivos`;
+
+  // Indie Monetization, Cosmetics & Active Buffs derived properties
+  const gems = state.gamification.gems ?? 80;
+  const unlockedSkins = state.gamification.unlockedSkins || ['default'];
+  const equippedSkinId = state.gamification.equippedSkinId || 'default';
+  const equippedSkin = useMemo(
+    () => findMascotSkin(equippedSkinId),
+    [equippedSkinId]
+  );
+  const unlockedVaultIds = state.gamification.unlockedVaultIds || [
+    'frame_default',
+    'snd_kalimba_zen',
+    'title_seed',
+  ];
+  const equippedCardFrameId =
+    state.gamification.equippedCardFrameId || 'frame_default';
+  const equippedCardCosmetic = useMemo(
+    () => findCardCosmetic(equippedCardFrameId),
+    [equippedCardFrameId]
+  );
+  const equippedSoundPackId =
+    state.gamification.equippedSoundPackId || 'snd_kalimba_zen';
+  const equippedTitleId = state.gamification.equippedTitleId || 'title_seed';
+  const equippedGuardianTitle = useMemo(
+    () => findGuardianTitle(equippedTitleId),
+    [equippedTitleId]
+  );
+
+  // Sync active sound pack and procedural background music with Web Audio synthesizer
+  useEffect(() => {
+    setActiveSoundPack(equippedSoundPackId);
+  }, [equippedSoundPackId]);
+
+  useEffect(() => {
+    setAmbientMusicContext(
+      currentObjective.accentColor || '#65DB85',
+      currentObjective.bannerId || 'gradient'
+    );
+  }, [
+    currentObjective.accentColor,
+    currentObjective.bannerId,
+    equippedSoundPackId,
+    sensoryPrefs.musicEnabled,
+    sensoryPrefs.soundEnabled,
+  ]);
+
+  // Lock background page scroll whenever a full-screen modal is open so the outer scrollbar never moves dead space
+  useEffect(() => {
+    const anyModalOpen =
+      isIndieShopOpen ||
+      isEditorOpen ||
+      isBannerPickerOpen ||
+      isMascotGalleryOpen ||
+      isAllAchievementsOpen ||
+      isArchivedModalOpen;
+    if (anyModalOpen) {
+      const prevOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = prevOverflow;
+      };
+    }
+  }, [
+    isIndieShopOpen,
+    isEditorOpen,
+    isBannerPickerOpen,
+    isMascotGalleryOpen,
+    isAllAchievementsOpen,
+    isArchivedModalOpen,
+  ]);
+  const streakShields = state.gamification.streakShields ?? 1;
+  const isIndieFounder = Boolean(state.gamification.isIndieFounder);
+  const supporterTier = state.gamification.supporterTier || 'none';
+  const isXpBoostActive = isTimestampActive(state.gamification.xpBoostUntil);
+  const isGemMagnetActive = isTimestampActive(state.gamification.gemMagnetUntil);
+  const xpBoostRemainingText = formatRemainingBuffTime(
+    state.gamification.xpBoostUntil
+  );
+  const gemMagnetRemainingText = formatRemainingBuffTime(
+    state.gamification.gemMagnetUntil
+  );
+  const activeXpMultiplier =
+    1 + (isXpBoostActive ? 0.5 : 0) + (isIndieFounder ? 0.2 : 0);
+  const activeGemMultiplier = isGemMagnetActive ? 2 : 1;
 
   const totalEntryCount = useMemo(
     () => state.objectives.reduce((sum, o) => sum + o.entries.length, 0),
@@ -728,7 +1030,8 @@ export function App() {
 
     if (!hasPettedToday) {
       playMascotVoice(level, true);
-      const petXp = 15;
+      const petXp = Math.round(15 * activeXpMultiplier);
+      const petGems = 5 * activeGemMultiplier;
       const prevLevel = level;
       const nextTotalXp = state.gamification.totalXp + petXp;
       const nextLevel = calculateLevelFromXp(nextTotalXp);
@@ -739,6 +1042,7 @@ export function App() {
           ...prev.gamification,
           totalXp: prev.gamification.totalXp + petXp,
           bonusXp: (prev.gamification.bonusXp || 0) + petXp,
+          gems: (prev.gamification.gems ?? 80) + petGems,
           lastPetDateKey: todayDateKey,
         },
       }));
@@ -749,7 +1053,9 @@ export function App() {
         leveledUp: nextLevel > prevLevel,
       });
 
-      triggerMascotSpeech('¡Caricia diaria recibida! +15 XP de vínculo 💖✨');
+      triggerMascotSpeech(
+        `¡Caricia diaria recibida! +${petXp} XP y +${petGems} 💎 Gemas de vínculo 💖`
+      );
     } else {
       playMascotVoice(level, false);
       const randomPhrase =
@@ -761,8 +1067,10 @@ export function App() {
   const handleClaimQuest = (questId: string, rewardXp: number, title: string) => {
     if (claimedToday.includes(questId)) return;
     playQuestClaimSound(false);
+    const boostedXp = Math.round(rewardXp * activeXpMultiplier);
+    const questGems = 5 * activeGemMultiplier;
     const prevLevel = level;
-    const nextTotalXp = state.gamification.totalXp + rewardXp;
+    const nextTotalXp = state.gamification.totalXp + boostedXp;
     const nextLevel = calculateLevelFromXp(nextTotalXp);
 
     setState((prev) => {
@@ -772,8 +1080,9 @@ export function App() {
         ...prev,
         gamification: {
           ...prev.gamification,
-          totalXp: prev.gamification.totalXp + rewardXp,
-          bonusXp: (prev.gamification.bonusXp || 0) + rewardXp,
+          totalXp: prev.gamification.totalXp + boostedXp,
+          bonusXp: (prev.gamification.bonusXp || 0) + boostedXp,
+          gems: (prev.gamification.gems ?? 80) + questGems,
           claimedQuestsByDay: {
             ...(prev.gamification.claimedQuestsByDay || {}),
             [todayDateKey]: [...prevClaimed, questId],
@@ -785,16 +1094,19 @@ export function App() {
     setMascotJoyId(Date.now());
     setXpBurst({
       id: Date.now(),
-      xp: rewardXp,
+      xp: boostedXp,
       leveledUp: nextLevel > prevLevel,
     });
-    triggerMascotSpeech(`¡Misión "${title}" completada! +${rewardXp} XP 🎯`);
+    triggerMascotSpeech(
+      `¡Misión "${title}" completada! +${boostedXp} XP y +${questGems} 💎 🎯`
+    );
   };
 
   const handleClaimAllDailyBonus = () => {
     if (!canClaimAllDailyBonus) return;
     playQuestClaimSound(true);
-    const bonusXp = 40;
+    const bonusXp = Math.round(40 * activeXpMultiplier);
+    const chestGems = 15 * activeGemMultiplier;
     const prevLevel = level;
     const nextTotalXp = state.gamification.totalXp + bonusXp;
     const nextLevel = calculateLevelFromXp(nextTotalXp);
@@ -808,6 +1120,7 @@ export function App() {
           ...prev.gamification,
           totalXp: prev.gamification.totalXp + bonusXp,
           bonusXp: (prev.gamification.bonusXp || 0) + bonusXp,
+          gems: (prev.gamification.gems ?? 80) + chestGems,
           claimedQuestsByDay: {
             ...(prev.gamification.claimedQuestsByDay || {}),
             [todayDateKey]: [...prevClaimed, 'all_daily_bonus'],
@@ -824,9 +1137,654 @@ export function App() {
     });
     triggerCelebration(
       '¡Sello Diario Maestro!',
-      `Completaste las 3 misiones de hoy · +${bonusXp} XP extra`,
+      `Completaste las 3 misiones de hoy · +${bonusXp} XP y +${chestGems} 💎 Gemas Astrales`,
       '👑',
       '#FFD54F'
+    );
+  };
+
+  const openIndieShop = (
+    tab: 'skins' | 'cards_audio' | 'buffs' | 'support' = 'skins'
+  ) => {
+    playUiTap(3);
+    setIsNavigationOpen(false);
+    setIsHistoryOpen(false);
+    setIndieShopInitialTab(tab);
+    setIsIndieShopOpen(true);
+  };
+
+  const asmrTotalTaps = state.gamification.asmrTotalTaps ?? 0;
+  const asmrPreferredTexture =
+    state.gamification.asmrPreferredTexture || 'bubbles';
+  const asmrCycleProgress = asmrTotalTaps % 25;
+  const activeAsmrTextureObj =
+    ASMR_TEXTURES.find((t) => t.id === asmrPreferredTexture) || ASMR_TEXTURES[0];
+
+  const handleSelectAsmrTexture = (textureId: string) => {
+    playAsmrClickSound(textureId, asmrTotalTaps, false);
+    setState((prev) => ({
+      ...prev,
+      gamification: {
+        ...prev.gamification,
+        asmrPreferredTexture: textureId,
+      },
+    }));
+  };
+
+  const handleAsmrClick = () => {
+    const nextTaps = asmrTotalTaps + 1;
+    asmrTapCooldownCounterRef.current += 1;
+
+    const isMilestonePrize = nextTaps % 25 === 0;
+    const isLuckyRandomPrize =
+      !isMilestonePrize &&
+      asmrTapCooldownCounterRef.current >= 14 &&
+      Math.random() < 0.06;
+    const dropsPrize = isMilestonePrize || isLuckyRandomPrize;
+
+    if (dropsPrize) {
+      asmrTapCooldownCounterRef.current = 0;
+    }
+
+    playAsmrClickSound(asmrPreferredTexture, nextTaps, dropsPrize);
+
+    const nowId = Date.now() + Math.floor(Math.random() * 999);
+    setMascotJoyId(Date.now());
+
+    let awardedGems = 0;
+    let awardedXp = 0;
+    let awardedShield = 0;
+    let prizeText = '';
+
+    if (dropsPrize) {
+      const roll = Math.random();
+      if (isMilestonePrize && roll < 0.12) {
+        awardedShield = 1;
+        awardedGems = 5 * activeGemMultiplier;
+        awardedXp = Math.round(15 * activeXpMultiplier);
+        prizeText = `🎁 ¡Premio Ocasional Épico! +1 🛡️ Escudo, +${awardedGems} 💎 y +${awardedXp} XP`;
+      } else {
+        awardedGems =
+          (isMilestonePrize
+            ? 5 + Math.floor(Math.random() * 4)
+            : 3 + Math.floor(Math.random() * 3)) * activeGemMultiplier;
+        awardedXp = Math.round(
+          (isMilestonePrize ? 15 : 8) * activeXpMultiplier
+        );
+        prizeText = `🎁 ¡Premio Ocasional ASMR! +${awardedGems} 💎 Gemas y +${awardedXp} XP`;
+      }
+      setLastAsmrPrizeNotice(prizeText);
+      triggerMascotSpeech(prizeText);
+    }
+
+    const sparkText = dropsPrize
+      ? `🎁 +${awardedGems} 💎`
+      : `${activeAsmrTextureObj.emoji} +Calma`;
+    const sparkColor = dropsPrize
+      ? '#FFD54F'
+      : activeAsmrTextureObj.accentColor;
+    const xOffset = Math.floor(Math.random() * 90) - 45;
+
+    setAsmrFloatingSparks((prev) => [
+      ...prev.slice(-5),
+      { id: nowId, text: sparkText, color: sparkColor, xOffset },
+    ]);
+
+    setState((prev) => ({
+      ...prev,
+      gamification: {
+        ...prev.gamification,
+        asmrTotalTaps: (prev.gamification.asmrTotalTaps ?? 0) + 1,
+        gems: (prev.gamification.gems ?? 80) + awardedGems,
+        totalXp: prev.gamification.totalXp + awardedXp,
+        bonusXp: (prev.gamification.bonusXp || 0) + awardedXp,
+        streakShields: (prev.gamification.streakShields ?? 1) + awardedShield,
+      },
+    }));
+  };
+
+  const handleSelectCardCosmetic = (cosmetic: CardCosmeticDefinition) => {
+    const isOwned =
+      isIndieFounder ||
+      cosmetic.gemCost === 0 ||
+      unlockedVaultIds.includes(cosmetic.id);
+
+    if (isOwned) {
+      playUiTap(4);
+      setState((prev) => ({
+        ...prev,
+        gamification: {
+          ...prev.gamification,
+          equippedCardFrameId: cosmetic.id,
+        },
+      }));
+      triggerMascotSpeech(
+        `🖼️ ¡Marco "${cosmetic.name}" aplicado a tu tarjeta principal!`
+      );
+      return;
+    }
+
+    if (gems < cosmetic.gemCost) {
+      playUiTap(0);
+      setIndieShopInitialTab('support');
+      setAlertDialog({
+        title: 'Gemas Astrales insuficientes',
+        message: `Necesitas ${cosmetic.gemCost} 💎 para desbloquear "${cosmetic.name}" (tienes ${gems} 💎). Puedes ganar más en misiones diarias o apoyar al dev con una propina editable.`,
+      });
+      return;
+    }
+
+    playCelebrationFanfare('levelUp');
+    setState((prev) => {
+      const prevVault = prev.gamification.unlockedVaultIds || [];
+      return {
+        ...prev,
+        gamification: {
+          ...prev.gamification,
+          gems: Math.max(0, (prev.gamification.gems ?? 80) - cosmetic.gemCost),
+          unlockedVaultIds: prevVault.includes(cosmetic.id)
+            ? prevVault
+            : [...prevVault, cosmetic.id],
+          equippedCardFrameId: cosmetic.id,
+        },
+      };
+    });
+    triggerCelebration(
+      `¡Marco Desbloqueado: ${cosmetic.name}!`,
+      `Se aplicó a tu tarjeta principal ${cosmetic.emoji}`,
+      cosmetic.emoji,
+      cosmetic.borderColor
+    );
+  };
+
+  const handleSelectSoundPack = (pack: SoundPackCatalogItem) => {
+    const isOwned =
+      isIndieFounder ||
+      pack.gemCost === 0 ||
+      unlockedVaultIds.includes(pack.id);
+
+    if (isOwned) {
+      setActiveSoundPack(pack.id);
+      playSoundPackPreview(pack.id);
+      setState((prev) => ({
+        ...prev,
+        gamification: {
+          ...prev.gamification,
+          equippedSoundPackId: pack.id,
+        },
+      }));
+      triggerMascotSpeech(
+        `🎵 ¡Sintetizador "${pack.name}" (${pack.scaleName}) activado!`
+      );
+      return;
+    }
+
+    if (gems < pack.gemCost) {
+      playUiTap(0);
+      setIndieShopInitialTab('support');
+      setAlertDialog({
+        title: 'Gemas Astrales insuficientes',
+        message: `Necesitas ${pack.gemCost} 💎 para desbloquear el sintetizador "${pack.name}" (tienes ${gems} 💎).`,
+      });
+      return;
+    }
+
+    setActiveSoundPack(pack.id);
+    playSoundPackPreview(pack.id);
+    setState((prev) => {
+      const prevVault = prev.gamification.unlockedVaultIds || [];
+      return {
+        ...prev,
+        gamification: {
+          ...prev.gamification,
+          gems: Math.max(0, (prev.gamification.gems ?? 80) - pack.gemCost),
+          unlockedVaultIds: prevVault.includes(pack.id)
+            ? prevVault
+            : [...prevVault, pack.id],
+          equippedSoundPackId: pack.id,
+        },
+      };
+    });
+    triggerCelebration(
+      `¡Nuevo Pack Acústico: ${pack.name}!`,
+      `Toda la app ahora suena en escala ${pack.scaleName} ${pack.emoji}`,
+      pack.emoji,
+      pack.accentColor
+    );
+  };
+
+  const handleApplyVaultCardStyle = (styleItem: CardStyleVaultItem) => {
+    const isOwned =
+      isIndieFounder ||
+      styleItem.gemCost === 0 ||
+      unlockedVaultIds.includes(styleItem.id);
+
+    if (!isOwned && gems < styleItem.gemCost) {
+      playUiTap(0);
+      setIndieShopInitialTab('support');
+      setAlertDialog({
+        title: 'Gemas Astrales insuficientes',
+        message: `Necesitas ${styleItem.gemCost} 💎 para desbloquear la sintonía "${styleItem.name}" (tienes ${gems} 💎).`,
+      });
+      return;
+    }
+
+    playUiTap(5);
+    setState((prev) => {
+      const prevVault = prev.gamification.unlockedVaultIds || [];
+      return {
+        ...prev,
+        objectives: prev.objectives.map((o) =>
+          o.id === currentObjective.id
+            ? {
+                ...o,
+                accentColor: styleItem.accentColor,
+                bannerId: styleItem.bannerId,
+              }
+            : o
+        ),
+        gamification: {
+          ...prev.gamification,
+          gems: isOwned
+            ? prev.gamification.gems ?? 80
+            : Math.max(0, (prev.gamification.gems ?? 80) - styleItem.gemCost),
+          unlockedVaultIds:
+            isOwned || prevVault.includes(styleItem.id)
+              ? prevVault
+              : [...prevVault, styleItem.id],
+        },
+      };
+    });
+    triggerMascotSpeech(
+      `🌈 ¡Estilo "${styleItem.name}" aplicado en sintonía total a "${currentObjective.title}"!`
+    );
+  };
+
+  const handleSelectGuardianTitle = (titleItem: GuardianTitleItem) => {
+    const isOwned =
+      isIndieFounder ||
+      titleItem.gemCost === 0 ||
+      unlockedVaultIds.includes(titleItem.id);
+
+    if (isOwned) {
+      playUiTap(3);
+      setState((prev) => ({
+        ...prev,
+        gamification: {
+          ...prev.gamification,
+          equippedTitleId: titleItem.id,
+        },
+      }));
+      triggerMascotSpeech(
+        `🏅 ¡Título equipado: ${titleItem.emoji} ${titleItem.title}!`
+      );
+      return;
+    }
+
+    if (gems < titleItem.gemCost) {
+      playUiTap(0);
+      setIndieShopInitialTab('support');
+      setAlertDialog({
+        title: 'Gemas Astrales insuficientes',
+        message: `Necesitas ${titleItem.gemCost} 💎 para desbloquear el título "${titleItem.title}" (tienes ${gems} 💎).`,
+      });
+      return;
+    }
+
+    playQuestClaimSound(true);
+    setState((prev) => {
+      const prevVault = prev.gamification.unlockedVaultIds || [];
+      return {
+        ...prev,
+        gamification: {
+          ...prev.gamification,
+          gems: Math.max(0, (prev.gamification.gems ?? 80) - titleItem.gemCost),
+          unlockedVaultIds: prevVault.includes(titleItem.id)
+            ? prevVault
+            : [...prevVault, titleItem.id],
+          equippedTitleId: titleItem.id,
+        },
+      };
+    });
+    triggerCelebration(
+      `¡Nuevo Título: ${titleItem.title}!`,
+      `Ya luce junto a tu nombre en el Santuario ${titleItem.emoji}`,
+      titleItem.emoji,
+      titleItem.color
+    );
+  };
+
+  const handleUnlockOrEquipSkin = (skin: MascotSkinDefinition) => {
+    const isUnlocked =
+      isIndieFounder ||
+      skin.gemCost === 0 ||
+      unlockedSkins.includes(skin.id);
+
+    if (isUnlocked) {
+      playMascotVoice(level, false);
+      setState((prev) => ({
+        ...prev,
+        gamification: {
+          ...prev.gamification,
+          equippedSkinId: skin.id,
+        },
+      }));
+      triggerMascotSpeech(
+        `¡Equipaste el aura "${skin.name}" ${skin.emoji}! Tu guardián brilla con nueva energía.`
+      );
+      return;
+    }
+
+    if (gems < skin.gemCost) {
+      playUiTap(0);
+      setIndieShopInitialTab('support');
+      setAlertDialog({
+        title: 'Gemas Astrales insuficientes',
+        message: `Necesitas ${skin.gemCost} 💎 para desbloquear "${skin.name}" (tienes ${gems} 💎). Puedes ganar más cumpliendo misiones diarias o desbloquear TODAS las skins al instante con el Pase de Mecenas Fundador.`,
+      });
+      return;
+    }
+
+    playCelebrationFanfare('levelUp');
+    setState((prev) => {
+      const currentUnlocked = prev.gamification.unlockedSkins || ['default'];
+      return {
+        ...prev,
+        gamification: {
+          ...prev.gamification,
+          gems: Math.max(0, (prev.gamification.gems ?? 80) - skin.gemCost),
+          unlockedSkins: currentUnlocked.includes(skin.id)
+            ? currentUnlocked
+            : [...currentUnlocked, skin.id],
+          equippedSkinId: skin.id,
+        },
+      };
+    });
+    setMascotJoyId(Date.now());
+    triggerCelebration(
+      `¡Nueva Skin: ${skin.name}!`,
+      `Se aplicó a las 200 evoluciones de tu guardián ${skin.emoji}`,
+      skin.emoji,
+      skin.auraRingColor
+    );
+  };
+
+  const handleActivateBuff = (buff: SanctuaryBuffDefinition) => {
+    const alreadyClaimedFree =
+      buff.kind === 'free_blessing' && unlockedVaultIds.includes(buff.id);
+    if (alreadyClaimedFree) {
+      playUiTap(1);
+      triggerMascotSpeech('✓ Ya reclamaste esta bendición gratuita del Santuario.');
+      return;
+    }
+
+    if (buff.kind === 'free_blessing' && (buff.requiredLevel || 1) > level) {
+      playUiTap(0);
+      setAlertDialog({
+        title: 'Nivel requerido',
+        message: `Alcanza el Nivel ${buff.requiredLevel} con tu guardián para reclamar gratis "${buff.name}" (tu nivel actual es Nv. ${level}).`,
+      });
+      return;
+    }
+
+    const alreadyOwnedRelic =
+      buff.kind === 'relic' && unlockedVaultIds.includes(buff.id);
+    if (alreadyOwnedRelic) {
+      playUiTap(2);
+      triggerMascotSpeech(
+        `${buff.icon} "${buff.name}" ya brilla en tu vitrina de reliquias del Santuario.`
+      );
+      return;
+    }
+
+    if (gems < buff.gemCost) {
+      playUiTap(0);
+      setIndieShopInitialTab('support');
+      setAlertDialog({
+        title: 'Gemas Astrales insuficientes',
+        message: `Necesitas ${buff.gemCost} 💎 para activar "${buff.name}" (tienes ${gems} 💎). Suma avances, reclama misiones o apoya al dev indie para obtener más gemas.`,
+      });
+      return;
+    }
+
+    const nowMs = Date.now();
+
+    if (buff.kind === 'xp_boost') {
+      playQuestClaimSound(true);
+      const currentUntilMs = isTimestampActive(state.gamification.xpBoostUntil)
+        ? new Date(state.gamification.xpBoostUntil!).getTime()
+        : nowMs;
+      const nextUntilIso = new Date(
+        currentUntilMs + 24 * 60 * 60 * 1000
+      ).toISOString();
+
+      setState((prev) => ({
+        ...prev,
+        gamification: {
+          ...prev.gamification,
+          gems: Math.max(0, (prev.gamification.gems ?? 80) - buff.gemCost),
+          xpBoostUntil: nextUntilIso,
+        },
+      }));
+      triggerMascotSpeech('🧪 ¡Elixir ×1.5 XP activado por 24 horas!');
+      return;
+    }
+
+    if (buff.kind === 'gem_magnet') {
+      playQuestClaimSound(true);
+      const currentUntilMs = isTimestampActive(state.gamification.gemMagnetUntil)
+        ? new Date(state.gamification.gemMagnetUntil!).getTime()
+        : nowMs;
+      const nextUntilIso = new Date(
+        currentUntilMs + 7 * 24 * 60 * 60 * 1000
+      ).toISOString();
+
+      setState((prev) => ({
+        ...prev,
+        gamification: {
+          ...prev.gamification,
+          gems: Math.max(0, (prev.gamification.gems ?? 80) - buff.gemCost),
+          gemMagnetUntil: nextUntilIso,
+        },
+      }));
+      triggerMascotSpeech('🧲 ¡Amuleto Cosechador activo! Doble 💎 durante 7 días.');
+      return;
+    }
+
+    // Handle shield, instant_xp, relic, and free_blessing
+    const rawXp = buff.xpAmount || 0;
+    const awardedXp =
+      rawXp > 0 ? Math.round(rawXp * activeXpMultiplier) : 0;
+    const addedShields = buff.shieldsAmount || 0;
+    const prevLevel = level;
+    const nextTotalXp = state.gamification.totalXp + awardedXp;
+    const nextLevel = calculateLevelFromXp(nextTotalXp);
+
+    if (awardedXp > 0) {
+      playMascotVoice(level, true);
+    } else {
+      playQuestClaimSound(false);
+    }
+
+    setState((prev) => {
+      const prevVault = prev.gamification.unlockedVaultIds || [];
+      const shouldRecordId =
+        buff.kind === 'free_blessing' || buff.kind === 'relic';
+      return {
+        ...prev,
+        gamification: {
+          ...prev.gamification,
+          gems: Math.max(0, (prev.gamification.gems ?? 80) - buff.gemCost),
+          totalXp: prev.gamification.totalXp + awardedXp,
+          bonusXp: (prev.gamification.bonusXp || 0) + awardedXp,
+          streakShields:
+            (prev.gamification.streakShields ?? 1) + addedShields,
+          unlockedVaultIds:
+            shouldRecordId && !prevVault.includes(buff.id)
+              ? [...prevVault, buff.id]
+              : prevVault,
+        },
+      };
+    });
+
+    if (awardedXp > 0) {
+      setMascotJoyId(nowMs);
+      setXpBurst({
+        id: nowMs,
+        xp: awardedXp,
+        leveledUp: nextLevel > prevLevel,
+      });
+    }
+
+    if (nextLevel > prevLevel) {
+      playCelebrationFanfare('levelUp');
+      triggerCelebration(
+        `¡Subiste al Nivel ${nextLevel}!`,
+        `${buff.name} otorgó +${awardedXp} XP${
+          addedShields > 0 ? ` y +${addedShields} 🛡️` : ''
+        }`,
+        buff.icon,
+        buff.accentColor
+      );
+    } else {
+      triggerMascotSpeech(
+        `${buff.icon} ¡${buff.name} activado!${
+          awardedXp > 0 ? ` +${awardedXp} XP` : ''
+        }${addedShields > 0 ? ` +${addedShields} 🛡️ Escudo` : ''}`
+      );
+    }
+  };
+
+  const handlePurchaseSupportPack = async (pack: IndieSupportPack) => {
+    playUiTap(3);
+    const result = await triggerStoreCheckout(pack);
+    if (!result.success) return;
+
+    playCelebrationFanfare('goal');
+    const allSkinIds = MASCOT_SKINS.map((s) => s.id);
+    const allVaultIds = [
+      ...CARD_COSMETICS.map((c) => c.id),
+      ...SOUND_PACKS.map((s) => s.id),
+      ...CARD_STYLE_VAULT.map((st) => st.id),
+      ...GUARDIAN_TITLES.map((t) => t.id),
+    ];
+
+    setState((prev) => {
+      const prevUnlocked = prev.gamification.unlockedSkins || ['default'];
+      const prevVault = prev.gamification.unlockedVaultIds || [];
+      const nextUnlocked = pack.unlocksAllSkins
+        ? Array.from(new Set([...prevUnlocked, ...allSkinIds]))
+        : prevUnlocked;
+      const nextVault = pack.unlocksAllSkins
+        ? Array.from(new Set([...prevVault, ...allVaultIds]))
+        : prevVault;
+      const nextTier =
+        pack.id === 'pack_founder' || prev.gamification.isIndieFounder
+          ? 'founder'
+          : 'coffee';
+
+      return {
+        ...prev,
+        gamification: {
+          ...prev.gamification,
+          gems: (prev.gamification.gems ?? 80) + pack.gemsIncluded,
+          streakShields:
+            (prev.gamification.streakShields ?? 1) + pack.shieldsIncluded,
+          unlockedSkins: nextUnlocked,
+          unlockedVaultIds: nextVault,
+          equippedSkinId:
+            pack.id === 'pack_founder'
+              ? 'skin_prismatic_founder'
+              : prev.gamification.equippedSkinId || 'default',
+          equippedTitleId:
+            pack.id === 'pack_founder'
+              ? 'title_founder'
+              : prev.gamification.equippedTitleId || 'title_seed',
+          isIndieFounder:
+            Boolean(prev.gamification.isIndieFounder) ||
+            pack.id === 'pack_founder',
+          supporterTier: nextTier,
+        },
+      };
+    });
+
+    setMascotJoyId(Date.now());
+    triggerCelebration(
+      pack.id === 'pack_founder'
+        ? '¡Gracias, Mecenas Fundador! 👑'
+        : `¡Gracias por apoyar este proyecto Indie! ${pack.emoji}`,
+      `Recibiste +${pack.gemsIncluded} 💎 Gemas, +${pack.shieldsIncluded} 🛡️ Escudos${
+        pack.unlocksAllSkins
+          ? ', TODOS los cosméticos del Banco y +20% XP permanente'
+          : ''
+      }.`,
+      pack.emoji,
+      pack.highlightColor,
+      true
+    );
+  };
+
+  const handleCustomTipSupport = async (usdAmount: number) => {
+    const cleanUsd = Math.max(0.5, Math.min(500, Number(usdAmount.toFixed(2))));
+    playUiTap(4);
+    const result = await triggerStoreCheckout({
+      title: `Propina Indie Libre ($${cleanUsd.toFixed(2)} USD)`,
+      usdPrice: `$${cleanUsd.toFixed(2)} USD`,
+      googlePlaySku: 'or_custom_indie_tip',
+    });
+    if (!result.success) return;
+
+    playCelebrationFanfare('goal');
+    const rewardedGems = Math.round(cleanUsd * 140);
+    const rewardedShields = Math.max(1, Math.floor(cleanUsd / 1.5));
+    const unlocksFounder = cleanUsd >= 4.99;
+    const allSkinIds = MASCOT_SKINS.map((s) => s.id);
+    const allVaultIds = [
+      ...CARD_COSMETICS.map((c) => c.id),
+      ...SOUND_PACKS.map((s) => s.id),
+      ...CARD_STYLE_VAULT.map((st) => st.id),
+      ...GUARDIAN_TITLES.map((t) => t.id),
+    ];
+
+    setState((prev) => {
+      const prevUnlocked = prev.gamification.unlockedSkins || ['default'];
+      const prevVault = prev.gamification.unlockedVaultIds || [];
+      return {
+        ...prev,
+        gamification: {
+          ...prev.gamification,
+          gems: (prev.gamification.gems ?? 80) + rewardedGems,
+          streakShields:
+            (prev.gamification.streakShields ?? 1) + rewardedShields,
+          unlockedSkins: unlocksFounder
+            ? Array.from(new Set([...prevUnlocked, ...allSkinIds]))
+            : prevUnlocked,
+          unlockedVaultIds: unlocksFounder
+            ? Array.from(new Set([...prevVault, ...allVaultIds]))
+            : prevVault,
+          isIndieFounder:
+            Boolean(prev.gamification.isIndieFounder) || unlocksFounder,
+          supporterTier:
+            unlocksFounder || prev.gamification.isIndieFounder
+              ? 'founder'
+              : 'coffee',
+        },
+      };
+    });
+
+    setMascotJoyId(Date.now());
+    triggerCelebration(
+      unlocksFounder
+        ? `¡Propina de Mecenas ($${cleanUsd.toFixed(2)} USD)! 👑`
+        : `¡Gracias por tu Propina ($${cleanUsd.toFixed(2)} USD)! 💖`,
+      `Como agradecimiento recibiste +${rewardedGems} 💎 Gemas Astrales y +${rewardedShields} 🛡️ Escudos${
+        unlocksFounder
+          ? ' + Desbloqueo Total de Mecenas Fundador'
+          : ''
+      }.`,
+      unlocksFounder ? '👑' : '💖',
+      unlocksFounder ? '#FFD54F' : '#82E59B',
+      true
     );
   };
 
@@ -863,23 +1821,27 @@ export function App() {
       obj.entries.some((e) => toLocalDateKey(e.createdAt) === todayKey)
     );
     const previewStreak = hadEntryToday ? streakDays : streakDays + 1;
-    const estimatedXp = calculateSingleEntryXp(
+    const rawEstimatedXp = calculateSingleEntryXp(
       effectiveAmount,
       currentObjective.goalAmount,
       !hadEntryToday,
       previewStreak
     );
+    const estimatedXp = Math.round(rawEstimatedXp * activeXpMultiplier);
     const projectedTotalXp = totalXp + estimatedXp;
     const willLevelUp = projectedTotalXp >= xpAtNextLevel;
     const projectedProgress = Math.min(
       1,
       Math.max(0, (projectedTotalXp - xpAtLevelStart) / xpForCurrentLevel)
     );
-    const bonusTag = !hadEntryToday
-      ? 'incluye bono diario'
-      : isAddition && previewStreak > 1
-      ? `racha x${previewStreak}d`
-      : '';
+    const bonusTag =
+      activeXpMultiplier > 1
+        ? `buff ×${activeXpMultiplier.toFixed(1)} XP`
+        : !hadEntryToday
+        ? 'incluye bono diario'
+        : isAddition && previewStreak > 1
+        ? `racha x${previewStreak}d`
+        : '';
     return {
       estimatedXp,
       willLevelUp,
@@ -947,9 +1909,22 @@ export function App() {
   };
 
   const handleCustomAmountChange = (val: string) => {
-    setCustomAmountText(val);
+    const cleaned = val.replace(/[^0-9.,]/g, '');
+    const parsed = Number(cleaned.replace(',', '.'));
+    if (!Number.isNaN(parsed) && parsed > MAX_SAFE_AMOUNT) {
+      setCustomAmountText(String(MAX_SAFE_AMOUNT));
+      setSelectedQuickAmount(null);
+      setSelectedAmount(MAX_SAFE_AMOUNT);
+      setPersistenceMessage(
+        `El monto máximo por movimiento es ${MAX_SAFE_AMOUNT.toLocaleString(
+          'es-ES'
+        )} para cuidar el diseño responsive.`
+      );
+      return;
+    }
+    setCustomAmountText(cleaned);
     setSelectedQuickAmount(null);
-    const parsed = Number(val.replace(',', '.'));
+    setPersistenceMessage('');
     if (!Number.isNaN(parsed) && parsed > 0) {
       setSelectedAmount(parsed);
     }
@@ -963,12 +1938,30 @@ export function App() {
       return;
     }
 
+    const safeSelected = clampSafeAmount(selectedAmount, 0, MAX_SAFE_AMOUNT);
+    if (safeSelected <= 0) {
+      setPersistenceMessage('Escribe un importe válido mayor que cero.');
+      return;
+    }
+
     const amount = isAddition
-      ? selectedAmount
-      : -Math.min(selectedAmount, currentObjective.currentAmount);
+      ? safeSelected
+      : -Math.min(safeSelected, Math.max(0, currentObjective.currentAmount));
 
     if (amount === 0) {
       setPersistenceMessage('No hay saldo disponible para registrar una resta.');
+      return;
+    }
+
+    if (
+      isAddition &&
+      currentObjective.currentAmount + amount > MAX_SAFE_AMOUNT * 2
+    ) {
+      setPersistenceMessage(
+        `Has alcanzado el límite seguro de saldo acumulado (${(
+          MAX_SAFE_AMOUNT * 2
+        ).toLocaleString('es-ES')}).`
+      );
       return;
     }
 
@@ -994,7 +1987,12 @@ export function App() {
       o.id === currentObjective.id
         ? {
             ...o,
-            currentAmount: o.currentAmount + amount,
+            currentAmount: clampSafeAmount(
+              o.currentAmount + amount,
+              0,
+              MAX_SAFE_AMOUNT * 2
+            ),
+            lastUsedAt: nowIso,
             entries: [
               {
                 id: crypto.randomUUID(),
@@ -1010,16 +2008,22 @@ export function App() {
     );
 
     const updatedObj = nextObjectives.find((o) => o.id === currentObjective.id)!;
-    const nextStreak = calculateCurrentStreak(nextObjectives);
-    const entryXp = calculateSingleEntryXp(
+    const nextStreak = calculateCurrentStreak(
+      nextObjectives,
+      state.gamification.streakShields || 0
+    );
+    const baseEntryXp = calculateSingleEntryXp(
       amount,
       updatedObj.goalAmount,
       !hadEntryToday,
       nextStreak
     );
+    const entryXp = Math.round(baseEntryXp * activeXpMultiplier);
+    const boostBonusXp = Math.max(0, entryXp - baseEntryXp);
     const nextGamification = {
       ...state.gamification,
       totalXp: state.gamification.totalXp + entryXp,
+      bonusXp: (state.gamification.bonusXp || 0) + boostBonusXp,
     };
     const newlyUnlocked = evaluateObjectiveAchievements(
       updatedObj,
@@ -1029,6 +2033,13 @@ export function App() {
 
     const totalGainedXp = Math.max(entryXp, nextGamification.totalXp - previousXp);
     const nextLevel = calculateLevelFromXp(nextGamification.totalXp);
+    const levelsGained = Math.max(0, nextLevel - previousLevel);
+    const earnedGems =
+      ((!hadEntryToday ? 4 : 2) +
+        newlyUnlocked.length * 15 +
+        levelsGained * 15) *
+      activeGemMultiplier;
+    nextGamification.gems = (state.gamification.gems ?? 80) + earnedGems;
     const nextTier = Math.floor((Math.min(200, Math.max(1, nextLevel)) - 1) / 10);
     const nextMascotEmoji = mascotEmojis[nextTier] || '🪐';
     const nextMascotMessage = mascotMessages[nextTier] || mascotMessages[0];
@@ -1106,7 +2117,14 @@ export function App() {
 
   const handleSelectObjective = (id: string) => {
     playUiTap(1);
-    setState((prev) => ({ ...prev, selectedObjectiveId: id }));
+    const nowIso = new Date().toISOString();
+    setState((prev) => ({
+      ...prev,
+      selectedObjectiveId: id,
+      objectives: prev.objectives.map((o) =>
+        o.id === id ? { ...o, lastUsedAt: nowIso } : o
+      ),
+    }));
     setHistoryFilter('all');
     setActiveNav('objective');
     setHighlightedSection('objective');
@@ -1117,6 +2135,7 @@ export function App() {
 
   const handleStartNewObjective = () => {
     const newId = crypto.randomUUID();
+    const nowIso = new Date().toISOString();
     const newObj: Objective = {
       id: newId,
       title: `Objetivo ${state.objectives.length + 1}`,
@@ -1136,13 +2155,15 @@ export function App() {
       accentColor: '#65DB85',
       targetDate: '',
       pledge: '',
+      createdAt: nowIso,
+      lastUsedAt: nowIso,
     };
     setPreviousObjectiveId(currentObjective.id);
     setIsDraftObjective(true);
     setHistoryFilter('all');
     setState((prev) => ({
       ...prev,
-      objectives: [...prev.objectives, newObj],
+      objectives: [newObj, ...prev.objectives],
       selectedObjectiveId: newId,
     }));
     setIsEditorOpen(true);
@@ -1170,20 +2191,71 @@ export function App() {
     setIsEditorOpen(false);
   };
 
-  const handleSaveObjectiveEditor = (input: {
-    title: string;
-    description: string;
-    goalAmount: number;
-    unitId: string;
-    customUnitLabel: string;
-    icon: string;
-    category: string;
-    accentColor: string;
-    bannerId: string;
-    targetDate: string;
-    pledge: string;
-  }) => {
+  const handleSaveObjectiveEditor = (
+    input: {
+      title: string;
+      description: string;
+      goalAmount: number;
+      unitId: string;
+      customUnitLabel: string;
+      icon: string;
+      category: string;
+      accentColor: string;
+      bannerId: string;
+      targetDate: string;
+      pledge: string;
+    },
+    saveMode: 'update_keep' | 'create_new' | 'overwrite_reset' = 'update_keep'
+  ) => {
     const wasDraft = isDraftObjective;
+    const nowIso = new Date().toISOString();
+    const safeGoalAmount = clampSafeAmount(input.goalAmount, 1, MAX_SAFE_AMOUNT);
+
+    if (!wasDraft && saveMode === 'create_new') {
+      const newId = crypto.randomUUID();
+      const newObj: Objective = {
+        id: newId,
+        title: input.title.trim(),
+        description: input.description.trim(),
+        goalAmount: safeGoalAmount,
+        currentAmount: 0,
+        unitId: input.unitId,
+        customUnitLabel:
+          input.unitId === CUSTOM_UNIT_ID ? input.customUnitLabel.trim() : '',
+        bannerId: input.bannerId || 'gradient',
+        bannerOffsetX: 0,
+        bannerOffsetY: 0,
+        isArchived: false,
+        entries: [],
+        unlockedAchievementIds: [],
+        icon: input.icon || '🎯',
+        category: input.category.trim() || 'Personal',
+        accentColor: input.accentColor || '#65DB85',
+        targetDate: input.targetDate || '',
+        pledge: input.pledge.trim(),
+        createdAt: nowIso,
+        lastUsedAt: nowIso,
+      };
+
+      setState((prev) => ({
+        ...prev,
+        objectives: [newObj, ...prev.objectives],
+        selectedObjectiveId: newId,
+      }));
+      setHistoryFilter('all');
+      setIsDraftObjective(false);
+      setPreviousObjectiveId(null);
+      setIsEditorOpen(false);
+      playCelebrationFanfare('levelUp');
+      triggerCelebration(
+        '¡Nuevo Objetivo Forjado!',
+        `Conservamos "${currentObjective.title}" intacto y creamos "${newObj.title}" listo para empezar`,
+        newObj.icon || '🚀',
+        newObj.accentColor || '#65DB85'
+      );
+      return;
+    }
+
     setState((prev) => {
       const nextObjectives = prev.objectives.map((o) =>
         o.id === currentObjective.id
@@ -1191,7 +2263,10 @@ export function App() {
               ...o,
               title: input.title.trim(),
               description: input.description.trim(),
-              goalAmount: input.goalAmount,
+              goalAmount: safeGoalAmount,
+              currentAmount:
+                saveMode === 'overwrite_reset' ? 0 : o.currentAmount,
+              entries: saveMode === 'overwrite_reset' ? [] : [...o.entries],
               unitId: input.unitId,
               customUnitLabel:
                 input.unitId === CUSTOM_UNIT_ID ? input.customUnitLabel.trim() : '',
@@ -1201,14 +2276,22 @@ export function App() {
               bannerId: input.bannerId || o.bannerId || 'gradient',
               targetDate: input.targetDate || '',
               pledge: input.pledge.trim(),
-              unlockedAchievementIds: [...o.unlockedAchievementIds],
+              createdAt: wasDraft ? nowIso : o.createdAt || nowIso,
+              lastUsedAt: nowIso,
+              unlockedAchievementIds:
+                saveMode === 'overwrite_reset'
+                  ? []
+                  : [...o.unlockedAchievementIds],
             }
           : o
       );
       const updatedObj = nextObjectives.find((o) => o.id === currentObjective.id)!;
       const nextGamification = {
         ...prev.gamification,
-        totalXp: prev.gamification.totalXp,
+        totalXp:
+          saveMode === 'overwrite_reset'
+            ? recalculateAllXp(nextObjectives, prev.gamification.bonusXp || 0)
+            : prev.gamification.totalXp,
       };
       evaluateObjectiveAchievements(updatedObj, nextObjectives, nextGamification);
       return {
@@ -1220,9 +2303,9 @@ export function App() {
     setIsDraftObjective(false);
     setPreviousObjectiveId(null);
     setIsEditorOpen(false);
-    if (wasDraft) {
+    if (wasDraft || saveMode === 'overwrite_reset') {
       triggerCelebration(
-        '¡Objetivo Forjado!',
+        wasDraft ? '¡Objetivo Forjado!' : '¡Tarjeta Reiniciada a 0!',
         `${input.icon || '🎯'} ${input.title.trim()} está listo para tu primer impulso`,
         input.icon || '🚀',
         input.accentColor || '#65DB85'
@@ -1346,12 +2429,13 @@ export function App() {
     newDescription: string,
     positiveAmount: number
   ) => {
+    const safePositive = clampSafeAmount(positiveAmount, 0.01, MAX_SAFE_AMOUNT);
     setState((prev) => {
       const entry = currentObjective.entries.find((e) => e.id === entryId);
       if (!entry) return prev;
 
       const sign = entry.amount < 0 ? -1 : 1;
-      const updatedAmount = positiveAmount * sign;
+      const updatedAmount = safePositive * sign;
       const diff = updatedAmount - entry.amount;
 
       const nextObjectives = prev.objectives.map((o) =>
@@ -1574,8 +2658,9 @@ export function App() {
       {celebration && (
         <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-auto bg-black/40 backdrop-blur-[3px] p-4">
           <div className="w-full max-w-[300px] rounded-[24px] border-2 border-[#806F62] bg-[#1C1C2B]/95 px-5 py-5 shadow-2xl flex flex-col items-center text-center space-y-2.5 animate-in fade-in zoom-in-95 duration-200">
-            <div className="px-2.5 py-0.5 rounded-full bg-[#29233E] border border-[#5B4588]/60 text-[9px] font-extrabold tracking-widest uppercase text-[#C7A4FF]">
-              🎯 OBJECTIVE REACHER
+            <div className="px-2.5 py-0.5 rounded-full bg-[#29233E] border border-[#5B4588]/60 text-[9px] font-extrabold tracking-widest uppercase text-[#C7A4FF] inline-flex items-center gap-1">
+              <span className="leading-none">🎯</span>
+              <span>OBJECTIVE REACHER</span>
             </div>
             <div className="text-[54px] leading-none">{celebration.emoji}</div>
             <div
@@ -1696,6 +2781,11 @@ export function App() {
                   action: () => highlightSection('achievements', achievementsRef),
                 },
                 {
+                  key: 'indie_shop',
+                  label: `💎   Skins, Buffs & Indie (${gems})`,
+                  action: () => openIndieShop('skins'),
+                },
+                {
                   key: 'settings',
                   label: '⚙   Ajustes',
                   action: () => highlightSection('settings', settingsRef),
@@ -1719,9 +2809,40 @@ export function App() {
             </nav>
           </div>
 
-          <div className="rounded-[14px] border border-[#343046] bg-[#211F30] p-3 space-y-1 mt-4 shrink-0">
-            <div className="text-[13px] text-[#FFC45D]">🔥</div>
-            <div className="text-[12px] text-[#E4DFED]">{streakText}</div>
+          <div className="space-y-2.5 mt-4 shrink-0">
+            <div className="rounded-[14px] border border-[#343046] bg-[#211F30] p-3 space-y-1">
+              <div className="flex items-center justify-between text-[12px]">
+                <span className="text-[#FFC45D] font-bold">🔥 Racha activa</span>
+                <span className="text-[11px] text-[#82E59B] font-mono-tabular">
+                  🛡️ {streakShields} {streakShields === 1 ? 'escudo' : 'escudos'}
+                </span>
+              </div>
+              <div className="text-[12px] text-[#E4DFED]">{streakText}</div>
+            </div>
+
+            {/* Indie Developer Empathy Card in Sidebar */}
+            <button
+              type="button"
+              onClick={() => openIndieShop('support')}
+              className="w-full text-left rounded-[14px] border border-[#4D3B72] bg-gradient-to-br from-[#271F3D] to-[#1B172B] p-3 space-y-1.5 hover:border-[#B58BFF] transition group"
+            >
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#FFD54F]">
+                  {isIndieFounder
+                    ? '👑 MECENAS FUNDADOR'
+                    : supporterTier === 'coffee'
+                    ? '☕ SUPPORTER INDIE'
+                    : '💖 PROYECTO 100% INDIE'}
+                </span>
+                <span className="text-[11px] font-mono-tabular font-bold text-[#9AF0AE]">
+                  💎 {gems}
+                </span>
+              </div>
+              <div className="text-[11px] text-[#E6D9FF] leading-snug">
+                Creado por 1 dev independiente · <strong>0% anuncios</strong>.
+                Explora Skins, Buffs y cómo apoyar.
+              </div>
+            </button>
           </div>
         </aside>
 
@@ -1743,25 +2864,41 @@ export function App() {
               </button>
 
               <div className="min-w-0 flex-1">
-                {/* Flagship Brand Crest — Always visible in Portrait & Landscape */}
-                <div className="flex items-center gap-1.5">
-                  <span className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-extrabold uppercase tracking-[0.12em] text-transparent bg-clip-text bg-gradient-to-r from-[#D8C5FF] via-[#B58BFF] to-[#82E59B]">
-                    🎯 OBJECTIVE REACHER
+                {/* Flagship Brand Crest — Emoji separated from bg-clip-text so it always renders its real vibrant colors */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-extrabold uppercase tracking-[0.12em]">
+                    <span className="text-[12px] sm:text-[13px] leading-none drop-shadow-[0_0_6px_rgba(255,100,120,0.45)]">
+                      🎯
+                    </span>
+                    <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#D8C5FF] via-[#B58BFF] to-[#82E59B]">
+                      OBJECTIVE REACHER
+                    </span>
                   </span>
-                  <span className="hidden sm:inline-block text-[10px] text-[#6E6885]">
-                    •
-                  </span>
-                  <span className="hidden sm:inline-block text-[10px] font-semibold text-[#9E97B0]">
-                    Santuario de Metas
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => openIndieShop('cards_audio')}
+                    style={{
+                      color: equippedGuardianTitle.color,
+                      borderColor: `${equippedGuardianTitle.color}55`,
+                    }}
+                    className="px-1.5 py-0.2 rounded-full bg-[#1C192B] border text-[9px] font-extrabold hover:brightness-110 transition"
+                    title="Cambiar Título de Guardián en el Banco del Santuario"
+                  >
+                    {equippedGuardianTitle.emoji} {equippedGuardianTitle.title}
+                  </button>
+                  {isIndieFounder && (
+                    <span className="px-1.5 py-0.2 rounded-full bg-[#3A2E14] border border-[#FFD54F]/60 text-[9px] font-extrabold text-[#FFD54F]">
+                      👑 MECENAS
+                    </span>
+                  )}
                 </div>
 
-                {/* Active Objective Title — Full wrap on Portrait so it never cuts with (...) */}
+                {/* Active Objective Title — Full wrap on Portrait so it never cuts with (...) + Copyable */}
                 <div className="flex items-center gap-1.5 min-w-0">
                   <span className="text-[16px] sm:text-[19px] shrink-0 leading-none">
                     {currentIcon}
                   </span>
-                  <h1 className="text-[14px] sm:text-[17px] font-bold text-[#F4F1FF] leading-snug break-words">
+                  <h1 className="text-[14px] sm:text-[17px] font-bold text-[#F4F1FF] leading-snug break-words select-copyable">
                     {currentObjective.title || 'Objetivo Actual'}
                   </h1>
                 </div>
@@ -1769,6 +2906,48 @@ export function App() {
             </div>
 
             <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+              {/* Indie Sanctuary Gems & Skins/Buffs Store Button */}
+              <button
+                onClick={() => openIndieShop('skins')}
+                title="Abrir Santuario Indie: Skins, Buffs y Apoyo al Creador (0% anuncios)"
+                className="h-[36px] sm:h-[42px] px-2.5 sm:px-3 rounded-[11px] bg-gradient-to-r from-[#2B2144] to-[#212B38] border border-[#65499C] hover:border-[#B58BFF] text-[#F4F1FF] text-[11px] sm:text-[12px] font-extrabold flex items-center gap-1.5 transition shrink-0 shadow-[0_2px_10px_rgba(140,92,224,0.25)] active:scale-95"
+              >
+                <span>💎</span>
+                <span className="font-mono-tabular text-[#9AF0AE]">{gems}</span>
+                <span className="hidden md:inline text-[10px] font-bold text-[#D8C5FF]">
+                  · Skins & Buffs
+                </span>
+              </button>
+
+              {/* Procedural Background Music Toggle Button */}
+              <button
+                onClick={toggleAmbientMusic}
+                aria-label={
+                  sensoryPrefs.musicEnabled
+                    ? 'Desactivar música ambiental procedural'
+                    : 'Activar música ambiental procedural'
+                }
+                title={
+                  sensoryPrefs.musicEnabled
+                    ? `Música ambiental activa (${getAmbientMusicStyleName(
+                        currentObjective.accentColor
+                      )}) · Toca para apagar`
+                    : `Activar música ambiental procedural adaptada a tu objetivo (${getAmbientMusicStyleName(
+                        currentObjective.accentColor
+                      )})`
+                }
+                className={`h-[36px] sm:h-[42px] px-2 sm:px-2.5 rounded-[11px] text-[14px] sm:text-[15px] flex items-center justify-center gap-1 transition shrink-0 border ${
+                  sensoryPrefs.musicEnabled
+                    ? 'bg-gradient-to-r from-[#2D2149] to-[#1D352E] border-[#82E59B]/60 text-[#9AF0AE] shadow-[0_0_12px_rgba(130,229,155,0.25)]'
+                    : 'bg-[#1A1928] border-[#29283C] text-[#7D7894] hover:bg-[#242238] hover:text-[#D9C9FF]'
+                }`}
+              >
+                <span>🎵</span>
+                <span className="hidden xl:inline text-[10px] font-bold">
+                  {sensoryPrefs.musicEnabled ? 'Ambient ON' : 'Música'}
+                </span>
+              </button>
+
               <button
                 onClick={toggleSoundAndHaptics}
                 aria-label={
@@ -1778,7 +2957,7 @@ export function App() {
                 }
                 title={
                   sensoryPrefs.soundEnabled
-                    ? 'Sonido sintetizado y vibración activos (toca para silenciar)'
+                    ? 'Efectos de sonido y vibración activos (toca para silenciar)'
                     : 'Sonido y vibración en silencio (toca para activar)'
                 }
                 className={`w-[36px] h-[36px] sm:w-[42px] sm:h-[42px] rounded-[11px] text-[15px] sm:text-[17px] flex items-center justify-center transition shrink-0 border ${
@@ -1821,7 +3000,10 @@ export function App() {
             {activeObjectives.map((obj) => {
               const isSelected = obj.id === currentObjective.id;
               const tabIcon = obj.icon || '🎯';
-              const tabAccent = obj.accentColor || '#65DB85';
+              const tabTheme =
+                OBJECTIVE_ACCENT_THEMES.find((t) => t.id === obj.accentColor) ||
+                OBJECTIVE_ACCENT_THEMES[0];
+              const tabAccent = tabTheme.primary;
               const objProg =
                 obj.goalAmount > 0
                   ? Math.min(100, Math.floor((obj.currentAmount / obj.goalAmount) * 100))
@@ -1834,13 +3016,14 @@ export function App() {
                     isSelected
                       ? {
                           borderColor: tabAccent,
-                          boxShadow: `0 4px 14px -4px ${tabAccent}55`,
+                          backgroundColor: tabTheme.surfaceDark,
+                          boxShadow: `0 4px 14px -4px ${tabTheme.glow}`,
                         }
                       : undefined
                   }
                   className={`px-3.5 py-2 rounded-[13px] text-xs sm:text-sm font-medium whitespace-nowrap transition flex items-center gap-2 border ${
                     isSelected
-                      ? 'bg-[#2E2348] text-white'
+                      ? 'text-white'
                       : 'bg-[#1F1E2E] border-[#2C2A40] text-[#C9C2D8] hover:bg-[#29263D]'
                   }`}
                 >
@@ -1883,7 +3066,12 @@ export function App() {
               </button>
               <button
                 onClick={handleStartNewObjective}
-                className="px-3.5 py-1.5 rounded-[11px] bg-gradient-to-r from-[#7549B8] to-[#9B6BFF] text-white text-[12px] font-bold hover:brightness-110 active:scale-95 transition shadow-[0_4px_14px_rgba(117,73,184,0.4)] flex items-center gap-1"
+                style={{
+                  background: `linear-gradient(90deg, ${currentAccentTheme.secondary}, ${currentAccentTheme.primary})`,
+                  color: currentAccentTheme.buttonText,
+                  boxShadow: `0 4px 14px -2px ${currentAccentTheme.glow}`,
+                }}
+                className="px-3.5 py-1.5 rounded-[11px] text-[12px] font-extrabold hover:brightness-110 active:scale-95 transition flex items-center gap-1"
               >
                 <span>✨</span>
                 <span>Forjar objetivo</span>
@@ -1891,19 +3079,28 @@ export function App() {
             </div>
           </div>
 
-          {/* Hero Objective Section (Upgraded Customizable Sanctuary Card) */}
+          {/* Hero Objective Section (Upgraded Customizable Sanctuary Card with Full Chromatic Harmony & Equipped Frame FX) */}
           <div
             ref={objectiveRef}
             style={{
               background: `linear-gradient(135deg, ${heroPreset.startColor}, ${heroPreset.endColor})`,
               borderColor:
                 highlightedSection === 'objective'
-                  ? '#C7A4FF'
-                  : `${currentAccentTheme.primary}55`,
-              boxShadow: `0 12px 34px -8px rgba(8, 7, 16, 0.7), 0 0 24px -6px ${currentAccentTheme.glow}`,
+                  ? currentAccentTheme.primary
+                  : equippedCardCosmetic.id !== 'frame_default'
+                  ? equippedCardCosmetic.borderColor
+                  : `${currentAccentTheme.primary}66`,
+              boxShadow:
+                equippedCardCosmetic.id !== 'frame_default'
+                  ? `0 12px 34px -8px rgba(8, 7, 16, 0.75), 0 0 28px -3px ${equippedCardCosmetic.glowColor}`
+                  : `0 12px 34px -8px rgba(8, 7, 16, 0.7), 0 0 26px -5px ${currentAccentTheme.glow}`,
             }}
-            className={`relative min-h-[385px] rounded-[24px] overflow-hidden transition-all border ${
-              highlightedSection === 'objective' ? 'border-[3px]' : ''
+            className={`relative min-h-[385px] rounded-[24px] overflow-hidden transition-all ${
+              highlightedSection === 'objective'
+                ? 'border-[3px]'
+                : equippedCardCosmetic.id !== 'frame_default'
+                ? 'border-2'
+                : 'border'
             }`}
           >
             {bannerImageSrc && (
@@ -1918,11 +3115,24 @@ export function App() {
                 className="absolute inset-0 w-full h-full object-cover opacity-70 pointer-events-none select-none transition-all duration-500"
               />
             )}
-            {/* Multi-layer atmospheric vignette for crisp legibility */}
-            <div className="absolute inset-0 bg-gradient-to-b from-[#131122]/75 via-[#181528]/55 to-[#12101F]/90 pointer-events-none" />
+            {/* Multi-layer atmospheric vignette harmonized with the chosen Accent Theme */}
+            <div
+              style={{ background: currentAccentTheme.vignetteGradient }}
+              className="absolute inset-0 pointer-events-none transition-all duration-500"
+            />
+            {equippedCardCosmetic.id !== 'frame_default' && (
+              <div
+                style={{ background: equippedCardCosmetic.overlayGradient }}
+                className="absolute inset-0 pointer-events-none transition-all duration-500"
+              />
+            )}
             <div
               style={{ backgroundColor: currentAccentTheme.primary }}
-              className="pointer-events-none absolute -top-16 -right-16 w-48 h-48 rounded-full opacity-15 blur-3xl"
+              className="pointer-events-none absolute -top-16 -right-16 w-52 h-52 rounded-full opacity-20 blur-3xl transition-colors duration-500"
+            />
+            <div
+              style={{ backgroundColor: currentAccentTheme.secondary }}
+              className="pointer-events-none absolute -bottom-16 -left-16 w-48 h-48 rounded-full opacity-15 blur-3xl transition-colors duration-500"
             />
 
             <div className="relative z-10 h-full p-4 sm:p-[20px] flex flex-col justify-between gap-3.5">
@@ -1934,9 +3144,9 @@ export function App() {
                     onClick={() => setIsEditorOpen(true)}
                     title="Cambiar icono y estilo del objetivo"
                     style={{
-                      borderColor: `${currentAccentTheme.primary}80`,
-                      backgroundColor: 'rgba(20, 18, 34, 0.65)',
-                      boxShadow: `0 0 16px ${currentAccentTheme.softBg}`,
+                      borderColor: `${currentAccentTheme.primary}88`,
+                      backgroundColor: currentAccentTheme.surfaceDark,
+                      boxShadow: `0 0 18px ${currentAccentTheme.softBg}`,
                     }}
                     className="w-12 h-12 rounded-[16px] border backdrop-blur-md flex items-center justify-center text-[25px] shrink-0 hover:scale-105 active:scale-95 transition"
                   >
@@ -1949,7 +3159,7 @@ export function App() {
                         style={{
                           color: currentAccentTheme.primary,
                           backgroundColor: currentAccentTheme.softBg,
-                          borderColor: `${currentAccentTheme.primary}50`,
+                          borderColor: `${currentAccentTheme.primary}55`,
                         }}
                         className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider border backdrop-blur-sm"
                       >
@@ -1958,12 +3168,21 @@ export function App() {
 
                       {objectiveInsights.daysLeft !== null && (
                         <span
+                          style={
+                            objectiveInsights.daysLeft > 7
+                              ? {
+                                  backgroundColor: currentAccentTheme.surfaceDark,
+                                  borderColor: `${currentAccentTheme.primary}38`,
+                                  color: currentAccentTheme.textSoft,
+                                }
+                              : undefined
+                          }
                           className={`px-2 py-0.5 rounded-full text-[10px] font-bold border backdrop-blur-sm ${
                             objectiveInsights.daysLeft < 0
                               ? 'bg-[#4A202A]/80 border-[#F27783]/50 text-[#FFD1D7]'
                               : objectiveInsights.daysLeft <= 7
                               ? 'bg-[#443318]/80 border-[#FFD54F]/60 text-[#FFE082]'
-                              : 'bg-black/35 border-white/15 text-[#E6E0F2]'
+                              : ''
                           }`}
                         >
                           {objectiveInsights.daysLeft < 0
@@ -1975,17 +3194,21 @@ export function App() {
                       )}
                     </div>
 
-                    <h2 className="text-[19px] sm:text-[23px] font-extrabold text-white leading-snug break-words drop-shadow-sm">
+                    <h2 className="text-[19px] sm:text-[23px] font-extrabold text-white leading-snug break-words drop-shadow-sm select-copyable">
                       {currentObjective.title}
                     </h2>
                     {currentObjective.description ? (
-                      <p className="text-[12px] sm:text-[13px] text-[#DFD7F2] leading-snug break-words">
+                      <p
+                        style={{ color: currentAccentTheme.textSoft }}
+                        className="text-[12px] sm:text-[13px] leading-snug break-words select-copyable"
+                      >
                         {currentObjective.description}
                       </p>
                     ) : (
                       <button
                         onClick={() => setIsEditorOpen(true)}
-                        className="text-[11px] text-[#C7A4FF]/90 hover:text-white hover:underline text-left"
+                        style={{ color: currentAccentTheme.primary }}
+                        className="text-[11px] font-semibold hover:underline text-left"
                       >
                         ＋ Añadir propósito o fecha límite…
                       </button>
@@ -1996,9 +3219,32 @@ export function App() {
                 {/* Floating Glass Customization Buttons */}
                 <div className="flex items-center gap-1.5 shrink-0">
                   <button
+                    onClick={() => openIndieShop('cards_audio')}
+                    title={`Marco activo: ${equippedCardCosmetic.name} (toca para explorar 48 marcos y 30 sonidos)`}
+                    style={{
+                      backgroundColor: currentAccentTheme.surfaceDark,
+                      borderColor:
+                        equippedCardCosmetic.id !== 'frame_default'
+                          ? equippedCardCosmetic.borderColor
+                          : `${currentAccentTheme.primary}40`,
+                      color: currentAccentTheme.textSoft,
+                    }}
+                    className="px-2.5 py-2 rounded-[12px] hover:brightness-110 border backdrop-blur-md text-[11px] font-semibold transition flex items-center gap-1"
+                  >
+                    <span>
+                      {equippedCardCosmetic.cornerCrest || '✨'}
+                    </span>
+                    <span className="hidden sm:inline">Marcos & FX</span>
+                  </button>
+                  <button
                     onClick={() => setIsEditorOpen(true)}
                     title="Personalizar objetivo"
-                    className="px-2.5 py-2 rounded-[12px] bg-black/40 hover:bg-black/60 border border-white/15 backdrop-blur-md text-white text-[11px] font-semibold transition flex items-center gap-1"
+                    style={{
+                      backgroundColor: currentAccentTheme.surfaceDark,
+                      borderColor: `${currentAccentTheme.primary}40`,
+                      color: currentAccentTheme.textSoft,
+                    }}
+                    className="px-2.5 py-2 rounded-[12px] hover:brightness-110 border backdrop-blur-md text-[11px] font-semibold transition flex items-center gap-1"
                   >
                     <span>🎨</span>
                     <span className="hidden sm:inline">Personalizar</span>
@@ -2006,7 +3252,12 @@ export function App() {
                   <button
                     onClick={() => setIsBannerPickerOpen(true)}
                     title="Cambiar arte o foto de fondo"
-                    className="px-2.5 py-2 rounded-[12px] bg-black/40 hover:bg-black/60 border border-white/15 backdrop-blur-md text-white text-[11px] font-semibold transition flex items-center gap-1"
+                    style={{
+                      backgroundColor: currentAccentTheme.surfaceDark,
+                      borderColor: `${currentAccentTheme.primary}40`,
+                      color: currentAccentTheme.textSoft,
+                    }}
+                    className="px-2.5 py-2 rounded-[12px] hover:brightness-110 border backdrop-blur-md text-[11px] font-semibold transition flex items-center gap-1"
                   >
                     <span>▧</span>
                     <span className="hidden sm:inline">Fondo</span>
@@ -2017,14 +3268,20 @@ export function App() {
               {/* Middle Row: Frosted Glass Stat Pods + Energy Ring with Live Projection */}
               <div className="grid grid-cols-[1fr_92px_1fr] sm:grid-cols-[1fr_104px_1fr] items-center gap-2 sm:gap-3 my-1">
                 {/* Saved Pod */}
-                <div className="p-2.5 sm:p-3 rounded-[16px] bg-black/30 backdrop-blur-md border border-white/10 text-center space-y-0.5">
+                <div
+                  style={{
+                    backgroundColor: currentAccentTheme.surfaceDark,
+                    borderColor: `${currentAccentTheme.primary}33`,
+                  }}
+                  className="p-2.5 sm:p-3 rounded-[16px] backdrop-blur-md border text-center space-y-0.5"
+                >
                   <div
                     style={{ color: currentAccentTheme.primary }}
                     className="text-[10px] sm:text-[11px] font-extrabold tracking-wider uppercase"
                   >
                     LOGRADO
                   </div>
-                  <div className="text-[18px] sm:text-[22px] font-extrabold text-white break-words tabular-nums leading-tight">
+                  <div className="text-[18px] sm:text-[22px] font-extrabold text-white break-words tabular-nums leading-tight select-copyable">
                     {formatObjectiveAmount(
                       currentObjective.currentAmount,
                       currentObjective
@@ -2032,8 +3289,13 @@ export function App() {
                   </div>
                   {hasValidSelectedAmount && (
                     <div
+                      style={
+                        isAddition
+                          ? { color: currentAccentTheme.primary }
+                          : undefined
+                      }
                       className={`text-[10px] font-mono-tabular font-bold ${
-                        isAddition ? 'text-[#82E59B]' : 'text-[#FFD1D7]'
+                        isAddition ? '' : 'text-[#FFD1D7]'
                       }`}
                     >
                       {isAddition ? '▲ +' : '▼ −'}
@@ -2046,7 +3308,7 @@ export function App() {
                 <div className="w-[86px] h-[86px] sm:w-[96px] sm:h-[96px] mx-auto relative flex items-center justify-center">
                   <div
                     style={{ backgroundColor: currentAccentTheme.primary }}
-                    className="pointer-events-none absolute inset-2 rounded-full opacity-15 blur-md"
+                    className="pointer-events-none absolute inset-2 rounded-full opacity-20 blur-md"
                   />
                   <svg
                     className="w-full h-full -rotate-90"
@@ -2060,8 +3322,8 @@ export function App() {
                       cx="40"
                       cy="40"
                       r="33"
-                      fill="rgba(16, 14, 28, 0.55)"
-                      stroke="rgba(255, 255, 255, 0.14)"
+                      fill={currentAccentTheme.surfaceDark}
+                      stroke={`${currentAccentTheme.primary}30`}
                       strokeWidth="6"
                     />
                     {/* Ghost Projected Progress Arc */}
@@ -2102,24 +3364,39 @@ export function App() {
                     <span className="text-[19px] sm:text-[21px] font-extrabold text-white tabular-nums leading-none">
                       {progressText}
                     </span>
-                    <span className="text-[9px] font-bold text-[#D8C5FF] mt-0.5">
+                    <span
+                      style={{ color: currentAccentTheme.textSoft }}
+                      className="text-[9px] font-bold mt-0.5"
+                    >
                       {progress >= 1 ? '¡LOGRADO!' : 'AVANCE'}
                     </span>
                   </div>
                 </div>
 
                 {/* Goal Pod */}
-                <div className="p-2.5 sm:p-3 rounded-[16px] bg-black/30 backdrop-blur-md border border-white/10 text-center space-y-0.5">
-                  <div className="text-[10px] sm:text-[11px] font-extrabold text-[#DEC2FF] tracking-wider uppercase">
+                <div
+                  style={{
+                    backgroundColor: currentAccentTheme.surfaceDark,
+                    borderColor: `${currentAccentTheme.primary}33`,
+                  }}
+                  className="p-2.5 sm:p-3 rounded-[16px] backdrop-blur-md border text-center space-y-0.5"
+                >
+                  <div
+                    style={{ color: currentAccentTheme.textSoft }}
+                    className="text-[10px] sm:text-[11px] font-extrabold tracking-wider uppercase"
+                  >
                     META FINAL
                   </div>
-                  <div className="text-[18px] sm:text-[22px] font-extrabold text-white break-words tabular-nums leading-tight">
+                  <div className="text-[18px] sm:text-[22px] font-extrabold text-white break-words tabular-nums leading-tight select-copyable">
                     {formatObjectiveAmount(
                       currentObjective.goalAmount,
                       currentObjective
                     )}
                   </div>
-                  <div className="text-[10px] text-[#C8C0DC] leading-tight break-words">
+                  <div
+                    style={{ color: currentAccentTheme.textMuted }}
+                    className="text-[10px] leading-tight break-words"
+                  >
                     {objectiveInsights.remaining > 0
                       ? `Faltan ${formatObjectiveAmount(
                           objectiveInsights.remaining,
@@ -2135,7 +3412,13 @@ export function App() {
                 {/* Progress Bar with 4 Milestone Checkpoints */}
                 <div className="space-y-1">
                   <div className="relative pt-1 pb-1">
-                    <div className="w-full h-[13px] rounded-full bg-black/45 border border-white/15 overflow-hidden relative">
+                    <div
+                      style={{
+                        backgroundColor: currentAccentTheme.surfaceDark,
+                        borderColor: `${currentAccentTheme.primary}35`,
+                      }}
+                      className="w-full h-[13px] rounded-full border overflow-hidden relative"
+                    >
                       {/* Projected preview bar */}
                       {projectedObjectiveProgress > progress && (
                         <div
@@ -2169,10 +3452,10 @@ export function App() {
                             left: `${m * 100}%`,
                             borderColor: reached
                               ? currentAccentTheme.primary
-                              : 'rgba(255,255,255,0.25)',
+                              : `${currentAccentTheme.primary}45`,
                             backgroundColor: reached
                               ? currentAccentTheme.secondary
-                              : '#1B182B',
+                              : currentAccentTheme.surfaceDark,
                           }}
                           title={`Hito ${pctLabel}: ${formatObjectiveAmount(
                             currentObjective.goalAmount * m,
@@ -2180,7 +3463,7 @@ export function App() {
                           )}`}
                           className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-4 h-4 rounded-full border-2 flex items-center justify-center text-[8px] font-bold transition-all ${
                             reached
-                              ? 'text-[#11121C] scale-110 shadow-[0_0_8px_rgba(255,255,255,0.5)]'
+                              ? 'text-white scale-110 shadow-[0_0_8px_rgba(255,255,255,0.5)]'
                               : 'text-[#9E97B0]'
                           }`}
                         >
@@ -2191,7 +3474,10 @@ export function App() {
                   </div>
 
                   {/* Milestone Sub-info — Portrait-friendly wrapping */}
-                  <div className="flex items-center justify-between gap-2 flex-wrap text-[11px] text-[#EAE4F8] px-0.5">
+                  <div
+                    style={{ color: currentAccentTheme.textSoft }}
+                    className="flex items-center justify-between gap-2 flex-wrap text-[11px] px-0.5"
+                  >
                     <span className="font-medium leading-snug">
                       {objectiveInsights.nextMilestonePct !== null
                         ? `Próximo hito (${objectiveInsights.nextMilestonePct}%): a ${formatObjectiveAmount(
@@ -2200,7 +3486,10 @@ export function App() {
                           )}`
                         : '🏆 ¡Todos los hitos de este objetivo completados!'}
                     </span>
-                    <span className="text-[10px] text-[#D8D1E5] font-mono-tabular shrink-0">
+                    <span
+                      style={{ color: currentAccentTheme.textMuted }}
+                      className="text-[10px] font-mono-tabular shrink-0"
+                    >
                       {currentObjective.entries.length}{' '}
                       {currentObjective.entries.length === 1
                         ? 'registro'
@@ -2210,8 +3499,17 @@ export function App() {
                 </div>
 
                 {/* Smart Pace & Personal Pledge Banner — Portrait-friendly full text */}
-                <div className="px-3 py-2 rounded-[13px] bg-black/35 backdrop-blur-md border border-white/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5">
-                  <div className="flex items-start sm:items-center gap-1.5 text-[11px] text-[#F0EAF8] min-w-0 leading-snug">
+                <div
+                  style={{
+                    backgroundColor: currentAccentTheme.surfaceDark,
+                    borderColor: `${currentAccentTheme.primary}35`,
+                  }}
+                  className="px-3 py-2 rounded-[13px] backdrop-blur-md border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5"
+                >
+                  <div
+                    style={{ color: currentAccentTheme.textSoft }}
+                    className="flex items-start sm:items-center gap-1.5 text-[11px] min-w-0 leading-snug"
+                  >
                     <span className="shrink-0">⚡</span>
                     <span className="break-words">
                       {objectiveInsights.dailyPaceNeeded !== null
@@ -2239,7 +3537,8 @@ export function App() {
                   ) : (
                     <button
                       onClick={() => setIsEditorOpen(true)}
-                      className="text-[10px] font-bold text-[#DEC2FF] hover:text-white underline text-left sm:text-right shrink-0"
+                      style={{ color: currentAccentTheme.primary }}
+                      className="text-[10px] font-bold hover:underline text-left sm:text-right shrink-0"
                     >
                       ＋ Definir mi premio al lograrlo
                     </button>
@@ -2349,9 +3648,19 @@ export function App() {
                     key={amt}
                     type="button"
                     onClick={() => handleSelectQuickAmount(amt)}
+                    style={
+                      isSelected
+                        ? {
+                            backgroundColor: currentAccentTheme.surfaceDark,
+                            borderColor: currentAccentTheme.primary,
+                            color: '#FFFFFF',
+                            boxShadow: `0 0 12px ${currentAccentTheme.glow}`,
+                          }
+                        : undefined
+                    }
                     className={`h-[40px] px-1.5 rounded-[11px] text-[12px] font-mono-tabular font-bold truncate border transition-all active:scale-95 ${
                       isSelected
-                        ? 'bg-[#2E2249] border-[#B58BFF] text-white shadow-[0_0_12px_rgba(140,92,224,0.3)]'
+                        ? ''
                         : 'bg-[#141320]/90 border-[#2B273D] text-[#C9C2D8] hover:border-[#4A4068] hover:bg-[#1B192B]'
                     }`}
                   >
@@ -2397,10 +3706,19 @@ export function App() {
                 type="button"
                 onClick={handleAddEntry}
                 disabled={!hasValidSelectedAmount}
-                className={`h-[44px] px-4 rounded-[12px] text-white font-bold text-xs sm:text-[13px] hover:brightness-110 active:scale-95 disabled:opacity-50 transition-all shrink-0 flex items-center justify-center gap-1.5 ${
+                style={
                   isAddition
-                    ? 'bg-gradient-to-r from-[#7549B8] to-[#9B6BFF] shadow-[0_4px_14px_rgba(117,73,184,0.4)]'
-                    : 'bg-gradient-to-r from-[#8E354A] to-[#B5435E] shadow-[0_4px_14px_rgba(181,67,94,0.35)]'
+                    ? {
+                        background: `linear-gradient(90deg, ${currentAccentTheme.secondary}, ${currentAccentTheme.primary})`,
+                        color: currentAccentTheme.buttonText,
+                        boxShadow: `0 4px 14px -2px ${currentAccentTheme.glow}`,
+                      }
+                    : undefined
+                }
+                className={`h-[44px] px-4 rounded-[12px] font-extrabold text-xs sm:text-[13px] hover:brightness-110 active:scale-95 disabled:opacity-50 transition-all shrink-0 flex items-center justify-center gap-1.5 ${
+                  isAddition
+                    ? ''
+                    : 'bg-gradient-to-r from-[#8E354A] to-[#B5435E] text-white shadow-[0_4px_14px_rgba(181,67,94,0.35)]'
                 }`}
               >
                 <span>{isAddition ? '＋' : '−'}</span>
@@ -2576,7 +3894,11 @@ export function App() {
                         : 'animate-mascot-float'
                     }
                   >
-                    <MascotAvatarSvg level={level} size={66} />
+                    <MascotAvatarSvg
+                      level={level}
+                      size={66}
+                      skinId={equippedSkinId}
+                    />
                   </div>
                   {/* Floating heart/sparkle badge */}
                   <span
@@ -2631,21 +3953,62 @@ export function App() {
                   </div>
                 </div>
 
-                {/* Mascot Status Message + Códice Link (Portrait-First: full message without ellipsis) */}
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                {/* Mascot Status Message + Códice & Skins Links (Portrait-First: full message without ellipsis) */}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5">
                   <div className="text-[11px] text-[#C6C0D6] leading-snug break-words">
                     {mascotMessage}
                   </div>
+                  <div className="flex items-center gap-2 flex-wrap shrink-0">
+                    <button
+                      onClick={() => openIndieShop('skins')}
+                      className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-[#2A2142] border border-[#64499B] text-[#E6D9FF] hover:border-[#FFD54F] hover:text-white transition"
+                    >
+                      {equippedSkin.emoji} SKIN & BUFFS →
+                    </button>
+                    <button
+                      onClick={() => {
+                        playUiTap(3);
+                        setMascotGalleryStartLevel(level);
+                        setIsMascotGalleryOpen(true);
+                      }}
+                      className="text-[10px] font-bold text-[#C7A4FF] hover:text-white hover:underline transition"
+                    >
+                      CÓDICE (1–200) →
+                    </button>
+                  </div>
+                </div>
+
+                {/* Active Buffs & Skin Bar inside Mascot Sanctuary */}
+                <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
                   <button
-                    onClick={() => {
-                      playUiTap(3);
-                      setMascotGalleryStartLevel(level);
-                      setIsMascotGalleryOpen(true);
-                    }}
-                    className="text-[10px] font-bold text-[#C7A4FF] hover:text-white hover:underline transition self-start sm:self-auto shrink-0"
+                    type="button"
+                    onClick={() => openIndieShop('skins')}
+                    className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-[#1C192B] border border-[#3B3356] text-[#D8C5FF] hover:border-[#B58BFF] transition"
                   >
-                    CÓDICE (1–200) →
+                    {equippedSkin.emoji} Aura: {equippedSkin.name}
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => openIndieShop('buffs')}
+                    className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-[#18262F] border border-[#355A6E] text-[#90E0FF] hover:border-[#64D8FF] transition"
+                  >
+                    🛡️ {streakShields} {streakShields === 1 ? 'Escudo' : 'Escudos'}
+                  </button>
+                  {isXpBoostActive && (
+                    <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full bg-[#2D1F42] border border-[#B58BFF]/60 text-[#E6D9FF]">
+                      🧪 ×1.5 XP ({xpBoostRemainingText})
+                    </span>
+                  )}
+                  {isGemMagnetActive && (
+                    <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full bg-[#193026] border border-[#65DB85]/60 text-[#9AF0AE]">
+                      🧲 ×2 💎 ({gemMagnetRemainingText})
+                    </span>
+                  )}
+                  {isIndieFounder && (
+                    <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full bg-[#362B14] border border-[#FFD54F]/60 text-[#FFD54F]">
+                      👑 +20% XP Mecenas
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -2756,28 +4119,208 @@ export function App() {
                   </div>
                 </div>
 
-                {/* Toggle Daily Quests Button */}
-                <button
-                  onClick={() => setIsDailyRitualOpen((prev) => !prev)}
-                  className={`px-2.5 py-1 rounded-[9px] text-[10px] font-bold border flex items-center gap-1.5 transition ${
-                    unclaimedReadyQuestsCount > 0 || canClaimAllDailyBonus
-                      ? 'bg-[#35294F] border-[#FFD54F] text-[#FFE082] shadow-[0_0_10px_rgba(255,213,79,0.25)]'
-                      : 'bg-[#252136] border-[#3D3559] text-[#D8C5FF] hover:bg-[#2F2A44]'
-                  }`}
-                >
-                  <span>
-                    🎯 Misiones hoy ({completedQuestsCount}/{dailyQuests.length})
-                  </span>
-                  {(unclaimedReadyQuestsCount > 0 || canClaimAllDailyBonus) && (
-                    <span className="px-1.5 py-0.2 rounded-full bg-[#FFD54F] text-[#1A162B] text-[9px] font-extrabold">
-                      ¡RECLAMAR!
+                {/* Action Buttons: ASMR Clicker + Daily Quests */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playUiTap(2);
+                      setIsAsmrSanctuaryOpen((prev) => !prev);
+                    }}
+                    className={`px-2.5 py-1 rounded-[9px] text-[10px] font-bold border flex items-center gap-1.5 transition ${
+                      isAsmrSanctuaryOpen
+                        ? 'bg-gradient-to-r from-[#1F3538] to-[#292142] border-[#64D8FF] text-[#E0F7FA] shadow-[0_0_12px_rgba(100,216,255,0.25)]'
+                        : 'bg-[#1E1C30] border-[#3E355B] text-[#90E0FF] hover:border-[#64D8FF]'
+                    }`}
+                  >
+                    <span>🫧 Rincón ASMR & Clicker</span>
+                    <span className="px-1.5 py-0.2 rounded-full bg-[#13252C] text-[#64D8FF] text-[9px] font-mono-tabular font-extrabold">
+                      {asmrCycleProgress}/25
                     </span>
-                  )}
-                  <span className="text-[9px] opacity-80">
-                    {isDailyRitualOpen ? '▲' : '▼'}
-                  </span>
-                </button>
+                    <span className="text-[9px] opacity-80">
+                      {isAsmrSanctuaryOpen ? '▲' : '▼'}
+                    </span>
+                  </button>
+
+                  {/* Toggle Daily Quests Button */}
+                  <button
+                    onClick={() => setIsDailyRitualOpen((prev) => !prev)}
+                    className={`px-2.5 py-1 rounded-[9px] text-[10px] font-bold border flex items-center gap-1.5 transition ${
+                      unclaimedReadyQuestsCount > 0 || canClaimAllDailyBonus
+                        ? 'bg-[#35294F] border-[#FFD54F] text-[#FFE082] shadow-[0_0_10px_rgba(255,213,79,0.25)]'
+                        : 'bg-[#252136] border-[#3D3559] text-[#D8C5FF] hover:bg-[#2F2A44]'
+                    }`}
+                  >
+                    <span>
+                      🎯 Misiones hoy ({completedQuestsCount}/{dailyQuests.length})
+                    </span>
+                    {(unclaimedReadyQuestsCount > 0 || canClaimAllDailyBonus) && (
+                      <span className="px-1.5 py-0.2 rounded-full bg-[#FFD54F] text-[#1A162B] text-[9px] font-extrabold">
+                        ¡RECLAMAR!
+                      </span>
+                    )}
+                    <span className="text-[9px] opacity-80">
+                      {isDailyRitualOpen ? '▲' : '▼'}
+                    </span>
+                  </button>
+                </div>
               </div>
+
+              {/* Expandable ASMR Clicker Mini-Game Sanctuary */}
+              {isAsmrSanctuaryOpen && (
+                <div className="p-3 sm:p-3.5 rounded-[16px] bg-gradient-to-b from-[#16192B] to-[#12111D] border border-[#3B4B6E] space-y-3 relative overflow-hidden animate-in fade-in duration-150">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#64D8FF]">
+                          🫧 RINCÓN ASMR & CLICKER DEL GUARDIÁN
+                        </span>
+                        <span className="px-2 py-0.2 rounded-full bg-[#1C2A38] border border-[#64D8FF]/40 text-[9px] font-mono-tabular font-bold text-[#9AF0AE]">
+                          Toques totales: {asmrTotalTaps}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-[#B8B2C8] leading-snug mt-0.5">
+                        Toca el Orbe de Calma para escuchar texturas binaurales en vivo. Cada 25 toques (o por suerte ocasional) tu guardián descubre un tesoro.
+                      </p>
+                    </div>
+
+                    {/* Procedural Ambient Music Quick Switch inside ASMR Corner */}
+                    <button
+                      type="button"
+                      onClick={toggleAmbientMusic}
+                      className={`px-2.5 py-1.5 rounded-[10px] border text-[10px] font-extrabold shrink-0 flex items-center gap-1.5 transition ${
+                        sensoryPrefs.musicEnabled
+                          ? 'bg-[#1D352E] border-[#82E59B]/60 text-[#9AF0AE]'
+                          : 'bg-[#1E1B2E] border-[#383252] text-[#C8C2D8] hover:text-white'
+                      }`}
+                    >
+                      <span>🎵</span>
+                      <span>
+                        {sensoryPrefs.musicEnabled
+                          ? `Música: ${getAmbientMusicStyleName(
+                              currentObjective.accentColor
+                            )} (ON)`
+                          : 'Activar Música Procedural'}
+                      </span>
+                    </button>
+                  </div>
+
+                  {/* 5 ASMR Sound Texture Selector Pills */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                    {ASMR_TEXTURES.map((tex) => {
+                      const isSelected = asmrPreferredTexture === tex.id;
+                      return (
+                        <button
+                          key={tex.id}
+                          type="button"
+                          onClick={() => handleSelectAsmrTexture(tex.id)}
+                          style={
+                            isSelected
+                              ? {
+                                  borderColor: tex.accentColor,
+                                  backgroundColor: 'rgba(28, 34, 52, 0.95)',
+                                  color: '#FFFFFF',
+                                }
+                              : undefined
+                          }
+                          className={`px-2.5 py-1.5 rounded-[10px] border text-left shrink-0 transition flex items-center gap-1.5 ${
+                            isSelected
+                              ? 'shadow-sm scale-[1.02]'
+                              : 'bg-[#171625] border-[#2C2840] text-[#A8A3B8] hover:text-white'
+                          }`}
+                        >
+                          <span className="text-sm">{tex.emoji}</span>
+                          <div>
+                            <div className="text-[10px] font-bold leading-tight">
+                              {tex.name}
+                            </div>
+                            <div className="text-[8px] opacity-75 leading-tight">
+                              {tex.subtitle}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Interactive ASMR Clicker Pad + Resonance Progress */}
+                  <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] items-center gap-3 p-2.5 rounded-[14px] bg-[#11101B]/90 border border-[#29263E]">
+                    <div className="relative flex justify-center">
+                      {/* Floating ASMR Sparks */}
+                      {asmrFloatingSparks.map((sp) => (
+                        <span
+                          key={sp.id}
+                          style={{
+                            color: sp.color,
+                            transform: `translateX(${sp.xOffset}px)`,
+                          }}
+                          className="pointer-events-none absolute -top-3 z-20 text-[11px] font-extrabold drop-shadow animate-xp-float whitespace-nowrap"
+                        >
+                          {sp.text}
+                        </span>
+                      ))}
+
+                      <button
+                        type="button"
+                        onClick={handleAsmrClick}
+                        style={{
+                          borderColor: activeAsmrTextureObj.accentColor,
+                          boxShadow: `0 0 22px -4px ${activeAsmrTextureObj.accentColor}55`,
+                        }}
+                        className="w-24 h-24 sm:w-20 sm:h-20 rounded-full bg-gradient-to-br from-[#25213D] via-[#1B2838] to-[#141A29] border-2 flex flex-col items-center justify-center gap-0.5 active:scale-90 hover:scale-105 transition select-none cursor-pointer relative"
+                      >
+                        <span className="text-2xl leading-none">
+                          {activeAsmrTextureObj.emoji}
+                        </span>
+                        <span className="text-[10px] font-extrabold text-white tracking-wide">
+                          TOCAR ASMR
+                        </span>
+                        <span className="text-[8px] text-[#90E0FF] font-mono-tabular">
+                          +Resonancia
+                        </span>
+                      </button>
+                    </div>
+
+                    <div className="space-y-2 min-w-0">
+                      <div className="flex items-center justify-between gap-2 text-[11px]">
+                        <span className="font-bold text-[#E6E0F2]">
+                          ✨ Armonía del Cofre Ocasional ({asmrCycleProgress}/25)
+                        </span>
+                        <span className="text-[10px] font-mono-tabular text-[#FFD54F]">
+                          Faltan {25 - asmrCycleProgress} toques
+                        </span>
+                      </div>
+
+                      <div className="w-full h-2.5 rounded-full bg-[#232036] overflow-hidden border border-white/5">
+                        <div
+                          style={{
+                            width: `${(asmrCycleProgress / 25) * 100}%`,
+                            background: `linear-gradient(90deg, ${activeAsmrTextureObj.accentColor}, #FFD54F)`,
+                          }}
+                          className="h-full transition-all duration-150 rounded-full"
+                        />
+                      </div>
+
+                      {lastAsmrPrizeNotice ? (
+                        <div className="px-2.5 py-1 rounded-[9px] bg-[#242038] border border-[#FFD54F]/50 text-[10px] font-bold text-[#FFE082] flex items-center justify-between gap-2">
+                          <span>{lastAsmrPrizeNotice}</span>
+                          <button
+                            type="button"
+                            onClick={() => setLastAsmrPrizeNotice(null)}
+                            className="text-xs opacity-75 hover:opacity-100"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="text-[10px] text-[#9E97B0] leading-snug">
+                          💡 Cada toque genera sonido sintetizado ASMR + micro-vibración y puede soltar Gemas Astrales 💎, XP ✨ o Escudos 🛡️.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Collapsible Daily Quests Drawer (Auto-highlights if unclaimed rewards or opened) */}
               {(isDailyRitualOpen ||
@@ -2977,22 +4520,43 @@ export function App() {
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={toggleSoundAndHaptics}
-                className={`px-3 py-1.5 rounded-[11px] border text-[11px] font-bold flex items-center gap-1.5 transition ${
-                  sensoryPrefs.soundEnabled
-                    ? 'bg-[#1F2D2B] border-[#65DB85]/45 text-[#9AF0AE]'
-                    : 'bg-[#181726] border-[#2E2A42] text-[#9E97B0]'
-                }`}
-              >
-                <span>{sensoryPrefs.soundEnabled ? '🔊' : '🔇'}</span>
-                <span>
-                  {sensoryPrefs.soundEnabled
-                    ? 'Sonido y Haptic: ON'
-                    : 'Sonido y Haptic: OFF'}
-                </span>
-              </button>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <button
+                  type="button"
+                  onClick={toggleAmbientMusic}
+                  className={`px-3 py-1.5 rounded-[11px] border text-[11px] font-bold flex items-center gap-1.5 transition ${
+                    sensoryPrefs.musicEnabled
+                      ? 'bg-[#1F2D2B] border-[#65DB85]/45 text-[#9AF0AE]'
+                      : 'bg-[#181726] border-[#2E2A42] text-[#9E97B0]'
+                  }`}
+                >
+                  <span>🎵</span>
+                  <span>
+                    {sensoryPrefs.musicEnabled
+                      ? `Música (${getAmbientMusicStyleName(
+                          currentObjective.accentColor
+                        )}): ON`
+                      : 'Música Ambiental: OFF'}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={toggleSoundAndHaptics}
+                  className={`px-3 py-1.5 rounded-[11px] border text-[11px] font-bold flex items-center gap-1.5 transition ${
+                    sensoryPrefs.soundEnabled
+                      ? 'bg-[#1F2D2B] border-[#65DB85]/45 text-[#9AF0AE]'
+                      : 'bg-[#181726] border-[#2E2A42] text-[#9E97B0]'
+                  }`}
+                >
+                  <span>{sensoryPrefs.soundEnabled ? '🔊' : '🔇'}</span>
+                  <span>
+                    {sensoryPrefs.soundEnabled
+                      ? 'Sonido y Haptic: ON'
+                      : 'Sonido y Haptic: OFF'}
+                  </span>
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -3075,6 +4639,34 @@ export function App() {
                   </div>
                 </div>
               </button>
+            </div>
+
+            {/* Indie Sanctuary Banner inside Ajustes */}
+            <div className="p-3 rounded-[15px] bg-gradient-to-r from-[#241D38] via-[#1E2235] to-[#1A2926] border border-[#4A3B6E] flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <div className="space-y-0.5 min-w-0">
+                <div className="text-xs font-extrabold text-[#F4F1FF] flex items-center gap-1.5 flex-wrap">
+                  <span>💖 Creado por un Desarrollador Indie</span>
+                </div>
+                <p className="text-[11px] text-[#C6C0D6] leading-snug break-words">
+                  Personaliza las 200 mascotas con Skins, equipa Marcos y Sonidos o activa Buffs con tus Gemas (💎 {gems}).
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => openIndieShop('skins')}
+                  className="px-3 py-2 rounded-[11px] bg-gradient-to-r from-[#7549B8] to-[#9B6BFF] text-white text-[11px] font-extrabold hover:brightness-110 active:scale-95 transition shadow"
+                >
+                  💎 Skins & Buffs
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openIndieShop('support')}
+                  className="px-3 py-2 rounded-[11px] bg-[#252138] border border-[#4A3E6D] text-[#E6D9FF] text-[11px] font-bold hover:bg-[#312B4B] transition"
+                >
+                  💖 Apoyar al Dev
+                </button>
+              </div>
             </div>
           </div>
         </main>
@@ -3165,7 +4757,7 @@ export function App() {
                       {isPositive ? '＋' : '−'}
                     </div>
                     <div className="flex-1 min-w-0 space-y-0.5">
-                      <div className="text-[12px] font-bold text-[#F3F0FA] truncate">
+                      <div className="text-[12px] font-bold text-[#F3F0FA] truncate select-copyable">
                         {entry.description}
                       </div>
                       <div className="text-[10px] text-[#9E97B0]">
@@ -3176,7 +4768,7 @@ export function App() {
                       style={{
                         color: isPositive ? '#82E59B' : '#FF8A98',
                       }}
-                      className="text-[12px] font-mono-tabular font-extrabold shrink-0"
+                      className="text-[12px] font-mono-tabular font-extrabold shrink-0 select-copyable"
                     >
                       {amountFormatted}
                     </div>
@@ -3219,10 +4811,48 @@ export function App() {
         <MascotGalleryModal
           initialLevel={level}
           initialPreviewLevel={mascotGalleryStartLevel ?? level}
+          skinId={equippedSkinId}
+          onOpenSkins={() => {
+            setIsMascotGalleryOpen(false);
+            openIndieShop('skins');
+          }}
           onClose={() => {
             setIsMascotGalleryOpen(false);
             setMascotGalleryStartLevel(null);
           }}
+        />
+      )}
+
+      {/* Modal: Indie Sanctuary Emporium (216-Item Vault: Skins, Card FX, Sound Packs, Buffs, PedidosYa Tip & Publishing Guide) */}
+      {isIndieShopOpen && (
+        <IndieEmporiumModal
+          initialTab={indieShopInitialTab}
+          level={level}
+          gems={gems}
+          unlockedSkins={unlockedSkins}
+          equippedSkinId={equippedSkinId}
+          unlockedVaultIds={unlockedVaultIds}
+          equippedCardFrameId={equippedCardFrameId}
+          equippedSoundPackId={equippedSoundPackId}
+          equippedTitleId={equippedTitleId}
+          activeAccentColor={currentObjective.accentColor || '#9B6BFF'}
+          activeBannerId={currentObjective.bannerId}
+          streakShields={streakShields}
+          isXpBoostActive={isXpBoostActive}
+          xpBoostRemainingText={xpBoostRemainingText}
+          isGemMagnetActive={isGemMagnetActive}
+          gemMagnetRemainingText={gemMagnetRemainingText}
+          isIndieFounder={isIndieFounder}
+          supporterTier={supporterTier}
+          onSelectSkin={handleUnlockOrEquipSkin}
+          onSelectCardCosmetic={handleSelectCardCosmetic}
+          onSelectSoundPack={handleSelectSoundPack}
+          onApplyVaultCardStyle={handleApplyVaultCardStyle}
+          onSelectGuardianTitle={handleSelectGuardianTitle}
+          onActivateBuff={handleActivateBuff}
+          onPurchasePack={handlePurchaseSupportPack}
+          onCustomTipSupport={handleCustomTipSupport}
+          onClose={() => setIsIndieShopOpen(false)}
         />
       )}
 
@@ -3249,7 +4879,7 @@ export function App() {
                 onClick={() => setIsAllAchievementsOpen(false)}
                 className="px-4 py-2 rounded-[11px] bg-[#252138] border border-[#3E355B] text-[#F4F1FF] text-xs sm:text-sm font-bold hover:bg-[#322C4B] transition"
               >
-                Cerrar
+                ← Volver
               </button>
             </div>
 
@@ -3554,12 +5184,14 @@ const MascotGridCard = React.memo(function MascotGridCard({
   itemTier,
   isSelected,
   isItemLocked,
+  skinId,
   onSelect,
 }: {
   lvl: number;
   itemTier: number;
   isSelected: boolean;
   isItemLocked: boolean;
+  skinId?: string;
   onSelect: (level: number) => void;
 }) {
   return (
@@ -3573,7 +5205,12 @@ const MascotGridCard = React.memo(function MascotGridCard({
           : 'border-[#4A3B6E] bg-[#1C1C2A] hover:bg-[#242238]'
       }`}
     >
-      <MascotAvatarSvg level={lvl} size={48} isLocked={isItemLocked} />
+      <MascotAvatarSvg
+        level={lvl}
+        size={48}
+        isLocked={isItemLocked}
+        skinId={skinId}
+      />
       <span
         className={`text-[11px] font-bold ${
           isItemLocked ? 'text-[#88839E]' : 'text-[#F4F1FF]'
@@ -3591,10 +5228,14 @@ const MascotGridCard = React.memo(function MascotGridCard({
 function MascotGalleryModal({
   initialLevel,
   initialPreviewLevel,
+  skinId = 'default',
+  onOpenSkins,
   onClose,
 }: {
   initialLevel: number;
   initialPreviewLevel?: number;
+  skinId?: string;
+  onOpenSkins?: () => void;
   onClose: () => void;
 }) {
   const unlockedLevel = Math.max(1, initialLevel);
@@ -3605,6 +5246,7 @@ function MascotGalleryModal({
   const tier = Math.floor((previewLevel - 1) / 10);
   const subLevel = ((previewLevel - 1) % 10) + 1;
   const isPreviewLocked = previewLevel > unlockedLevel;
+  const activeSkin = findMascotSkin(skinId);
 
   return (
     <div className="fixed inset-0 z-50 bg-[#11121C] flex flex-col p-3 sm:p-[18px] overflow-hidden">
@@ -3622,12 +5264,22 @@ function MascotGalleryModal({
               Arrastra la barra del 1 al 200 o toca una criatura para escuchar su voz.
             </p>
           </div>
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded-[10px] bg-[#302747] text-[#F4F1FF] text-sm font-medium hover:bg-[#3e335c] shrink-0"
-          >
-            Cerrar
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {onOpenSkins && (
+              <button
+                onClick={onOpenSkins}
+                className="px-3 py-2 rounded-[10px] bg-[#28203F] border border-[#65499C] text-[#E6D9FF] text-xs font-extrabold hover:border-[#FFD54F] transition"
+              >
+                {activeSkin.emoji} Skins
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="px-4 py-2 rounded-[10px] bg-[#302747] text-[#F4F1FF] text-sm font-medium hover:bg-[#3e335c] shrink-0"
+            >
+              ← Volver
+            </button>
+          </div>
         </div>
 
         {/* Interactive Slider Preview (Portrait-friendly wrapping) */}
@@ -3653,6 +5305,7 @@ function MascotGalleryModal({
                 level={previewLevel}
                 size={80}
                 isLocked={isPreviewLocked}
+                skinId={skinId}
               />
             </div>
             {!isPreviewLocked && (
@@ -3713,6 +5366,7 @@ function MascotGalleryModal({
                 itemTier={itemTier}
                 isSelected={lvl === previewLevel}
                 isItemLocked={lvl > unlockedLevel}
+                skinId={skinId}
                 onSelect={(selectedLvl) => {
                   setPreviewLevel(selectedLvl);
                   if (selectedLvl <= unlockedLevel) {
@@ -3734,10 +5388,12 @@ function MascotAvatarSvg({
   level,
   size = 56,
   isLocked = false,
+  skinId = 'default',
 }: {
   level: number;
   size?: number;
   isLocked?: boolean;
+  skinId?: string;
 }) {
   const palettes = [
     ['#2E7D5B', '#65DB85', '#BFF5CE', '#1E4635'], // 0: Brote Esmeralda
@@ -3766,8 +5422,11 @@ function MascotAvatarSvg({
   const tier = Math.floor((clamped - 1) / 10);
   const subLevel = (clamped - 1) % 10;
   const subProgress = subLevel / 9;
+  const activeSkin = findMascotSkin(skinId);
   const [realPrimary, realSecondary, realAccent, realGlow] =
-    palettes[tier] || palettes[0];
+    !isLocked && activeSkin.paletteOverride
+      ? activeSkin.paletteOverride
+      : palettes[tier] || palettes[0];
 
   const primary = isLocked ? '#232136' : realPrimary;
   const secondary = isLocked ? '#181726' : realSecondary;
@@ -3873,6 +5532,29 @@ function MascotAvatarSvg({
     >
       {/* 1. Medallion */}
       <circle cx={cx} cy={cy} r={radius} fill={glow} />
+      {!isLocked && activeSkin.id !== 'default' && (
+        <>
+          <circle
+            cx={cx}
+            cy={cy}
+            r={radius * 0.98}
+            fill="none"
+            stroke={activeSkin.auraRingColor}
+            strokeWidth={1.5}
+            strokeDasharray="3.5 2.5"
+            opacity={0.85}
+          />
+          <circle
+            cx={cx}
+            cy={cy}
+            r={radius * 0.84}
+            fill="none"
+            stroke={activeSkin.auraSecondaryColor}
+            strokeWidth={0.9}
+            opacity={0.55}
+          />
+        </>
+      )}
       <circle
         cx={cx}
         cy={cy}
@@ -5077,6 +6759,28 @@ function MascotAvatarSvg({
   );
 }
 
+function doTitlesShareCoreMeaning(oldTitle: string, newTitle: string): boolean {
+  const clean = (s: string) =>
+    s
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length >= 3);
+
+  const a = clean(oldTitle);
+  const b = clean(newTitle);
+  if (a.length === 0 || b.length === 0) return true;
+  if (
+    oldTitle.trim().toLowerCase() === 'mi objetivo' ||
+    oldTitle.trim().toLowerCase().startsWith('objetivo ')
+  ) {
+    return true;
+  }
+  return a.some((w) => b.includes(w));
+}
+
 function ObjectiveEditorModal({
   objective,
   isNewDraft = false,
@@ -5087,19 +6791,22 @@ function ObjectiveEditorModal({
   objective: Objective;
   isNewDraft?: boolean;
   onCancel: () => void;
-  onSave: (input: {
-    title: string;
-    description: string;
-    goalAmount: number;
-    unitId: string;
-    customUnitLabel: string;
-    icon: string;
-    category: string;
-    accentColor: string;
-    bannerId: string;
-    targetDate: string;
-    pledge: string;
-  }) => void;
+  onSave: (
+    input: {
+      title: string;
+      description: string;
+      goalAmount: number;
+      unitId: string;
+      customUnitLabel: string;
+      icon: string;
+      category: string;
+      accentColor: string;
+      bannerId: string;
+      targetDate: string;
+      pledge: string;
+    },
+    saveMode?: 'update_keep' | 'create_new' | 'overwrite_reset'
+  ) => void;
   onAlert: (title: string, message: string) => void;
 }) {
   const [title, setTitle] = useState(objective.title);
@@ -5123,13 +6830,36 @@ function ObjectiveEditorModal({
   const [pledge, setPledge] = useState(objective.pledge || '');
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
 
+  // Smart Guard states to prevent accidentally corrupting an objective that already has history
+  const hasRecordedHistory =
+    !isNewDraft && (objective.entries.length > 0 || objective.currentAmount > 0);
+  const [pendingTemplateId, setPendingTemplateId] = useState<string | null>(null);
+  const [identityShiftPrompt, setIdentityShiftPrompt] = useState<{
+    reason: string;
+    payload: {
+      title: string;
+      description: string;
+      goalAmount: number;
+      unitId: string;
+      customUnitLabel: string;
+      icon: string;
+      category: string;
+      accentColor: string;
+      bannerId: string;
+      targetDate: string;
+      pledge: string;
+    };
+  } | null>(null);
+
   const isGoalNumeric =
     goalAmountText.trim() === '' ||
     !Number.isNaN(Number(goalAmountText.replace(',', '.')));
 
   const parsedGoal = useMemo(() => {
     const n = Number(goalAmountText.replace(',', '.'));
-    return !Number.isNaN(n) && n > 0 ? n : 1000;
+    return !Number.isNaN(n) && n > 0
+      ? clampSafeAmount(n, 1, MAX_SAFE_AMOUNT)
+      : 1000;
   }, [goalAmountText]);
 
   const previewObjective: Objective = useMemo(
@@ -5165,6 +6895,12 @@ function ObjectiveEditorModal({
 
   const previewPreset =
     BANNER_PRESETS.find((p) => p.id === bannerId) || BANNER_PRESETS[0];
+  const previewAccentTheme = useMemo(
+    () =>
+      OBJECTIVE_ACCENT_THEMES.find((t) => t.id === accentColor) ||
+      OBJECTIVE_ACCENT_THEMES[0],
+    [accentColor]
+  );
   const customBannerUrl = bannerId.startsWith('custom:')
     ? bannerId.slice('custom:'.length)
     : null;
@@ -5186,7 +6922,7 @@ function ObjectiveEditorModal({
     };
   }, [targetDate, parsedGoal, objective.currentAmount, previewObjective]);
 
-  const applyTemplate = (tplId: string) => {
+  const applyFullTemplateFields = (tplId: string) => {
     const tpl = OBJECTIVE_TEMPLATES.find((t) => t.id === tplId);
     if (!tpl) return;
     setActiveTemplateId(tplId);
@@ -5200,6 +6936,48 @@ function ObjectiveEditorModal({
     setBannerId(tpl.bannerId);
     setAccentColor(tpl.accentColor);
     setPledge(tpl.pledge);
+    setPendingTemplateId(null);
+  };
+
+  const applyVisualStyleOnly = (tplId: string) => {
+    const tpl = OBJECTIVE_TEMPLATES.find((t) => t.id === tplId);
+    if (!tpl) return;
+    playUiTap(2);
+    setActiveTemplateId(tplId);
+    setIcon(tpl.icon);
+    setBannerId(tpl.bannerId);
+    setAccentColor(tpl.accentColor);
+    setPendingTemplateId(null);
+  };
+
+  const applyTemplate = (tplId: string) => {
+    playUiTap(1);
+    if (hasRecordedHistory && tplId !== 'custom') {
+      setPendingTemplateId(tplId);
+      return;
+    }
+    applyFullTemplateFields(tplId);
+  };
+
+  const buildPayload = () => {
+    const parsed = clampSafeAmount(
+      Number(goalAmountText.replace(',', '.')),
+      1,
+      MAX_SAFE_AMOUNT
+    );
+    return {
+      title,
+      description,
+      goalAmount: parsed,
+      unitId,
+      customUnitLabel,
+      icon,
+      category,
+      accentColor,
+      bannerId,
+      targetDate,
+      pledge,
+    };
   };
 
   const handleSubmit = () => {
@@ -5215,6 +6993,16 @@ function ObjectiveEditorModal({
       );
       return;
     }
+    if (parsed > MAX_SAFE_AMOUNT) {
+      setGoalAmountText(String(MAX_SAFE_AMOUNT));
+      onAlert(
+        'Meta máxima alcanzada',
+        `Por seguridad visual y diseño responsive, la meta máxima es ${MAX_SAFE_AMOUNT.toLocaleString(
+          'es-ES'
+        )}.`
+      );
+      return;
+    }
     if (unitId === CUSTOM_UNIT_ID && !customUnitLabel.trim()) {
       onAlert(
         'Falta la unidad',
@@ -5222,24 +7010,53 @@ function ObjectiveEditorModal({
       );
       return;
     }
-    onSave({
-      title,
-      description,
-      goalAmount: parsed,
-      unitId,
-      customUnitLabel,
-      icon,
-      category,
-      accentColor,
-      bannerId,
-      targetDate,
-      pledge,
-    });
+
+    const payload = buildPayload();
+
+    // Smart Identity Shift Detection when editing an objective that already has entries
+    if (hasRecordedHistory) {
+      const oldUnitLabel =
+        objective.unitId === CUSTOM_UNIT_ID
+          ? (objective.customUnitLabel || '').trim()
+          : objective.unitId;
+      const newUnitLabel =
+        unitId === CUSTOM_UNIT_ID ? customUnitLabel.trim() : unitId;
+
+      const unitChanged =
+        oldUnitLabel.toLowerCase() !== newUnitLabel.toLowerCase();
+      const titleRadicallyChanged = !doTitlesShareCoreMeaning(
+        objective.title,
+        title
+      );
+
+      if (unitChanged || titleRadicallyChanged) {
+        playUiTap(0);
+        const reason =
+          unitChanged && titleRadicallyChanged
+            ? `Cambiaste «${objective.title}» (${oldUnitLabel || 'unidad anterior'}) por «${title.trim()}» (${newUnitLabel || 'nueva unidad'}).`
+            : unitChanged
+            ? `Cambiaste la unidad de «${oldUnitLabel}» a «${newUnitLabel}» en una tarjeta que ya tiene registros.`
+            : `Cambiaste el objetivo «${objective.title}» por «${title.trim()}», una meta distinta.`;
+
+        setIdentityShiftPrompt({ reason, payload });
+        return;
+      }
+    }
+
+    onSave(payload, 'update_keep');
   };
+
+  const pendingTemplate = useMemo(
+    () => OBJECTIVE_TEMPLATES.find((t) => t.id === pendingTemplateId) || null,
+    [pendingTemplateId]
+  );
 
   return (
     <div className="fixed inset-0 z-50 bg-[#0E0E18]/95 backdrop-blur-md flex items-start sm:items-center justify-center p-3 sm:p-5 overflow-y-auto">
-      <div className="w-full max-w-2xl rounded-[24px] border border-[#362E4F] bg-[#171625] p-4 sm:p-6 space-y-4 my-auto shadow-2xl">
+      <div
+        style={{ borderColor: `${previewAccentTheme.primary}45` }}
+        className="w-full max-w-2xl rounded-[24px] border bg-[#171625] p-4 sm:p-6 space-y-4 my-auto shadow-2xl relative"
+      >
         {/* Header */}
         <div className="flex items-center justify-between gap-2">
           <div>
@@ -5248,8 +7065,8 @@ function ObjectiveEditorModal({
             </h2>
             <p className="text-[12px] text-[#A8A3B8]">
               {isNewDraft
-                ? 'Elige una plantilla inspiradora o diseña tu meta a medida con vista previa en vivo.'
-                : 'Dale identidad visual, fecha meta y una recompensa personal a tu objetivo.'}
+                ? 'Elige una plantilla prediseñada o crea tu meta a medida con sintonía total de color.'
+                : 'Personaliza colores, fondo, fecha meta o premio. Si cambias de meta, protegemos tu historial.'}
             </p>
           </div>
           <button
@@ -5260,14 +7077,27 @@ function ObjectiveEditorModal({
           </button>
         </div>
 
-        {/* 1-Tap Inspiration Templates */}
+        {/* 1-Tap Inspiration Templates (11 Pre-designed Harmonious Styles) */}
         <div className="space-y-1.5">
-          <div className="text-[10px] font-extrabold uppercase tracking-wider text-[#C7A4FF]">
-            ⚡ Plantillas de Inicio Rápido (1 toque)
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div
+              style={{ color: previewAccentTheme.primary }}
+              className="text-[10px] font-extrabold uppercase tracking-wider"
+            >
+              ⚡ Estilos y Plantillas Prediseñadas ({OBJECTIVE_TEMPLATES.length})
+            </div>
+            {hasRecordedHistory && (
+              <span className="text-[10px] text-[#A8A3B8]">
+                💡 Al tocar una plantilla podrás elegir solo su estilo o crear un objetivo nuevo
+              </span>
+            )}
           </div>
           <div className="flex gap-2 overflow-x-auto pb-1.5 no-scrollbar">
             {OBJECTIVE_TEMPLATES.map((tpl) => {
               const isSelected = activeTemplateId === tpl.id;
+              const tplTheme =
+                OBJECTIVE_ACCENT_THEMES.find((t) => t.id === tpl.accentColor) ||
+                OBJECTIVE_ACCENT_THEMES[0];
               return (
                 <button
                   key={tpl.id}
@@ -5276,14 +7106,15 @@ function ObjectiveEditorModal({
                   style={
                     isSelected
                       ? {
-                          borderColor: tpl.accentColor,
-                          backgroundColor: '#2A2240',
+                          borderColor: tplTheme.primary,
+                          backgroundColor: tplTheme.surfaceDark,
+                          boxShadow: `0 4px 12px -4px ${tplTheme.glow}`,
                         }
                       : undefined
                   }
                   className={`px-3 py-2 rounded-[12px] border text-left shrink-0 transition flex items-center gap-2 ${
                     isSelected
-                      ? 'text-white shadow-md'
+                      ? 'text-white'
                       : 'bg-[#1F1E2E] border-[#2E2B42] text-[#D8D1E5] hover:bg-[#28253B]'
                   }`}
                 >
@@ -5292,7 +7123,12 @@ function ObjectiveEditorModal({
                     <div className="text-[11px] font-bold leading-tight">
                       {tpl.label.replace(/^[^\s]+\s/, '')}
                     </div>
-                    <div className="text-[9px] text-[#9E97B0]">
+                    <div
+                      style={{
+                        color: isSelected ? tplTheme.textSoft : '#9E97B0',
+                      }}
+                      className="text-[9px]"
+                    >
                       {tpl.category}
                     </div>
                   </div>
@@ -5300,16 +7136,86 @@ function ObjectiveEditorModal({
               );
             })}
           </div>
+
+          {/* Inline Smart Guard when clicking a Template on an Objective with History */}
+          {pendingTemplate && (
+            <div className="p-3.5 rounded-[16px] bg-gradient-to-r from-[#28203E] via-[#211C34] to-[#1A2628] border border-[#FFD54F]/65 space-y-2.5 animate-in fade-in duration-150">
+              <div className="flex items-start justify-between gap-2">
+                <div className="space-y-0.5">
+                  <div className="text-xs font-extrabold text-[#FFD54F] flex items-center gap-1.5">
+                    <span>💡 ¿Estás queriendo crear un Nuevo Objetivo en realidad?</span>
+                  </div>
+                  <p className="text-[11px] text-[#E6E0F2] leading-snug">
+                    Tu tarjeta actual <strong>«{objective.title}»</strong> ya tiene{' '}
+                    <strong>{objective.entries.length} registros</strong> (
+                    {formatObjectiveAmount(objective.currentAmount, objective)}). Si la
+                    reemplazas por <strong>«{pendingTemplate.title || pendingTemplate.label}»</strong>,
+                    los ingresos y egresos anteriores no corresponderían.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPendingTemplateId(null)}
+                  className="text-xs text-[#A8A3B8] hover:text-white px-1.5"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onSave(
+                      {
+                        title: pendingTemplate.title || 'Nuevo Objetivo',
+                        description: pendingTemplate.description,
+                        goalAmount: pendingTemplate.goalAmount,
+                        unitId: pendingTemplate.unitId,
+                        customUnitLabel: pendingTemplate.customUnitLabel,
+                        icon: pendingTemplate.icon,
+                        category: pendingTemplate.category,
+                        accentColor: pendingTemplate.accentColor,
+                        bannerId: pendingTemplate.bannerId,
+                        targetDate: '',
+                        pledge: pendingTemplate.pledge,
+                      },
+                      'create_new'
+                    );
+                  }}
+                  className="px-3 py-2 rounded-[10px] bg-gradient-to-r from-[#E5B945] to-[#FFD54F] text-[#1A1305] text-[11px] font-extrabold hover:brightness-110 active:scale-95 transition shadow"
+                >
+                  ✨ Crear como Nuevo Objetivo
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => applyVisualStyleOnly(pendingTemplate.id)}
+                  className="px-3 py-2 rounded-[10px] bg-[#2D2546] border border-[#8C5CE0]/60 text-[#F4F1FF] text-[11px] font-bold hover:bg-[#392F59] transition"
+                >
+                  🎨 Usar solo sus Colores y Fondo
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => applyFullTemplateFields(pendingTemplate.id)}
+                  className="px-3 py-2 rounded-[10px] bg-[#1D1B2B] border border-[#383350] text-[#C8C2D8] text-[11px] font-medium hover:text-white transition"
+                >
+                  ✏️ Cargar datos aquí igualmente
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Live Interactive Mini-Hero Card Preview */}
+        {/* Live Interactive Mini-Hero Card Preview with Full Chromatic Harmony (Portrait-First layout so text never squeezes into 2 words per line) */}
         <div
           style={{
             background: `linear-gradient(135deg, ${previewPreset.startColor}, ${previewPreset.endColor})`,
-            borderColor: `${accentColor}70`,
-            boxShadow: `0 8px 24px -6px ${accentColor}33`,
+            borderColor: `${previewAccentTheme.primary}80`,
+            boxShadow: `0 8px 24px -6px ${previewAccentTheme.glow}`,
           }}
-          className="relative rounded-[18px] border p-3.5 overflow-hidden transition-all"
+          className="relative rounded-[18px] border p-3.5 sm:p-4 overflow-hidden transition-all"
         >
           {previewBannerImg && (
             <img
@@ -5318,54 +7224,80 @@ function ObjectiveEditorModal({
               className="absolute inset-0 w-full h-full object-cover opacity-65 pointer-events-none"
             />
           )}
-          <div className="absolute inset-0 bg-gradient-to-r from-[#131122]/85 via-[#181528]/65 to-[#131122]/85 pointer-events-none" />
+          <div
+            style={{ background: previewAccentTheme.vignetteGradient }}
+            className="absolute inset-0 pointer-events-none transition-all duration-300"
+          />
 
-          <div className="relative z-10 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0">
+          <div className="relative z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1">
               <div
                 style={{
-                  borderColor: accentColor,
-                  backgroundColor: 'rgba(18, 16, 30, 0.75)',
+                  borderColor: previewAccentTheme.primary,
+                  backgroundColor: previewAccentTheme.surfaceDark,
+                  boxShadow: `0 0 12px ${previewAccentTheme.softBg}`,
                 }}
                 className="w-11 h-11 rounded-[14px] border flex items-center justify-center text-[22px] shrink-0"
               >
                 {icon}
               </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5">
+              <div className="min-w-0 flex-1 space-y-0.5">
+                <div className="flex items-center gap-1.5 flex-wrap">
                   <span
                     style={{
-                      color: accentColor,
-                      borderColor: `${accentColor}55`,
+                      color: previewAccentTheme.primary,
+                      backgroundColor: previewAccentTheme.softBg,
+                      borderColor: `${previewAccentTheme.primary}55`,
                     }}
-                    className="px-2 py-0.2 rounded-full text-[9px] font-extrabold uppercase border bg-black/40"
+                    className="px-2 py-0.2 rounded-full text-[9px] font-extrabold uppercase border"
                   >
                     {previewObjective.category}
                   </span>
-                  {dailyPacePreview && (
-                    <span className="text-[9px] text-[#FFE082] font-semibold">
-                      ⏳ {dailyPacePreview.days}d · {dailyPacePreview.perDay}/día
-                    </span>
-                  )}
+                  <span
+                    style={{ color: previewAccentTheme.textMuted }}
+                    className="text-[10px] font-semibold"
+                  >
+                    · {previewAccentTheme.name} + {previewPreset.name}
+                  </span>
                 </div>
-                <div className="text-[16px] font-extrabold text-white truncate">
+                <div className="text-[16px] sm:text-[18px] font-extrabold text-white leading-snug break-words">
                   {previewObjective.title}
                 </div>
-                <div className="text-[11px] text-[#D8D1E5] truncate">
+                <div
+                  style={{ color: previewAccentTheme.textSoft }}
+                  className="text-[11px] sm:text-[12px] leading-snug break-words"
+                >
                   {previewObjective.pledge
                     ? `🎁 Premio: ${previewObjective.pledge}`
-                    : previewObjective.description || 'Vista previa en vivo de tu tarjeta'}
+                    : previewObjective.description ||
+                      'Vista previa en vivo con sintonía cromática completa'}
                 </div>
               </div>
             </div>
 
-            <div className="text-right shrink-0">
-              <div className="text-[9px] font-bold text-[#DEC2FF] uppercase">
-                META
+            <div
+              style={{
+                backgroundColor: previewAccentTheme.surfaceDark,
+                borderColor: `${previewAccentTheme.primary}45`,
+              }}
+              className="w-full sm:w-auto sm:shrink-0 px-3 py-2 rounded-[12px] border flex sm:flex-col items-center sm:items-end justify-between gap-2"
+            >
+              <div className="flex items-center gap-1.5">
+                <span
+                  style={{ color: previewAccentTheme.textSoft }}
+                  className="text-[9px] font-extrabold uppercase tracking-wider"
+                >
+                  META FINAL
+                </span>
+                {dailyPacePreview && (
+                  <span className="text-[9px] text-[#FFE082] font-semibold">
+                    · ⏳ {dailyPacePreview.days}d ({dailyPacePreview.perDay}/día)
+                  </span>
+                )}
               </div>
               <div
-                style={{ color: accentColor }}
-                className="text-[16px] font-extrabold tabular-nums"
+                style={{ color: previewAccentTheme.primary }}
+                className="text-[15px] sm:text-[17px] font-extrabold font-mono-tabular leading-tight"
               >
                 {formatObjectiveAmount(parsedGoal, previewObjective)}
               </div>
@@ -5376,7 +7308,10 @@ function ObjectiveEditorModal({
         {/* Form Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="space-y-1">
-            <label className="text-xs font-semibold text-[#E2D8FF]">
+            <label
+              style={{ color: previewAccentTheme.textSoft }}
+              className="text-xs font-semibold"
+            >
               Nombre del objetivo
             </label>
             <input
@@ -5389,7 +7324,10 @@ function ObjectiveEditorModal({
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-semibold text-[#E2D8FF]">
+            <label
+              style={{ color: previewAccentTheme.textSoft }}
+              className="text-xs font-semibold"
+            >
               Categoría / Etiqueta
             </label>
             <input
@@ -5402,23 +7340,40 @@ function ObjectiveEditorModal({
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-semibold text-[#E2D8FF]">
-              Monto o cantidad meta
+            <label
+              style={{ color: previewAccentTheme.textSoft }}
+              className="text-xs font-semibold flex items-center justify-between"
+            >
+              <span>Monto o cantidad meta</span>
+              <span className="text-[10px] opacity-75 font-mono-tabular">
+                Máx. 999.999.999
+              </span>
             </label>
             <input
               type="text"
               inputMode="decimal"
               value={goalAmountText}
-              onChange={(e) => setGoalAmountText(e.target.value)}
+              onChange={(e) => {
+                const rawVal = e.target.value.replace(/[^0-9.,]/g, '');
+                const num = Number(rawVal.replace(',', '.'));
+                if (!Number.isNaN(num) && num > MAX_SAFE_AMOUNT) {
+                  setGoalAmountText(String(MAX_SAFE_AMOUNT));
+                } else {
+                  setGoalAmountText(rawVal);
+                }
+              }}
               placeholder="1000"
               style={{ color: isGoalNumeric ? '#F4F1FF' : '#FF4500' }}
-              className="w-full h-10 px-3 rounded-[10px] bg-[#11111C] text-sm border border-[#2E2C44] focus:outline-none focus:border-[#9B6BFF]"
+              className="w-full h-10 px-3 rounded-[10px] bg-[#11111C] text-sm font-mono-tabular border border-[#2E2C44] focus:outline-none focus:border-[#9B6BFF]"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
-              <label className="text-xs font-semibold text-[#E2D8FF]">
+              <label
+                style={{ color: previewAccentTheme.textSoft }}
+                className="text-xs font-semibold"
+              >
                 Unidad
               </label>
               <select
@@ -5436,7 +7391,10 @@ function ObjectiveEditorModal({
 
             {unitId === CUSTOM_UNIT_ID ? (
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-[#E2D8FF]">
+                <label
+                  style={{ color: previewAccentTheme.textSoft }}
+                  className="text-xs font-semibold"
+                >
                   Símbolo / Sufijo
                 </label>
                 <input
@@ -5449,7 +7407,10 @@ function ObjectiveEditorModal({
               </div>
             ) : (
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-[#E2D8FF]">
+                <label
+                  style={{ color: previewAccentTheme.textSoft }}
+                  className="text-xs font-semibold"
+                >
                   Fecha límite (opc.)
                 </label>
                 <input
@@ -5466,7 +7427,10 @@ function ObjectiveEditorModal({
         {/* Motivation, Pledge & Optional Target Date */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="space-y-1">
-            <label className="text-xs font-semibold text-[#E2D8FF]">
+            <label
+              style={{ color: previewAccentTheme.textSoft }}
+              className="text-xs font-semibold"
+            >
               Propósito (¿Por qué es importante?)
             </label>
             <input
@@ -5510,7 +7474,10 @@ function ObjectiveEditorModal({
         <div className="space-y-3 pt-1 border-t border-[#29263E]">
           {/* Icon Picker */}
           <div className="space-y-1.5">
-            <div className="text-[11px] font-bold text-[#C7A4FF]">
+            <div
+              style={{ color: previewAccentTheme.primary }}
+              className="text-[11px] font-bold"
+            >
               EMBLEMA DEL OBJETIVO
             </div>
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
@@ -5524,8 +7491,8 @@ function ObjectiveEditorModal({
                     style={
                       isSelected
                         ? {
-                            borderColor: accentColor,
-                            backgroundColor: '#2E2546',
+                            borderColor: previewAccentTheme.primary,
+                            backgroundColor: previewAccentTheme.surfaceDark,
                           }
                         : undefined
                     }
@@ -5545,8 +7512,14 @@ function ObjectiveEditorModal({
           {/* Accent Color & Banner Preset Row */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <div className="text-[11px] font-bold text-[#C7A4FF]">
-                COLOR DE ENERGÍA
+              <div
+                style={{ color: previewAccentTheme.primary }}
+                className="text-[11px] font-bold flex items-center justify-between"
+              >
+                <span>COLOR DE ENERGÍA (SINTONÍA TOTAL)</span>
+                <span className="text-[10px] opacity-90">
+                  {previewAccentTheme.name}
+                </span>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
                 {OBJECTIVE_ACCENT_THEMES.map((theme) => {
@@ -5555,7 +7528,10 @@ function ObjectiveEditorModal({
                     <button
                       key={theme.id}
                       type="button"
-                      onClick={() => setAccentColor(theme.id)}
+                      onClick={() => {
+                        playUiTap(1);
+                        setAccentColor(theme.id);
+                      }}
                       style={{
                         backgroundColor: theme.primary,
                         boxShadow: isSelected
@@ -5573,8 +7549,14 @@ function ObjectiveEditorModal({
             </div>
 
             <div className="space-y-1.5">
-              <div className="text-[11px] font-bold text-[#C7A4FF]">
-                ATMÓSFERA DE FONDO
+              <div
+                style={{ color: previewAccentTheme.primary }}
+                className="text-[11px] font-bold flex items-center justify-between"
+              >
+                <span>ATMÓSFERA DE FONDO ({BANNER_PRESETS.length})</span>
+                <span className="text-[10px] opacity-90">
+                  {previewPreset.name}
+                </span>
               </div>
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
                 {BANNER_PRESETS.map((preset) => {
@@ -5583,10 +7565,15 @@ function ObjectiveEditorModal({
                     <button
                       key={preset.id}
                       type="button"
-                      onClick={() => setBannerId(preset.id)}
+                      onClick={() => {
+                        playUiTap(1);
+                        setBannerId(preset.id);
+                      }}
                       style={{
                         background: `linear-gradient(135deg, ${preset.startColor}, ${preset.endColor})`,
-                        borderColor: isSelected ? accentColor : '#383350',
+                        borderColor: isSelected
+                          ? previewAccentTheme.primary
+                          : '#383350',
                       }}
                       className={`px-2.5 py-1.5 rounded-[10px] border text-[11px] font-bold text-white shrink-0 flex items-center gap-1 transition ${
                         isSelected ? 'scale-105 shadow-md' : 'opacity-80 hover:opacity-100'
@@ -5602,6 +7589,64 @@ function ObjectiveEditorModal({
           </div>
         </div>
 
+        {/* Smart Identity Shift Confirmation Overlay when saving a radically changed card with history */}
+        {identityShiftPrompt && (
+          <div className="p-4 rounded-[18px] bg-[#1D182E] border-2 border-[#FFD54F] space-y-3 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="space-y-1">
+              <div className="text-sm font-extrabold text-[#FFD54F] flex items-center gap-1.5">
+                <span>⚠️ ¿No estarás queriendo crear un Nuevo Objetivo?</span>
+              </div>
+              <p className="text-xs text-[#F0EAF8] leading-relaxed">
+                {identityShiftPrompt.reason} Como esta tarjeta ya tiene{' '}
+                <strong>{objective.entries.length} movimientos registrados</strong> (
+                {formatObjectiveAmount(objective.currentAmount, objective)}), los valores
+                ingresados y egresados anteriores no corresponderían del todo.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  onSave(identityShiftPrompt.payload, 'create_new')
+                }
+                className="w-full py-2.5 px-3 rounded-[11px] bg-gradient-to-r from-[#E5B945] to-[#FFD54F] text-[#1A1305] text-xs font-extrabold hover:brightness-110 active:scale-95 transition shadow text-left flex items-center justify-between"
+              >
+                <span>
+                  ✨ Sí, crear «{identityShiftPrompt.payload.title.trim()}» como Nuevo Objetivo
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-black/15">
+                  Conservar «{objective.title}» intacto
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  onSave(identityShiftPrompt.payload, 'overwrite_reset')
+                }
+                className="w-full py-2.5 px-3 rounded-[11px] bg-[#33223A] border border-[#FF8A65]/50 text-[#FFD8CC] text-xs font-bold hover:bg-[#422B4B] transition text-left flex items-center justify-between"
+              >
+                <span>
+                  🧹 Transformar esta tarjeta y reiniciar su historial a 0
+                </span>
+                <span className="text-[10px] opacity-80">Empezar limpio</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  onSave(identityShiftPrompt.payload, 'update_keep')
+                }
+                className="w-full py-2 px-3 rounded-[11px] bg-[#252238] border border-[#3E385B] text-[#C8C2D8] text-xs font-medium hover:text-white transition text-left"
+              >
+                ✏️ Solo actualizar los datos conservando el saldo e historial actual (
+                {formatObjectiveAmount(objective.currentAmount, objective)})
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Footer Buttons */}
         <div className="grid grid-cols-2 gap-3 pt-2">
           <button
@@ -5615,9 +7660,11 @@ function ObjectiveEditorModal({
             type="button"
             onClick={handleSubmit}
             style={{
-              background: `linear-gradient(90deg, #7549B8, #9B6BFF)`,
+              background: `linear-gradient(90deg, ${previewAccentTheme.secondary}, ${previewAccentTheme.primary})`,
+              color: previewAccentTheme.buttonText,
+              boxShadow: `0 4px 16px -2px ${previewAccentTheme.glow}`,
             }}
-            className="h-11 rounded-[12px] text-white font-extrabold hover:brightness-110 active:scale-95 transition shadow-[0_4px_16px_rgba(117,73,184,0.4)]"
+            className="h-11 rounded-[12px] font-extrabold hover:brightness-110 active:scale-95 transition"
           >
             {isNewDraft ? '🚀 Crear Objetivo' : '✓ Guardar Cambios'}
           </button>
@@ -5839,6 +7886,16 @@ function EditEntryModal({
       onAlert('Importe no válido', 'Escribe un importe mayor que cero.');
       return;
     }
+    if (parsed > MAX_SAFE_AMOUNT) {
+      setAmountText(String(MAX_SAFE_AMOUNT));
+      onAlert(
+        'Importe máximo superado',
+        `El importe máximo permitido es ${MAX_SAFE_AMOUNT.toLocaleString(
+          'es-ES'
+        )}.`
+      );
+      return;
+    }
     onSave(entry.id, description, parsed);
   };
 
@@ -5882,6 +7939,1206 @@ function EditEntryModal({
           >
             Guardar
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function IndieEmporiumModal({
+  initialTab,
+  level,
+  gems,
+  unlockedSkins,
+  equippedSkinId,
+  unlockedVaultIds,
+  equippedCardFrameId,
+  equippedSoundPackId,
+  equippedTitleId,
+  activeAccentColor,
+  activeBannerId,
+  streakShields,
+  isXpBoostActive,
+  xpBoostRemainingText,
+  isGemMagnetActive,
+  gemMagnetRemainingText,
+  isIndieFounder,
+  supporterTier,
+  onSelectSkin,
+  onSelectCardCosmetic,
+  onSelectSoundPack,
+  onApplyVaultCardStyle,
+  onSelectGuardianTitle,
+  onActivateBuff,
+  onPurchasePack,
+  onCustomTipSupport,
+  onClose,
+}: {
+  initialTab: 'skins' | 'cards_audio' | 'buffs' | 'support';
+  level: number;
+  gems: number;
+  unlockedSkins: string[];
+  equippedSkinId: string;
+  unlockedVaultIds: string[];
+  equippedCardFrameId: string;
+  equippedSoundPackId: string;
+  equippedTitleId: string;
+  activeAccentColor: string;
+  activeBannerId: string;
+  streakShields: number;
+  isXpBoostActive: boolean;
+  xpBoostRemainingText: string;
+  isGemMagnetActive: boolean;
+  gemMagnetRemainingText: string;
+  isIndieFounder: boolean;
+  supporterTier: 'none' | 'coffee' | 'founder';
+  onSelectSkin: (skin: MascotSkinDefinition) => void;
+  onSelectCardCosmetic: (cosmetic: CardCosmeticDefinition) => void;
+  onSelectSoundPack: (pack: SoundPackCatalogItem) => void;
+  onApplyVaultCardStyle: (styleItem: CardStyleVaultItem) => void;
+  onSelectGuardianTitle: (titleItem: GuardianTitleItem) => void;
+  onActivateBuff: (buff: SanctuaryBuffDefinition) => void;
+  onPurchasePack: (pack: IndieSupportPack) => void;
+  onCustomTipSupport: (usdAmount: number) => void;
+  onClose: () => void;
+}) {
+  const [activeTab, setActiveTab] = useState<
+    'skins' | 'cards_audio' | 'buffs' | 'support'
+  >(initialTab);
+  const [vaultSubTab, setVaultSubTab] = useState<
+    'frames' | 'sounds' | 'styles' | 'titles'
+  >('frames');
+  const [tierFilter, setTierFilter] = useState<'all' | 'free' | 'premium'>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [previewSkinId, setPreviewSkinId] = useState<string>(equippedSkinId);
+  const [previewMascotLevel, setPreviewMascotLevel] = useState<number>(level);
+
+  // PedidosYa-style Editable Donation / Tip state
+  const [tipAmountText, setTipAmountText] = useState<string>('2.00');
+  const [isCustomTipEditing, setIsCustomTipEditing] = useState<boolean>(false);
+  const tipCustomInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    setPreviewSkinId(equippedSkinId);
+  }, [equippedSkinId]);
+
+  const previewSkin = findMascotSkin(previewSkinId);
+  const previewTier = Math.floor(
+    (Math.min(200, Math.max(1, previewMascotLevel)) - 1) / 10
+  );
+
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+  const matchesFilterAndSearch = (
+    name: string,
+    subtitle: string,
+    gemCost: number
+  ) => {
+    if (tierFilter === 'free' && gemCost > 0) return false;
+    if (tierFilter === 'premium' && gemCost === 0) return false;
+    if (!normalizedSearch) return true;
+    return (
+      name.toLowerCase().includes(normalizedSearch) ||
+      subtitle.toLowerCase().includes(normalizedSearch)
+    );
+  };
+
+  const filteredSkins = useMemo(
+    () =>
+      MASCOT_SKINS.filter((s) =>
+        matchesFilterAndSearch(s.name, s.subtitle, s.gemCost)
+      ),
+    [tierFilter, normalizedSearch]
+  );
+
+  const filteredFrames = useMemo(
+    () =>
+      CARD_COSMETICS.filter((c) =>
+        matchesFilterAndSearch(c.name, c.subtitle, c.gemCost)
+      ),
+    [tierFilter, normalizedSearch]
+  );
+
+  const filteredSounds = useMemo(
+    () =>
+      SOUND_PACKS.filter((s) =>
+        matchesFilterAndSearch(
+          `${s.name} ${s.scaleName}`,
+          s.subtitle,
+          s.gemCost
+        )
+      ),
+    [tierFilter, normalizedSearch]
+  );
+
+  const filteredStyles = useMemo(
+    () =>
+      CARD_STYLE_VAULT.filter((st) =>
+        matchesFilterAndSearch(st.name, st.subtitle, st.gemCost)
+      ),
+    [tierFilter, normalizedSearch]
+  );
+
+  const filteredTitles = useMemo(
+    () =>
+      GUARDIAN_TITLES.filter((t) =>
+        matchesFilterAndSearch(t.title, t.subtitle, t.gemCost)
+      ),
+    [tierFilter, normalizedSearch]
+  );
+
+  const filteredBuffs = useMemo(
+    () =>
+      SANCTUARY_BUFFS.filter((b) =>
+        matchesFilterAndSearch(b.name, b.description, b.gemCost)
+      ),
+    [tierFilter, normalizedSearch]
+  );
+
+  const parsedTipUsd = useMemo(() => {
+    const n = Number(tipAmountText.replace(',', '.'));
+    if (Number.isNaN(n) || n <= 0) return 0;
+    return Math.min(500, n);
+  }, [tipAmountText]);
+
+  const tipRewardGems = Math.round(Math.max(0.5, parsedTipUsd) * 140);
+  const tipRewardShields = Math.max(1, Math.floor(Math.max(0.5, parsedTipUsd) / 1.5));
+  const tipUnlocksFounder = parsedTipUsd >= 4.99;
+
+  const adjustTipBy = (delta: number) => {
+    playUiTap(2);
+    const next = Math.max(0.5, Math.min(500, (parsedTipUsd || 2) + delta));
+    setTipAmountText(next.toFixed(2));
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-[#0D0E17]/96 backdrop-blur-md flex flex-col overflow-hidden">
+      {/* Pinned Top Header + Navigation Bar */}
+      <div className="w-full bg-[#131221]/95 border-b border-[#2C2742] px-3 sm:px-5 pt-3 pb-2.5 shrink-0">
+        <div className="max-w-5xl w-full mx-auto space-y-2.5">
+          <div className="flex items-start sm:items-center justify-between gap-2.5">
+            <div className="space-y-0.5 min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="inline-flex items-center gap-1 text-[10px] font-extrabold uppercase tracking-widest">
+                  <span className="text-xs leading-none">🎯</span>
+                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#D8C5FF] via-[#FFD54F] to-[#82E59B]">
+                    OBJECTIVE REACHER · BANCO DEL SANTUARIO
+                  </span>
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-[#1E1A32] border border-[#65499C]/60 text-[9px] font-extrabold text-[#E2D4FF]">
+                  ✨ {VAULT_STATS.totalItems} COLECCIONABLES EN EL SANTUARIO
+                </span>
+              </div>
+              <h2 className="text-[16px] sm:text-[20px] font-extrabold text-[#F4F1FF] leading-snug break-words">
+                💎 Cosméticos, Tarjetas, Sintetizador & Apoyo Indie
+              </h2>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <div
+                onClick={() => {
+                  playUiTap(1);
+                  setActiveTab('support');
+                }}
+                title="Tus Gemas Astrales (toca para obtener más o enviar propina)"
+                className="px-3 py-1.5 rounded-[11px] bg-[#1F1C30] border border-[#53417D] hover:border-[#B58BFF] cursor-pointer flex items-center gap-1.5 transition"
+              >
+                <span className="text-sm">💎</span>
+                <span className="text-xs sm:text-sm font-mono-tabular font-extrabold text-[#9AF0AE]">
+                  {gems}
+                </span>
+              </div>
+              <button
+                onClick={onClose}
+                className="px-3.5 py-2 rounded-[11px] bg-[#2D2644] text-[#F4F1FF] text-xs sm:text-sm font-bold hover:bg-[#3B3258] transition"
+              >
+                ← Volver
+              </button>
+            </div>
+          </div>
+
+          {/* 4 Primary Navigation Tabs */}
+          <div className="p-1 rounded-[13px] bg-[#0E0D18] border border-[#29243D] grid grid-cols-2 sm:grid-cols-4 gap-1">
+            {[
+              { id: 'skins', label: `🎨 Skins (${MASCOT_SKINS.length})` },
+              {
+                id: 'cards_audio',
+                label: `✨ Tarjetas & Audio (${
+                  CARD_COSMETICS.length +
+                  SOUND_PACKS.length +
+                  CARD_STYLE_VAULT.length +
+                  GUARDIAN_TITLES.length
+                })`,
+              },
+              { id: 'buffs', label: `🧪 Buffs & Reliquias (${SANCTUARY_BUFFS.length})` },
+              { id: 'support', label: '💖 Apoyar al Dev' },
+            ].map((t) => {
+              const isSelected = activeTab === t.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => {
+                    playUiTap(1);
+                    setActiveTab(
+                      t.id as 'skins' | 'cards_audio' | 'buffs' | 'support'
+                    );
+                  }}
+                  className={`h-[36px] px-2 rounded-[9px] text-[11px] sm:text-xs font-extrabold transition truncate ${
+                    isSelected
+                      ? 'bg-gradient-to-r from-[#593596] to-[#7A4FD1] text-white border border-[#B58BFF]/60 shadow'
+                      : 'text-[#A8A3B8] hover:text-[#F4F1FF] hover:bg-[#1A182B]'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Filter & Search Bar for Content Vault Tabs (Skins, Cards/Audio, Buffs) */}
+          {(activeTab === 'skins' ||
+            activeTab === 'cards_audio' ||
+            activeTab === 'buffs') && (
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 pt-0.5">
+              <div className="flex items-center gap-1 bg-[#0E0D18] p-1 rounded-[10px] border border-[#262238]">
+                {[
+                  {
+                    id: 'all',
+                    label: `Todos (${VAULT_STATS.totalItems})`,
+                  },
+                  {
+                    id: 'free',
+                    label: `🎁 Gratis (${VAULT_STATS.freeItems})`,
+                  },
+                  {
+                    id: 'premium',
+                    label: `💎 Con Gemas (${VAULT_STATS.premiumItems})`,
+                  },
+                ].map((f) => {
+                  const active = tierFilter === f.id;
+                  return (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => {
+                        playUiTap(1);
+                        setTierFilter(f.id as 'all' | 'free' | 'premium');
+                      }}
+                      className={`px-2.5 py-1 rounded-[7px] text-[10px] sm:text-[11px] font-bold transition ${
+                        active
+                          ? 'bg-[#2E2546] text-[#FFD54F] border border-[#FFD54F]/45'
+                          : 'text-[#A8A3B8] hover:text-white'
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="relative flex-1 max-w-xs">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="🔍 Buscar skin, marco, sonido, reliquia..."
+                  className="w-full h-[32px] pl-3 pr-7 rounded-[9px] bg-[#0E0D18] border border-[#2C2742] text-[11px] text-[#F4F1FF] placeholder-[#7D7894] focus:outline-none focus:border-[#B58BFF]"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-[#A8A3B8] hover:text-white"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Full-Width Scrollable Viewport Body (Right-edge native scrollbar controls this directly) */}
+      <div className="flex-1 w-full overflow-y-scroll overscroll-contain px-3 sm:px-5 py-4">
+        <div className="max-w-5xl w-full mx-auto space-y-4 pb-10">
+          {/* TAB 1: 36 MASCOT SKINS & AURAS */}
+          {activeTab === 'skins' && (
+            <div className="space-y-3.5">
+              {/* Interactive Mascot Skin & Evolution Stage Preview */}
+              <div className="p-3.5 sm:p-4 rounded-[20px] border border-[#443868] bg-gradient-to-b from-[#211D34] to-[#161524] space-y-3 shadow-lg">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+                  <div className="flex items-center gap-3.5 min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => playMascotVoice(previewMascotLevel, false)}
+                      className="relative shrink-0 group focus:outline-none"
+                      title="Toca para escuchar la voz bio-acústica de esta especie"
+                    >
+                      <div className="animate-mascot-float">
+                        <MascotAvatarSvg
+                          level={previewMascotLevel}
+                          size={82}
+                          skinId={previewSkin.id}
+                        />
+                      </div>
+                    </button>
+                    <div className="space-y-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span
+                          style={{
+                            color: previewSkin.auraRingColor,
+                            borderColor: `${previewSkin.auraRingColor}66`,
+                          }}
+                          className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full border bg-black/40"
+                        >
+                          {previewSkin.badge}
+                        </span>
+                        <span className="text-[11px] text-[#C8C2D8] font-semibold">
+                          Probando en Nv. {previewMascotLevel} ({MASCOT_STAGE_NAMES[previewTier]})
+                        </span>
+                      </div>
+                      <div className="text-[16px] sm:text-[18px] font-extrabold text-white leading-snug break-words">
+                        {previewSkin.emoji} {previewSkin.name}
+                      </div>
+                      <div className="text-[11px] text-[#C8C2D8] leading-snug break-words">
+                        {previewSkin.subtitle}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
+                    <button
+                      type="button"
+                      onClick={() => onSelectSkin(previewSkin)}
+                      className="w-full sm:w-auto px-4 py-2.5 rounded-[12px] bg-gradient-to-r from-[#7549B8] to-[#9B6BFF] text-white text-xs font-extrabold hover:brightness-110 active:scale-95 transition shadow"
+                    >
+                      {equippedSkinId === previewSkin.id
+                        ? '✓ Equipada actualmente'
+                        : isIndieFounder ||
+                          previewSkin.gemCost === 0 ||
+                          unlockedSkins.includes(previewSkin.id)
+                        ? '✨ Equipar ahora'
+                        : `Desbloquear · 💎 ${previewSkin.gemCost}`}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Evolution Slider to test the skin across all 200 levels */}
+                <div className="pt-2 border-t border-[#322B4B] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <span className="text-[11px] text-[#A8A3B8]">
+                    🎚️ Desliza para probar cómo luce <strong>{previewSkin.name}</strong> en las 20 especies (Nv. 1–200):
+                  </span>
+                  <div className="flex items-center gap-2 flex-1 max-w-sm">
+                    <input
+                      type="range"
+                      min={1}
+                      max={200}
+                      value={previewMascotLevel}
+                      onChange={(e) => setPreviewMascotLevel(Number(e.target.value))}
+                      className="w-full accent-[#B58BFF] cursor-pointer"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setPreviewMascotLevel(level)}
+                      className="px-2 py-1 rounded bg-[#2B2540] text-[10px] font-bold text-[#D8C5FF] hover:text-white shrink-0"
+                    >
+                      Mi Nv. ({level})
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Skins Grid (36 items) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                {filteredSkins.map((skin) => {
+                  const isOwned =
+                    isIndieFounder ||
+                    skin.gemCost === 0 ||
+                    unlockedSkins.includes(skin.id);
+                  const isEquipped = equippedSkinId === skin.id;
+                  const isPreviewing = previewSkinId === skin.id;
+
+                  return (
+                    <div
+                      key={skin.id}
+                      onClick={() => {
+                        playUiTap(1);
+                        setPreviewSkinId(skin.id);
+                      }}
+                      className={`p-3 rounded-[16px] border transition cursor-pointer flex flex-col justify-between gap-2.5 ${
+                        isEquipped
+                          ? 'bg-gradient-to-br from-[#272242] to-[#1B182E] border-[#82E59B]/70 shadow-[0_4px_16px_rgba(130,229,155,0.15)]'
+                          : isPreviewing
+                          ? 'bg-[#231F38] border-[#C7A4FF]'
+                          : 'bg-[#171625] border-[#2C2840] hover:border-[#4D4270]'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <MascotAvatarSvg
+                          level={previewMascotLevel}
+                          size={54}
+                          skinId={skin.id}
+                        />
+                        <div className="min-w-0 flex-1 space-y-0.5">
+                          <div className="flex items-center justify-between gap-1">
+                            <span
+                              style={{ color: skin.auraRingColor }}
+                              className="text-[9px] font-extrabold uppercase"
+                            >
+                              {skin.badge}
+                            </span>
+                            {isEquipped ? (
+                              <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-[#1C3829] text-[#82E59B]">
+                                ACTIVA
+                              </span>
+                            ) : skin.gemCost === 0 ? (
+                              <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-[#1F332B] text-[#9AF0AE]">
+                                GRATIS
+                              </span>
+                            ) : null}
+                          </div>
+                          <div className="text-[13px] font-bold text-[#F4F1FF] leading-snug break-words">
+                            {skin.emoji} {skin.name}
+                          </div>
+                          <div className="text-[10px] text-[#A8A3B8] leading-snug break-words">
+                            {skin.subtitle}
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPreviewSkinId(skin.id);
+                          onSelectSkin(skin);
+                        }}
+                        className={`w-full h-[35px] rounded-[10px] text-[11px] font-extrabold transition ${
+                          isEquipped
+                            ? 'bg-[#1E3B2E] text-[#82E59B] border border-[#65DB85]/40'
+                            : isOwned
+                            ? 'bg-[#32284E] text-white hover:bg-[#413465]'
+                            : 'bg-gradient-to-r from-[#653CA6] to-[#8C5CE0] text-white hover:brightness-110'
+                        }`}
+                      >
+                        {isEquipped
+                          ? '✓ Aura Equipada'
+                          : isOwned
+                          ? '✨ Equipar Aura'
+                          : `Desbloquear · 💎 ${skin.gemCost}`}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: TARJETAS, SONIDOS, ESTILOS & TÍTULOS (156 ITEMS) */}
+          {activeTab === 'cards_audio' && (
+            <div className="space-y-3.5">
+              {/* Sub-Category Selector */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 p-1.5 rounded-[14px] bg-[#151423] border border-[#2E2946]">
+                {[
+                  {
+                    id: 'frames',
+                    label: `🖼️ Marcos & FX (${CARD_COSMETICS.length})`,
+                    desc: 'Bordes y brillos de tarjeta',
+                  },
+                  {
+                    id: 'sounds',
+                    label: `🎵 Packs Sonido (${SOUND_PACKS.length})`,
+                    desc: 'Sintetizador Web Audio',
+                  },
+                  {
+                    id: 'styles',
+                    label: `🌈 Sintonías (${CARD_STYLE_VAULT.length})`,
+                    desc: 'Temas y paisajes',
+                  },
+                  {
+                    id: 'titles',
+                    label: `🏅 Títulos (${GUARDIAN_TITLES.length})`,
+                    desc: 'Emblemas de perfil',
+                  },
+                ].map((sub) => {
+                  const active = vaultSubTab === sub.id;
+                  return (
+                    <button
+                      key={sub.id}
+                      type="button"
+                      onClick={() => {
+                        playUiTap(2);
+                        setVaultSubTab(
+                          sub.id as 'frames' | 'sounds' | 'styles' | 'titles'
+                        );
+                      }}
+                      className={`p-2 rounded-[10px] text-left transition border ${
+                        active
+                          ? 'bg-[#2C2346] border-[#B58BFF] text-white shadow'
+                          : 'bg-[#1A1829] border-transparent text-[#A8A3B8] hover:text-white'
+                      }`}
+                    >
+                      <div className="text-[11px] sm:text-xs font-extrabold truncate">
+                        {sub.label}
+                      </div>
+                      <div className="text-[9px] text-[#9E97B0] truncate">
+                        {sub.desc}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* SUB-TAB A: 48 CARD FRAMES & FX */}
+              {vaultSubTab === 'frames' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                  {filteredFrames.map((frame) => {
+                    const isOwned =
+                      isIndieFounder ||
+                      frame.gemCost === 0 ||
+                      unlockedVaultIds.includes(frame.id);
+                    const isEquipped = equippedCardFrameId === frame.id;
+
+                    return (
+                      <div
+                        key={frame.id}
+                        style={{
+                          borderColor: isEquipped
+                            ? '#82E59B'
+                            : `${frame.borderColor}77`,
+                          background: frame.overlayGradient,
+                        }}
+                        className="p-3 rounded-[16px] bg-[#171625] border flex flex-col justify-between gap-2.5 transition"
+                      >
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <span
+                              style={{ color: frame.borderColor }}
+                              className="text-[9px] font-extrabold uppercase tracking-wider"
+                            >
+                              {frame.badge}
+                            </span>
+                            <span
+                              style={{
+                                backgroundColor: `${frame.borderColor}25`,
+                                borderColor: `${frame.borderColor}66`,
+                                color: frame.shimmerColor,
+                              }}
+                              className="px-2 py-0.5 rounded-full border text-[9px] font-bold"
+                            >
+                              {frame.emoji} Vista Marco
+                            </span>
+                          </div>
+                          <div className="text-[13px] font-extrabold text-white leading-snug">
+                            {frame.emoji} {frame.name}
+                          </div>
+                          <p className="text-[10px] text-[#B8B2C8] leading-snug">
+                            {frame.subtitle}
+                          </p>
+                          {/* Mini Progress Bar Shimmer Preview */}
+                          <div className="h-2 w-full rounded-full bg-[#11101B] overflow-hidden border border-white/10">
+                            <div
+                              style={{
+                                width: '72%',
+                                background: `linear-gradient(90deg, ${frame.borderColor}, ${frame.shimmerColor})`,
+                              }}
+                              className="h-full rounded-full"
+                            />
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => onSelectCardCosmetic(frame)}
+                          className={`w-full h-[35px] rounded-[10px] text-[11px] font-extrabold transition ${
+                            isEquipped
+                              ? 'bg-[#1E3B2E] text-[#82E59B] border border-[#65DB85]/40'
+                              : isOwned
+                              ? 'bg-[#32284E] text-white hover:bg-[#413465]'
+                              : 'bg-gradient-to-r from-[#653CA6] to-[#8C5CE0] text-white hover:brightness-110'
+                          }`}
+                        >
+                          {isEquipped
+                            ? '✓ Marco Activo en Tarjeta'
+                            : isOwned
+                            ? '🖼️ Aplicar a mi Tarjeta'
+                            : `Desbloquear · 💎 ${frame.gemCost}`}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* SUB-TAB B: 30 REAL-TIME WEB AUDIO SOUND PACKS */}
+              {vaultSubTab === 'sounds' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                  {filteredSounds.map((snd) => {
+                    const isOwned =
+                      isIndieFounder ||
+                      snd.gemCost === 0 ||
+                      unlockedVaultIds.includes(snd.id);
+                    const isEquipped = equippedSoundPackId === snd.id;
+
+                    return (
+                      <div
+                        key={snd.id}
+                        className={`p-3 rounded-[16px] border flex flex-col justify-between gap-2.5 transition ${
+                          isEquipped
+                            ? 'bg-gradient-to-br from-[#262140] to-[#19172B] border-[#82E59B]/70'
+                            : 'bg-[#171625] border-[#2C2840]'
+                        }`}
+                      >
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between gap-1">
+                            <span
+                              style={{ color: snd.accentColor }}
+                              className="text-[9px] font-extrabold uppercase tracking-wider"
+                            >
+                              {snd.badge} · {snd.scaleName}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => playSoundPackPreview(snd.id)}
+                              className="px-2 py-0.5 rounded-md bg-[#2A2442] hover:bg-[#3A315A] text-[#FFE082] text-[10px] font-extrabold border border-[#5B4B8A] transition"
+                            >
+                              🔊 Probar
+                            </button>
+                          </div>
+                          <div className="text-[13px] font-extrabold text-white leading-snug">
+                            {snd.emoji} {snd.name}
+                          </div>
+                          <p className="text-[10px] text-[#A8A3B8] leading-snug">
+                            {snd.subtitle}
+                          </p>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => onSelectSoundPack(snd)}
+                          className={`w-full h-[35px] rounded-[10px] text-[11px] font-extrabold transition ${
+                            isEquipped
+                              ? 'bg-[#1E3B2E] text-[#82E59B] border border-[#65DB85]/40'
+                              : isOwned
+                              ? 'bg-[#32284E] text-white hover:bg-[#413465]'
+                              : 'bg-gradient-to-r from-[#653CA6] to-[#8C5CE0] text-white hover:brightness-110'
+                          }`}
+                        >
+                          {isEquipped
+                            ? '✓ Sintetizador Activo'
+                            : isOwned
+                            ? '🎵 Equipar Sonido'
+                            : `Desbloquear · 💎 ${snd.gemCost}`}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* SUB-TAB C: 42 CHROMATIC CARD STYLES */}
+              {vaultSubTab === 'styles' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                  {filteredStyles.map((st) => {
+                    const isOwned =
+                      isIndieFounder ||
+                      st.gemCost === 0 ||
+                      unlockedVaultIds.includes(st.id);
+                    const isCurrentStyle =
+                      activeAccentColor === st.accentColor &&
+                      activeBannerId === st.bannerId;
+
+                    return (
+                      <div
+                        key={st.id}
+                        style={{
+                          borderColor: isCurrentStyle
+                            ? '#82E59B'
+                            : `${st.accentColor}66`,
+                        }}
+                        className="p-3 rounded-[16px] bg-[#171625] border flex flex-col justify-between gap-2.5"
+                      >
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <span
+                              style={{ color: st.accentColor }}
+                              className="text-[9px] font-extrabold uppercase"
+                            >
+                              {st.badge}
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <span
+                                style={{ backgroundColor: st.accentColor }}
+                                className="w-3 h-3 rounded-full inline-block border border-white/30"
+                              />
+                              <span
+                                style={{
+                                  backgroundColor: st.previewColorSecondary,
+                                }}
+                                className="w-3 h-3 rounded-full inline-block border border-white/30"
+                              />
+                            </div>
+                          </div>
+                          <div className="text-[13px] font-extrabold text-white leading-snug">
+                            {st.emoji} {st.name}
+                          </div>
+                          <p className="text-[10px] text-[#A8A3B8] leading-snug">
+                            {st.subtitle}
+                          </p>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => onApplyVaultCardStyle(st)}
+                          className={`w-full h-[35px] rounded-[10px] text-[11px] font-extrabold transition ${
+                            isCurrentStyle
+                              ? 'bg-[#1E3B2E] text-[#82E59B] border border-[#65DB85]/40'
+                              : isOwned
+                              ? 'bg-[#32284E] text-white hover:bg-[#413465]'
+                              : 'bg-gradient-to-r from-[#653CA6] to-[#8C5CE0] text-white hover:brightness-110'
+                          }`}
+                        >
+                          {isCurrentStyle
+                            ? '✓ Estilo Aplicado'
+                            : isOwned
+                            ? '🌈 Aplicar Sintonía'
+                            : `Desbloquear · 💎 ${st.gemCost}`}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* SUB-TAB D: 36 GUARDIAN PROFILE TITLES */}
+              {vaultSubTab === 'titles' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                  {filteredTitles.map((t) => {
+                    const isOwned =
+                      isIndieFounder ||
+                      t.gemCost === 0 ||
+                      unlockedVaultIds.includes(t.id);
+                    const isEquipped = equippedTitleId === t.id;
+
+                    return (
+                      <div
+                        key={t.id}
+                        className={`p-3 rounded-[16px] border flex flex-col justify-between gap-2.5 ${
+                          isEquipped
+                            ? 'bg-[#241F3B] border-[#82E59B]/70'
+                            : 'bg-[#171625] border-[#2C2840]'
+                        }`}
+                      >
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span
+                              style={{ color: t.color }}
+                              className="text-[9px] font-extrabold uppercase"
+                            >
+                              {t.badge}
+                            </span>
+                            {isEquipped && (
+                              <span className="text-[9px] font-extrabold text-[#82E59B]">
+                                EN USO
+                              </span>
+                            )}
+                          </div>
+                          <div
+                            style={{ color: t.color }}
+                            className="text-[13px] font-extrabold leading-snug"
+                          >
+                            {t.emoji} {t.title}
+                          </div>
+                          <p className="text-[10px] text-[#A8A3B8] leading-snug">
+                            {t.subtitle}
+                          </p>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => onSelectGuardianTitle(t)}
+                          className={`w-full h-[35px] rounded-[10px] text-[11px] font-extrabold transition ${
+                            isEquipped
+                              ? 'bg-[#1E3B2E] text-[#82E59B] border border-[#65DB85]/40'
+                              : isOwned
+                              ? 'bg-[#32284E] text-white hover:bg-[#413465]'
+                              : 'bg-gradient-to-r from-[#653CA6] to-[#8C5CE0] text-white hover:brightness-110'
+                          }`}
+                        >
+                          {isEquipped
+                            ? '✓ Título Equipado'
+                            : isOwned
+                            ? '🏅 Equipar Título'
+                            : `Desbloquear · 💎 ${t.gemCost}`}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 3: 24 BUFFS, FREE BLESSINGS & RELICS */}
+          {activeTab === 'buffs' && (
+            <div className="space-y-3.5">
+              {/* Active Status Strip */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div className="p-2.5 rounded-[13px] bg-[#181726] border border-[#2E2944] flex items-center justify-between">
+                  <span className="text-[11px] text-[#C8C2D8]">
+                    🛡️ Escudos de Racha:
+                  </span>
+                  <span className="text-xs font-mono-tabular font-extrabold text-[#64D8FF]">
+                    {streakShields} en inventario
+                  </span>
+                </div>
+                <div className="p-2.5 rounded-[13px] bg-[#181726] border border-[#2E2944] flex items-center justify-between">
+                  <span className="text-[11px] text-[#C8C2D8]">
+                    🧪 Impulso ×1.5 XP:
+                  </span>
+                  <span className="text-xs font-mono-tabular font-extrabold text-[#B58BFF]">
+                    {isXpBoostActive ? `Activo (${xpBoostRemainingText})` : 'Inactivo'}
+                  </span>
+                </div>
+                <div className="p-2.5 rounded-[13px] bg-[#181726] border border-[#2E2944] flex items-center justify-between">
+                  <span className="text-[11px] text-[#C8C2D8]">
+                    🧲 Cosechador ×2 💎:
+                  </span>
+                  <span className="text-xs font-mono-tabular font-extrabold text-[#82E59B]">
+                    {isGemMagnetActive
+                      ? `Activo (${gemMagnetRemainingText})`
+                      : 'Inactivo'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {filteredBuffs.map((buff) => {
+                  const isFreeBlessing = buff.kind === 'free_blessing';
+                  const isRelic = buff.kind === 'relic';
+                  const isClaimedOrOwned =
+                    (isFreeBlessing || isRelic) &&
+                    unlockedVaultIds.includes(buff.id);
+                  const levelLocked =
+                    isFreeBlessing && (buff.requiredLevel || 1) > level;
+
+                  return (
+                    <div
+                      key={buff.id}
+                      className={`p-3.5 rounded-[16px] border flex flex-col justify-between gap-3 ${
+                        isClaimedOrOwned
+                          ? 'bg-[#182422] border-[#65DB85]/50'
+                          : 'bg-[#171625] border-[#2E2944]'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div
+                          style={{
+                            borderColor: `${buff.accentColor}55`,
+                            backgroundColor: '#221E35',
+                          }}
+                          className="w-12 h-12 rounded-[13px] border flex items-center justify-center text-2xl shrink-0"
+                        >
+                          {buff.icon}
+                        </div>
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <span
+                            style={{ color: buff.accentColor }}
+                            className="text-[9px] font-extrabold uppercase tracking-wider"
+                          >
+                            {buff.badgeText}
+                          </span>
+                          <div className="text-[14px] font-bold text-[#F4F1FF] leading-snug break-words">
+                            {buff.name}
+                          </div>
+                          <div className="text-[11px] text-[#A8A3B8] leading-snug break-words">
+                            {buff.description}
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => onActivateBuff(buff)}
+                        className={`w-full h-[38px] rounded-[11px] text-xs font-extrabold transition flex items-center justify-center gap-1.5 shadow ${
+                          isClaimedOrOwned
+                            ? 'bg-[#1E3B2E] text-[#82E59B] border border-[#65DB85]/40'
+                            : levelLocked
+                            ? 'bg-[#232033] text-[#8E88A6] border border-[#35304C]'
+                            : buff.gemCost === 0
+                            ? 'bg-gradient-to-r from-[#2E7D32] to-[#65DB85] text-[#0E2214] hover:brightness-110'
+                            : 'bg-gradient-to-r from-[#653CA6] to-[#8C5CE0] text-white hover:brightness-110 active:scale-95'
+                        }`}
+                      >
+                        {isClaimedOrOwned
+                          ? isRelic
+                            ? '✓ Reliquia en tu Santuario'
+                            : '✓ Bendición Reclamada'
+                          : levelLocked
+                          ? `🔒 Requiere Guardián Nv. ${buff.requiredLevel}`
+                          : buff.gemCost === 0
+                          ? `🎁 Reclamar Gratis (${buff.subtitle})`
+                          : `Activar · 💎 ${buff.gemCost}`}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: APOYAR AL DEV INDIE (PEDIDOSYA-STYLE EDITABLE TIP + PACKS) */}
+          {activeTab === 'support' && (
+            <div className="space-y-4">
+              {/* Empathy Note from the Solo Indie Developer */}
+              <div className="p-3.5 rounded-[18px] bg-gradient-to-r from-[#241D38] via-[#1E1B30] to-[#1A2826] border border-[#56447E] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-[12px] bg-[#2E2448] border border-[#B58BFF]/40 flex items-center justify-center text-xl shrink-0">
+                    ❤️
+                  </div>
+                  <div className="text-[11px] sm:text-[12px] text-[#E6E0F2] leading-relaxed break-words">
+                    <strong>De un Desarrollador Indie para ti:</strong> Construí{' '}
+                    <span className="text-[#FFD54F] font-bold">Objective Reacher</span>{' '}
+                    con dedicación artesanal para ayudarte a cumplir tus metas. Puedes jugar y ganar{' '}
+                    <strong className="text-[#9AF0AE]">💎 Gemas gratis</strong> todos los días, o elegir cualquier propina a tu medida para impulsar nuevas actualizaciones.
+                  </div>
+                </div>
+              </div>
+
+              {/* PedidosYa-Style Editable Tip / Donation Card */}
+              <div className="p-4 sm:p-5 rounded-[20px] bg-gradient-to-b from-[#231D38] to-[#171526] border-2 border-[#8C5CE0] shadow-[0_8px_28px_rgba(140,92,224,0.2)] space-y-3.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#352656] text-[#FFD54F] border border-[#FFD54F]/40">
+                      💖 PROPINA LIBRE · TÚ ELIGES EL MONTO
+                    </span>
+                    <h3 className="text-[16px] sm:text-[18px] font-extrabold text-white mt-1">
+                      ☕ Propina al Desarrollador (Editable al instante)
+                    </h3>
+                    <p className="text-[11px] text-[#C8C2D8]">
+                      Elige un botón rápido o edita manualmente la cantidad exacta que quieras aportar:
+                    </p>
+                  </div>
+
+                  {/* Live Reward Pill */}
+                  <div className="px-3 py-2 rounded-[13px] bg-[#141222] border border-[#493A6E] text-right shrink-0">
+                    <div className="text-[10px] text-[#A8A3B8]">
+                      Recompensa de agradecimiento:
+                    </div>
+                    <div className="text-xs sm:text-sm font-mono-tabular font-extrabold text-[#9AF0AE]">
+                      +{tipRewardGems} 💎 · +{tipRewardShields} 🛡️
+                    </div>
+                    {tipUnlocksFounder && (
+                      <div className="text-[10px] font-extrabold text-[#FFD54F]">
+                        👑 ¡Incluye Pase Mecenas Fundador!
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Quick Tip Pills (PedidosYa style) */}
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                  {[
+                    { amount: '1.00', label: '$1 USD', tag: '🧉 Un Mate' },
+                    { amount: '2.00', label: '$2 USD', tag: '☕ Café Indie' },
+                    { amount: '5.00', label: '$5 USD', tag: '👑 Mecenas' },
+                    { amount: '10.00', label: '$10 USD', tag: '🚀 Impulso Épico' },
+                  ].map((preset) => {
+                    const isSelected =
+                      !isCustomTipEditing &&
+                      Math.abs(parsedTipUsd - Number(preset.amount)) < 0.01;
+                    return (
+                      <button
+                        key={preset.amount}
+                        type="button"
+                        onClick={() => {
+                          playUiTap(2);
+                          setIsCustomTipEditing(false);
+                          setTipAmountText(preset.amount);
+                        }}
+                        className={`p-2.5 rounded-[12px] border text-center transition ${
+                          isSelected
+                            ? 'bg-[#3A2B60] border-[#FFD54F] text-white shadow'
+                            : 'bg-[#161524] border-[#2E2946] text-[#C8C2D8] hover:border-[#65499C]'
+                        }`}
+                      >
+                        <div className="text-xs sm:text-sm font-mono-tabular font-extrabold text-white">
+                          {preset.label}
+                        </div>
+                        <div className="text-[10px] text-[#FFD54F] font-semibold">
+                          {preset.tag}
+                        </div>
+                      </button>
+                    );
+                  })}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playUiTap(3);
+                      setIsCustomTipEditing(true);
+                      window.setTimeout(() => {
+                        tipCustomInputRef.current?.focus();
+                        tipCustomInputRef.current?.select();
+                      }, 40);
+                    }}
+                    className={`p-2.5 rounded-[12px] border text-center transition ${
+                      isCustomTipEditing
+                        ? 'bg-[#3A2B60] border-[#82E59B] text-white shadow'
+                        : 'bg-[#161524] border-[#2E2946] text-[#C8C2D8] hover:border-[#82E59B]'
+                    }`}
+                  >
+                    <div className="text-xs sm:text-sm font-extrabold text-[#82E59B]">
+                      ✏️ Otro monto
+                    </div>
+                    <div className="text-[10px] text-[#A8A3B8]">
+                      Editar libremente
+                    </div>
+                  </button>
+                </div>
+
+                {/* Interactive Stepper + Direct Editable Input */}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 p-2.5 rounded-[14px] bg-[#12111E] border border-[#2F2947]">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => adjustTipBy(-0.5)}
+                      className="w-10 h-10 rounded-[10px] bg-[#25203B] hover:bg-[#332C50] text-white font-extrabold text-base border border-[#443968] transition"
+                    >
+                      −
+                    </button>
+                    <div className="relative flex items-center">
+                      <span className="absolute left-3 text-sm font-extrabold text-[#FFD54F]">
+                        $
+                      </span>
+                      <input
+                        ref={tipCustomInputRef}
+                        type="number"
+                        min="0.50"
+                        max="500"
+                        step="0.50"
+                        value={tipAmountText}
+                        onFocus={() => setIsCustomTipEditing(true)}
+                        onChange={(e) => setTipAmountText(e.target.value)}
+                        aria-label="Monto de propina en USD"
+                        className="w-[125px] h-10 pl-7 pr-11 rounded-[10px] bg-[#1B182C] border border-[#65499C] text-white font-mono-tabular font-extrabold text-sm focus:outline-none focus:border-[#FFD54F]"
+                      />
+                      <span className="absolute right-2.5 text-[10px] font-bold text-[#A8A3B8]">
+                        USD
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => adjustTipBy(0.5)}
+                      className="w-10 h-10 rounded-[10px] bg-[#25203B] hover:bg-[#332C50] text-white font-extrabold text-base border border-[#443968] transition"
+                    >
+                      ＋
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => onCustomTipSupport(Math.max(0.5, parsedTipUsd))}
+                    className="flex-1 h-[42px] px-4 rounded-[11px] bg-gradient-to-r from-[#65DB85] to-[#26E6A6] text-[#0D2116] text-xs sm:text-sm font-extrabold hover:brightness-110 active:scale-95 transition shadow flex items-center justify-center gap-2"
+                  >
+                    <span>💖 Enviar Propina de ${Math.max(0.5, parsedTipUsd).toFixed(2)} USD</span>
+                    <span className="px-2 py-0.5 rounded-full bg-black/20 text-[11px] font-mono-tabular">
+                      +{tipRewardGems} 💎
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {/* 3 Structured Support Packs */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                {INDIE_SUPPORT_PACKS.map((pack) => {
+                  const isFounderPack = pack.id === 'pack_founder';
+                  const alreadyFounder = isFounderPack && isIndieFounder;
+
+                  return (
+                    <div
+                      key={pack.id}
+                      style={{
+                        borderColor: isFounderPack
+                          ? '#FFD54F'
+                          : `${pack.highlightColor}66`,
+                      }}
+                      className={`p-4 rounded-[18px] border flex flex-col justify-between gap-3 relative overflow-hidden ${
+                        isFounderPack
+                          ? 'bg-gradient-to-b from-[#2A223A] via-[#1F1A30] to-[#181526] shadow-[0_8px_26px_rgba(255,213,79,0.16)]'
+                          : 'bg-[#171625]'
+                      }`}
+                    >
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span
+                            style={{ color: pack.highlightColor }}
+                            className="text-[10px] font-extrabold uppercase tracking-wider"
+                          >
+                            {pack.badge}
+                          </span>
+                          <span className="text-xs font-mono-tabular font-extrabold text-white px-2 py-0.5 rounded-md bg-black/40 border border-white/10">
+                            {pack.usdPrice}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-2xl">{pack.emoji}</span>
+                          <div>
+                            <h4 className="text-[15px] font-extrabold text-white leading-snug">
+                              {pack.title}
+                            </h4>
+                            <p className="text-[10px] text-[#B8B2C8]">
+                              {pack.arsReference}
+                            </p>
+                          </div>
+                        </div>
+
+                        <p className="text-[11px] text-[#D8D1E5] leading-snug">
+                          {pack.subtitle}
+                        </p>
+
+                        <ul className="space-y-1 pt-1">
+                          {pack.perks.map((perk, idx) => (
+                            <li
+                              key={idx}
+                              className="text-[11px] text-[#E6E0F2] leading-snug flex items-start gap-1.5"
+                            >
+                              <span className="leading-snug">{perk}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+
+                      <button
+                        type="button"
+                        disabled={alreadyFounder}
+                        onClick={() => onPurchasePack(pack)}
+                        style={{
+                          background: alreadyFounder
+                            ? '#1E3B2E'
+                            : isFounderPack
+                            ? 'linear-gradient(90deg, #E5B945, #FFD54F)'
+                            : 'linear-gradient(90deg, #7549B8, #9B6BFF)',
+                          color: alreadyFounder
+                            ? '#82E59B'
+                            : isFounderPack
+                            ? '#191324'
+                            : '#FFFFFF',
+                        }}
+                        className="w-full h-[42px] rounded-[12px] text-xs font-extrabold hover:brightness-110 active:scale-95 disabled:opacity-70 transition shadow"
+                      >
+                        {alreadyFounder
+                          ? '👑 Pase de Mecenas Activo'
+                          : `Elegir Pack (${pack.usdPrice})`}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
