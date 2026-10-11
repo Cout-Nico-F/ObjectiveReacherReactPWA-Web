@@ -2866,7 +2866,7 @@ export function App() {
       <div className="max-w-[1440px] mx-auto grid grid-cols-1 lg:grid-cols-[240px_1fr_320px] min-h-screen items-start">
         {/* Left Navigation Panel: Sticky on 16:9 Desktop, Scrollable Drawer on Portrait & Landscape Mobile */}
         <aside
-          className={`fixed inset-y-0 left-0 z-40 w-[268px] max-w-[82vw] lg:sticky lg:top-0 lg:h-screen lg:w-auto lg:max-w-none bg-[#171723] border-r border-[#29283C] p-3.5 sm:p-4 flex flex-col justify-between overflow-y-auto overscroll-contain transition-transform duration-200 ${
+          className={`fixed inset-y-0 left-0 z-40 w-[268px] max-w-[82vw] lg:sticky lg:top-0 lg:h-screen lg:w-auto lg:max-w-none bg-[#171723] border-r border-[#29283C] pt-[max(0.875rem,calc(env(safe-area-inset-top,0px)+0.5rem))] pb-[max(0.875rem,calc(env(safe-area-inset-bottom,0px)+0.5rem))] pl-[max(0.875rem,calc(env(safe-area-inset-left,0px)+0.5rem))] pr-3.5 sm:p-4 flex flex-col justify-between overflow-y-auto overscroll-contain transition-transform duration-200 ${
             isNavigationOpen
               ? 'translate-x-0'
               : '-translate-x-full lg:translate-x-0'
@@ -2879,8 +2879,9 @@ export function App() {
                   🎯
                 </div>
                 <div className="min-w-0">
-                  <div className="text-[16px] sm:text-[17px] font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-[#FFFFFF] via-[#F0E6FF] to-[#C7A4FF] leading-tight">
-                    Objective Reacher
+                  <div className="text-[16px] sm:text-[17px] font-extrabold tracking-tight leading-tight">
+                    <span className="text-[#F4F1FF]">Objective</span>{' '}
+                    <span className="text-[#82E59B]">Reacher</span>
                   </div>
                   <div className="text-[11px] text-[#AAA5BB] leading-tight">
                     Tu progreso, a tu ritmo
@@ -3004,11 +3005,11 @@ export function App() {
 
         {/* Center Dashboard ScrollView */}
         <main className="px-2.5 sm:px-4 pb-16 lg:pb-8 space-y-3.5 min-w-0">
-          {/* Sticky Header Bar: 2-Row Portrait-First Layout so the Objective Name NEVER wraps vertically */}
-          <div className="sticky top-0 z-20 -mx-2.5 sm:-mx-4 px-2.5 sm:px-4 py-2 bg-[#11121C]/95 backdrop-blur-md border-b border-[#29283C]/85 space-y-1.5 shadow-[0_6px_20px_rgba(7,8,16,0.45)]">
-            {/* Row 1: Brand Identity + Quick Action Toolbar */}
-            <div className="flex items-center justify-between gap-1.5">
-              <div className="flex items-center gap-2 min-w-0">
+          {/* Sticky Header Bar: Relative Full-Width Single-Row Layout with Notch Safe-Area Protection */}
+          <div className="sticky top-0 z-20 -mx-2.5 sm:-mx-4 pt-[max(clamp(0.42rem,1.8vw,0.6rem),calc(env(safe-area-inset-top,0px)+0.35rem))] pb-[clamp(0.42rem,1.8vw,0.6rem)] pl-[max(clamp(0.5rem,2.4vw,1rem),calc(env(safe-area-inset-left,0px)+0.35rem))] pr-[max(clamp(0.5rem,2.4vw,1rem),calc(env(safe-area-inset-right,0px)+0.35rem))] bg-[#11121C]/95 backdrop-blur-md border-b border-[#29283C]/85 shadow-[0_6px_20px_rgba(7,8,16,0.45)]">
+            <div className="flex flex-nowrap items-center justify-between w-full gap-[clamp(0.2rem,1.1vw,0.45rem)]">
+              {/* Left: Menu Drawer Button + Fluid Brand Emblem & Name */}
+              <div className="flex items-center gap-[clamp(0.2rem,1.1vw,0.45rem)] flex-1 sm:flex-initial min-w-0">
                 <button
                   onClick={() => {
                     playUiTap(1);
@@ -3016,60 +3017,72 @@ export function App() {
                     setIsNavigationOpen(true);
                   }}
                   aria-label="Abrir navegación"
-                  className="lg:hidden w-[34px] h-[34px] sm:w-[38px] sm:h-[38px] rounded-[10px] bg-[#242238] border border-[#383252] text-[#D9C9FF] text-[16px] flex items-center justify-center shrink-0 hover:bg-[#302747] active:scale-95 transition"
+                  className="lg:hidden w-[clamp(1.7rem,7.8vw,2.15rem)] h-[clamp(1.7rem,7.8vw,2.15rem)] rounded-[clamp(7px,2.2vw,10px)] bg-[#242238] border border-[#383252] text-[#D9C9FF] text-[clamp(0.75rem,3.4vw,0.9rem)] flex items-center justify-center shrink-0 hover:bg-[#302747] active:scale-95 transition"
                 >
                   ☰
                 </button>
 
-                <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-                  <span className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-extrabold uppercase tracking-[0.1em] whitespace-nowrap">
-                    <span className="text-[12px] sm:text-[13px] leading-none drop-shadow-[0_0_6px_rgba(255,100,120,0.45)]">
-                      🎯
-                    </span>
-                    <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#D8C5FF] via-[#B58BFF] to-[#82E59B]">
-                      OBJECTIVE REACHER
-                    </span>
+                <div className="flex-1 sm:flex-initial min-w-0 h-[clamp(1.7rem,7.8vw,2.15rem)] inline-flex items-center justify-center sm:justify-start gap-[clamp(0.25rem,1.2vw,0.45rem)] px-[clamp(0.35rem,1.6vw,0.65rem)] rounded-[clamp(7px,2.2vw,10px)] bg-[#1A1829] border border-[#453A6B] shadow-[0_2px_10px_rgba(0,0,0,0.3)]">
+                  <span className="w-[clamp(1.05rem,4.8vw,1.35rem)] h-[clamp(1.05rem,4.8vw,1.35rem)] rounded-[clamp(5px,1.4vw,7px)] bg-gradient-to-br from-[#7549B8] to-[#3B8D61] flex items-center justify-center text-[clamp(0.6rem,2.7vw,0.75rem)] leading-none shrink-0">
+                    🎯
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => openIndieShop('cards_audio')}
-                    style={{
-                      color: equippedGuardianTitle.color,
-                      borderColor: `${equippedGuardianTitle.color}55`,
-                    }}
-                    className="hidden xs:inline-flex sm:inline-flex px-1.5 py-0.2 rounded-full bg-[#1C192B] border text-[9px] font-extrabold hover:brightness-110 transition whitespace-nowrap"
-                    title="Cambiar Título de Guardián en el Banco del Santuario"
-                  >
-                    {equippedGuardianTitle.emoji} {equippedGuardianTitle.title}
-                  </button>
-                  {isIndieFounder && (
-                    <span className="hidden sm:inline-flex px-1.5 py-0.2 rounded-full bg-[#3A2E14] border border-[#FFD54F]/60 text-[9px] font-extrabold text-[#FFD54F] whitespace-nowrap">
-                      👑 FUNDADOR
+                  <div className="flex flex-col min-[520px]:flex-row min-[520px]:items-center min-[520px]:gap-1 leading-[1.02] min-w-0">
+                    <span className="text-[clamp(0.54rem,2.45vw,0.75rem)] font-black uppercase tracking-[0.04em] sm:tracking-[0.06em] text-[#F4F1FF] truncate">
+                      OBJECTIVE
                     </span>
-                  )}
+                    <span className="text-[clamp(0.54rem,2.45vw,0.75rem)] font-black uppercase tracking-[0.05em] sm:tracking-[0.08em] text-[#82E59B] truncate">
+                      REACHER
+                    </span>
+                  </div>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={() => openIndieShop('cards_audio')}
+                  style={{
+                    color: equippedGuardianTitle.color,
+                    borderColor: `${equippedGuardianTitle.color}55`,
+                  }}
+                  className="hidden md:inline-flex px-2 py-0.5 rounded-full bg-[#1C192B] border text-[9px] font-extrabold hover:brightness-110 transition whitespace-nowrap shrink-0"
+                  title="Cambiar Título de Guardián en el Banco del Santuario"
+                >
+                  {equippedGuardianTitle.emoji} {equippedGuardianTitle.title}
+                </button>
+                {isIndieFounder && (
+                  <span className="hidden sm:inline-flex px-1.5 py-0.5 rounded-full bg-[#3A2E14] border border-[#FFD54F]/60 text-[9px] font-extrabold text-[#FFD54F] whitespace-nowrap shrink-0">
+                    👑 FUNDADOR
+                  </span>
+                )}
               </div>
 
-              {/* Right Quick Toolbar: ASMR Clicker + Gems + Music + Sound + History */}
-              <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+              {/* Right Quick Toolbar: ASMR + Gems + Music + Sound + History */}
+              <div className="flex items-center justify-end gap-[clamp(0.18rem,1vw,0.38rem)] flex-[1.35] sm:flex-initial min-w-0">
                 <button
                   onClick={openAndScrollToAsmrSanctuary}
                   title="Ir al Clicker ASMR & Orbes de Calma (16 estilos desbloqueables)"
-                  className="h-[34px] sm:h-[36px] px-2 sm:px-2.5 rounded-[10px] bg-gradient-to-r from-[#1A333D] to-[#262042] border border-[#64D8FF]/70 hover:border-[#82E59B] text-[#E0F7FA] text-[11px] font-extrabold flex items-center gap-1 transition shrink-0 shadow-[0_2px_10px_rgba(100,216,255,0.2)] active:scale-95"
+                  className="flex-1 sm:flex-initial h-[clamp(1.7rem,7.8vw,2.15rem)] px-[clamp(0.35rem,1.6vw,0.65rem)] rounded-[clamp(7px,2.2vw,10px)] bg-gradient-to-r from-[#1A333D] to-[#262042] border border-[#64D8FF]/70 hover:border-[#82E59B] text-[#E0F7FA] text-[clamp(0.56rem,2.5vw,0.72rem)] font-extrabold flex items-center justify-center gap-[clamp(0.18rem,0.9vw,0.32rem)] transition min-w-0 shadow-[0_2px_10px_rgba(100,216,255,0.2)] active:scale-95"
                 >
-                  <span>{activeAsmrTextureObj.emoji}</span>
-                  <span className="text-[10px] font-extrabold tracking-tight text-[#64D8FF]">
+                  <span className="text-[clamp(0.65rem,2.8vw,0.8rem)] leading-none shrink-0">
+                    {activeAsmrTextureObj.emoji}
+                  </span>
+                  <span className="font-extrabold tracking-tight text-[#64D8FF] truncate">
                     ASMR
                   </span>
                 </button>
 
                 <button
                   onClick={() => openIndieShop('skins')}
-                  title="Abrir Santuario Indie: Skins, Buffs y Apoyo al Creador (0% anuncios)"
-                  className="h-[34px] sm:h-[36px] px-2 sm:px-2.5 rounded-[10px] bg-gradient-to-r from-[#2B2144] to-[#212B38] border border-[#65499C] hover:border-[#B58BFF] text-[#F4F1FF] text-[11px] font-extrabold flex items-center gap-1 transition shrink-0 shadow-[0_2px_10px_rgba(140,92,224,0.22)] active:scale-95"
+                  title={`Abrir Santuario Indie (${gems.toLocaleString()} gemas): Skins, Buffs y Apoyo al Creador`}
+                  className="flex-1 sm:flex-initial h-[clamp(1.7rem,7.8vw,2.15rem)] px-[clamp(0.35rem,1.6vw,0.65rem)] rounded-[clamp(7px,2.2vw,10px)] bg-gradient-to-r from-[#2B2144] to-[#212B38] border border-[#65499C] hover:border-[#B58BFF] text-[#F4F1FF] text-[clamp(0.56rem,2.5vw,0.72rem)] font-extrabold flex items-center justify-center gap-[clamp(0.18rem,0.9vw,0.32rem)] transition min-w-0 shadow-[0_2px_10px_rgba(140,92,224,0.22)] active:scale-95"
                 >
-                  <span>💎</span>
-                  <span className="font-mono-tabular text-[#9AF0AE]">{gems}</span>
+                  <span className="text-[clamp(0.62rem,2.7vw,0.78rem)] leading-none shrink-0">
+                    💎
+                  </span>
+                  <span className="font-mono-tabular text-[#9AF0AE] truncate">
+                    {gems >= 10000
+                      ? `${(gems / 1000).toFixed(gems >= 100000 ? 0 : 1)}k`
+                      : gems}
+                  </span>
                   <span className="hidden md:inline text-[10px] font-bold text-[#D8C5FF]">
                     · Tienda
                   </span>
@@ -3091,7 +3104,7 @@ export function App() {
                           currentObjective.accentColor
                         )})`
                   }
-                  className={`w-[34px] h-[34px] sm:w-[36px] sm:h-[36px] rounded-[10px] text-[14px] flex items-center justify-center transition shrink-0 border ${
+                  className={`w-[clamp(1.7rem,7.8vw,2.15rem)] h-[clamp(1.7rem,7.8vw,2.15rem)] rounded-[clamp(7px,2.2vw,10px)] text-[clamp(0.7rem,3.1vw,0.88rem)] flex items-center justify-center transition shrink-0 border ${
                     sensoryPrefs.musicEnabled
                       ? 'bg-gradient-to-r from-[#2D2149] to-[#1D352E] border-[#82E59B]/60 text-[#9AF0AE] shadow-[0_0_10px_rgba(130,229,155,0.25)]'
                       : 'bg-[#1A1928] border-[#29283C] text-[#7D7894] hover:bg-[#242238] hover:text-[#D9C9FF]'
@@ -3112,7 +3125,7 @@ export function App() {
                       ? 'Efectos de sonido y vibración activos (toca para silenciar)'
                       : 'Sonido y vibración en silencio (toca para activar)'
                   }
-                  className={`w-[34px] h-[34px] sm:w-[36px] sm:h-[36px] rounded-[10px] text-[14px] flex items-center justify-center transition shrink-0 border ${
+                  className={`w-[clamp(1.7rem,7.8vw,2.15rem)] h-[clamp(1.7rem,7.8vw,2.15rem)] rounded-[clamp(7px,2.2vw,10px)] text-[clamp(0.7rem,3.1vw,0.88rem)] flex items-center justify-center transition shrink-0 border ${
                     sensoryPrefs.soundEnabled
                       ? 'bg-[#242238] border-[#3E355B] text-[#D9C9FF] hover:bg-[#302747]'
                       : 'bg-[#1A1928] border-[#29283C] text-[#7D7894] hover:bg-[#242238]'
@@ -3129,36 +3142,11 @@ export function App() {
                   }}
                   aria-label="Abrir historial de entradas"
                   title="Ver historial de movimientos"
-                  className="lg:hidden w-[34px] h-[34px] sm:w-[36px] sm:h-[36px] rounded-[10px] bg-[#242238] border border-[#383252] text-[#D9C9FF] text-[15px] flex items-center justify-center shrink-0 hover:bg-[#302747] active:scale-95 transition"
+                  className="lg:hidden w-[clamp(1.7rem,7.8vw,2.15rem)] h-[clamp(1.7rem,7.8vw,2.15rem)] rounded-[clamp(7px,2.2vw,10px)] bg-[#242238] border border-[#383252] text-[#D9C9FF] text-[clamp(0.72rem,3.2vw,0.88rem)] flex items-center justify-center shrink-0 hover:bg-[#302747] active:scale-95 transition"
                 >
                   ☷
                 </button>
               </div>
-            </div>
-
-            {/* Row 2: Full-Width Active Objective Title + Edit Button (Never squishes vertically on Portrait!) */}
-            <div className="flex items-center justify-between gap-2 pt-0.5 border-t border-[#262338]/75">
-              <div className="flex items-center gap-2 min-w-0 flex-1">
-                <span className="text-[16px] sm:text-[18px] shrink-0 leading-none">
-                  {currentIcon}
-                </span>
-                <h1 className="text-[14px] sm:text-[16px] font-extrabold text-[#F4F1FF] leading-snug break-words select-copyable">
-                  {currentObjective.title || 'Objetivo Actual'}
-                </h1>
-              </div>
-
-              <button
-                onClick={() => {
-                  playUiTap(2);
-                  setIsEditorOpen(true);
-                }}
-                aria-label="Personalizar objetivo"
-                title="Personalizar objetivo"
-                className="px-2.5 py-1 rounded-[9px] bg-[#242238] border border-[#383252] text-[#D9C9FF] text-[11px] font-bold flex items-center gap-1 hover:bg-[#302747] transition shrink-0"
-              >
-                <span>✎</span>
-                <span className="hidden sm:inline">Editar</span>
-              </button>
             </div>
           </div>
 
@@ -5043,7 +5031,7 @@ export function App() {
 
         {/* Right History Panel */}
         <aside
-          className={`fixed inset-y-0 right-0 z-40 w-[320px] lg:static lg:w-auto lg:block bg-[#171723] border-l border-[#29283C] p-4 flex flex-col gap-3.5 transition-transform duration-200 ${
+          className={`fixed inset-y-0 right-0 z-40 w-[320px] max-w-[86vw] lg:static lg:w-auto lg:max-w-none lg:block bg-[#171723] border-l border-[#29283C] pt-[max(1rem,calc(env(safe-area-inset-top,0px)+0.5rem))] pb-[max(1rem,calc(env(safe-area-inset-bottom,0px)+0.5rem))] pr-[max(1rem,calc(env(safe-area-inset-right,0px)+0.5rem))] pl-4 sm:p-4 flex flex-col gap-3.5 transition-transform duration-200 ${
             isHistoryOpen
               ? 'translate-x-0'
               : 'translate-x-full lg:translate-x-0'
@@ -8658,9 +8646,9 @@ function IndieEmporiumModal({
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="inline-flex items-center gap-1 text-[10px] font-extrabold uppercase tracking-widest">
                   <span className="text-xs leading-none">🎯</span>
-                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#D8C5FF] via-[#FFD54F] to-[#82E59B]">
-                    OBJECTIVE REACHER · BANCO DEL SANTUARIO
-                  </span>
+                  <span className="text-[#F4F1FF]">OBJECTIVE</span>{' '}
+                  <span className="text-[#82E59B]">REACHER</span>{' '}
+                  <span className="text-[#FFD54F]">· BANCO DEL SANTUARIO</span>
                 </span>
                 <span className="px-2 py-0.5 rounded-full bg-[#1E1A32] border border-[#65499C]/60 text-[9px] font-extrabold text-[#E2D4FF]">
                   ✨ {VAULT_STATS.totalItems} COLECCIONABLES EN EL SANTUARIO
