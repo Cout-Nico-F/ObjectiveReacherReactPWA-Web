@@ -31,10 +31,13 @@
                 <DataTemplate>
                     <Grid Padding="4">
                         <Border Padding="8" Stroke="{Binding BorderColor}" StrokeShape="RoundRectangle 14" BackgroundColor="{Binding CardBackground}">
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnMascotCardTapped" CommandParameter="{Binding Level}" />
+                            </Border.GestureRecognizers>
                             <VerticalStackLayout Spacing="4" HorizontalOptions="Center">
-                                <controls:MascotAvatarView Level="{Binding Level}" IsLocked="{Binding IsLocked}" WidthRequest="52" HeightRequest="52" HorizontalOptions="Center" />
-                                <Label Text="{Binding Label}" FontSize="11" FontAttributes="Bold" TextColor="{Binding TitleColor}" HorizontalTextAlignment="Center" />
-                                <Label Text="{Binding Stage}" FontSize="9" TextColor="#A8A3B8" HorizontalTextAlignment="Center" LineBreakMode="TailTruncation" MaxLines="1" />
+                                <controls:MascotAvatarView Level="{Binding Level}" IsLocked="{Binding IsLocked}" WidthRequest="52" HeightRequest="52" HorizontalOptions="Center" InputTransparent="True" />
+                                <Label Text="{Binding Label}" FontSize="11" FontAttributes="Bold" TextColor="{Binding TitleColor}" HorizontalTextAlignment="Center" InputTransparent="True" />
+                                <Label Text="{Binding Stage}" FontSize="9" TextColor="#A8A3B8" HorizontalTextAlignment="Center" LineBreakMode="TailTruncation" MaxLines="1" InputTransparent="True" />
                             </VerticalStackLayout>
                         </Border>
                     </Grid>

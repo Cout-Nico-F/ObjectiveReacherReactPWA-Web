@@ -43,6 +43,9 @@ function createEmptyState(): DashboardState {
     selectedObjectiveId: id,
     gamification: {
       totalXp: 0,
+      bonusXp: 0,
+      lastPetDateKey: '',
+      claimedQuestsByDay: {},
     },
   };
 }
@@ -70,8 +73,8 @@ function calculateSingleEntryXp(
   return baseSubtractionXp + (isFirstOfDay ? 10 : 0);
 }
 
-function recalculateAllXp(objectives: Objective[]): number {
-  let total = 0;
+function recalculateAllXp(objectives: Objective[], bonusXp = 0): number {
+  let total = Math.max(0, bonusXp);
   const seenDays = new Set<string>();
   const allEntries = objectives
     .flatMap((obj) => obj.entries.map((entry) => ({ obj, entry })))
@@ -116,11 +119,20 @@ function loadState(): DashboardState {
       parsed.gamification &&
       typeof parsed.gamification.totalXp === 'number'
     ) {
-      const recalculated = recalculateAllXp(parsed.objectives);
+      const bonusXp =
+        typeof parsed.gamification.bonusXp === 'number'
+          ? parsed.gamification.bonusXp
+          : 0;
+      const recalculated = recalculateAllXp(parsed.objectives, bonusXp);
       parsed.gamification.totalXp = Math.max(
         parsed.gamification.totalXp,
         recalculated
       );
+      parsed.gamification.bonusXp = bonusXp;
+      parsed.gamification.lastPetDateKey =
+        parsed.gamification.lastPetDateKey || '';
+      parsed.gamification.claimedQuestsByDay =
+        parsed.gamification.claimedQuestsByDay || {};
       return parsed;
     }
   } catch {
@@ -306,7 +318,14 @@ export function App() {
   const [isBannerPickerOpen, setIsBannerPickerOpen] = useState<boolean>(false);
   const [isAllAchievementsOpen, setIsAllAchievementsOpen] = useState<boolean>(false);
   const [isMascotGalleryOpen, setIsMascotGalleryOpen] = useState<boolean>(false);
+  const [mascotGalleryStartLevel, setMascotGalleryStartLevel] = useState<number | null>(null);
   const [isArchivedModalOpen, setIsArchivedModalOpen] = useState<boolean>(false);
+
+  // Interactive Mascot Sanctuary & Daily Ritual (Unified A + B + C)
+  const [mascotJoyId, setMascotJoyId] = useState<number>(0);
+  const [mascotSpeech, setMascotSpeech] = useState<string | null>(null);
+  const mascotSpeechTimerRef = useRef<number | null>(null);
+  const [isDailyRitualOpen, setIsDailyRitualOpen] = useState<boolean>(false);
 
   const [selectedAchievementDetail, setSelectedAchievementDetail] = useState<{
     title: string;
@@ -332,6 +351,21 @@ export function App() {
   // Celebration overlay
   const [celebration, setCelebration] = useState<CelebrationData | null>(null);
   const celebrationTimerRef = useRef<number | null>(null);
+  const [xpBurst, setXpBurst] = useState<{
+    id: number;
+    xp: number;
+    leveledUp: boolean;
+  } | null>(null);
+  const [showFloatingMenuBtn, setShowFloatingMenuBtn] = useState<boolean>(false);
+  const touchEdgeStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    const onScroll = () => {
+      setShowFloatingMenuBtn(window.scrollY > 120);
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   // Section refs for smooth scrolling
   const objectiveRef = useRef<HTMLDivElement>(null);
@@ -450,6 +484,313 @@ export function App() {
     [state.objectives]
   );
 
+  // Daily Ritual & Sanctuary derived metrics
+  const todayDateKey = toLocalDateKey(new Date().toISOString());
+
+  const activeDayKeysSet = useMemo(() => {
+    const s = new Set<string>();
+    for (const obj of state.objectives) {
+      for (const entry of obj.entries) {
+        s.add(toLocalDateKey(entry.createdAt));
+      }
+    }
+    return s;
+  }, [state.objectives]);
+
+  const todayEntries = useMemo(() => {
+    return state.objectives.flatMap((obj) =>
+      obj.entries.filter((e) => toLocalDateKey(e.createdAt) === todayDateKey)
+    );
+  }, [state.objectives, todayDateKey]);
+
+  const hasEntryToday = todayEntries.length > 0;
+  const hasPositiveNoteToday = todayEntries.some(
+    (e) =>
+      e.amount > 0 &&
+      e.description.trim() !== '' &&
+      e.description.trim() !== 'Aporte' &&
+      e.description.trim() !== 'Gasto'
+  );
+  const hasPettedToday = state.gamification.lastPetDateKey === todayDateKey;
+  const claimedToday =
+    state.gamification.claimedQuestsByDay?.[todayDateKey] || [];
+
+  const dailyQuests = useMemo(
+    () => [
+      {
+        id: 'pet_guardian',
+        title: 'Vínculo con tu Guardián',
+        subtitle: 'Toca a tu mascota para animarla hoy',
+        rewardXp: 15,
+        isCompleted: hasPettedToday,
+        isClaimed: claimedToday.includes('pet_guardian'),
+        icon: '💖',
+      },
+      {
+        id: 'daily_entry',
+        title: 'Impulso del Día',
+        subtitle: 'Registra al menos 1 movimiento hoy',
+        rewardXp: 25,
+        isCompleted: hasEntryToday,
+        isClaimed: claimedToday.includes('daily_entry'),
+        icon: '⚡',
+      },
+      {
+        id: 'mindful_contribution',
+        title: 'Aporte con Propósito',
+        subtitle: 'Suma un aporte con nota personalizada hoy',
+        rewardXp: 30,
+        isCompleted: hasPositiveNoteToday,
+        isClaimed: claimedToday.includes('mindful_contribution'),
+        icon: '🎯',
+      },
+    ],
+    [hasPettedToday, hasEntryToday, hasPositiveNoteToday, claimedToday]
+  );
+
+  const completedQuestsCount = dailyQuests.filter((q) => q.isCompleted).length;
+  const unclaimedReadyQuestsCount = dailyQuests.filter(
+    (q) => q.isCompleted && !q.isClaimed
+  ).length;
+  const isAllDailyBonusClaimed = claimedToday.includes('all_daily_bonus');
+  const canClaimAllDailyBonus =
+    completedQuestsCount === dailyQuests.length && !isAllDailyBonusClaimed;
+
+  // 7-Day Rolling Week Strip (Mon -> Sun of current week)
+  const weekDaysStrip = useMemo(() => {
+    const now = new Date();
+    const dayOfWeek = now.getDay(); // 0 Sun .. 6 Sat
+    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + mondayOffset);
+    const labels = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+
+    return labels.map((label, idx) => {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + idx);
+      const key = toLocalDateKey(d.toISOString());
+      const isToday = key === todayDateKey;
+      const isFuture = d.getTime() > now.getTime() && !isToday;
+      const isActive = activeDayKeysSet.has(key) || (isToday && hasPettedToday);
+      return { label, key, isToday, isFuture, isActive };
+    });
+  }, [activeDayKeysSet, todayDateKey, hasPettedToday]);
+
+  // Mascot Emotional State (A)
+  const mascotMood = useMemo(() => {
+    if (mascotJoyId > 0 && Date.now() - mascotJoyId < 4000) {
+      return {
+        badge: '💖 Radiante',
+        color: '#FF80AB',
+        bg: 'rgba(255, 128, 171, 0.14)',
+        border: 'rgba(255, 128, 171, 0.45)',
+      };
+    }
+    if (hasEntryToday && streakDays >= 3) {
+      return {
+        badge: `🔥 En Racha (${streakDays}d)`,
+        color: '#FFD54F',
+        bg: 'rgba(255, 213, 79, 0.14)',
+        border: 'rgba(255, 213, 79, 0.45)',
+      };
+    }
+    if (hasEntryToday) {
+      return {
+        badge: '✨ Energizado',
+        color: '#82E59B',
+        bg: 'rgba(130, 229, 155, 0.14)',
+        border: 'rgba(130, 229, 155, 0.45)',
+      };
+    }
+    return {
+      badge: '💤 Esperando impulso',
+      color: '#C7A4FF',
+      bg: 'rgba(199, 164, 255, 0.12)',
+      border: 'rgba(199, 164, 255, 0.3)',
+    };
+  }, [mascotJoyId, hasEntryToday, streakDays]);
+
+  // Evolution Path (C)
+  const tierStartLevel = mascotTier * 10 + 1;
+  const nextSpeciesLevel = Math.min(200, (mascotTier + 1) * 10 + 1);
+  const nextSpeciesTier = Math.min(19, mascotTier + 1);
+  const levelsToNextSpecies = Math.max(0, nextSpeciesLevel - level);
+  const currentSubLevelIndex = (Math.min(200, Math.max(1, level)) - 1) % 10; // 0..9
+
+  const triggerMascotSpeech = (text: string) => {
+    if (mascotSpeechTimerRef.current) {
+      window.clearTimeout(mascotSpeechTimerRef.current);
+    }
+    setMascotSpeech(text);
+    mascotSpeechTimerRef.current = window.setTimeout(() => {
+      setMascotSpeech(null);
+    }, 3800);
+  };
+
+  const awardBonusXp = (xpAmount: number, reasonTitle: string, reasonEmoji = '✨') => {
+    const prevLevel = level;
+    const prevTier = mascotTier;
+    const nextTotalXp = state.gamification.totalXp + xpAmount;
+    const nextBonusXp = (state.gamification.bonusXp || 0) + xpAmount;
+    const nextLevel = calculateLevelFromXp(nextTotalXp);
+    const nextTier = Math.floor((Math.min(200, Math.max(1, nextLevel)) - 1) / 10);
+
+    setState((prev) => ({
+      ...prev,
+      gamification: {
+        ...prev.gamification,
+        totalXp: prev.gamification.totalXp + xpAmount,
+        bonusXp: (prev.gamification.bonusXp || 0) + xpAmount,
+      },
+    }));
+
+    setXpBurst({
+      id: Date.now(),
+      xp: xpAmount,
+      leveledUp: nextLevel > prevLevel,
+    });
+
+    if (nextTier > prevTier) {
+      triggerCelebration(
+        '¡Nueva especie desbloqueada!',
+        `Nivel ${nextLevel} · +${xpAmount} XP · ${mascotMessages[nextTier] || ''}`,
+        mascotEmojis[nextTier] || '🪐',
+        '#FFD54F',
+        true
+      );
+    } else if (nextLevel > prevLevel) {
+      triggerCelebration(
+        `¡Subiste al Nivel ${nextLevel}!`,
+        `${reasonTitle} (+${xpAmount} XP)`,
+        mascotEmojis[nextTier] || reasonEmoji,
+        '#B58BFF'
+      );
+    }
+  };
+
+  const handlePetMascot = () => {
+    const nowId = Date.now();
+    setMascotJoyId(nowId);
+
+    const remainingAmountFormatted = formatObjectiveAmount(
+      Math.max(0, currentObjective.goalAmount - currentObjective.currentAmount),
+      currentObjective
+    );
+
+    const contextualPhrases = [
+      !hasEntryToday
+        ? '¡Qué alegría verte hoy! Un pequeño aporte encenderá nuestra racha 🔥'
+        : `¡Eso es! Ya llevamos ${streakDays} ${streakDays === 1 ? 'día' : 'días'} seguidos brillando ✨`,
+      levelsToNextSpecies > 0
+        ? `¡Siento el poder crecer! Solo ${levelsToNextSpecies} ${
+            levelsToNextSpecies === 1 ? 'nivel' : 'niveles'
+          } más para descubrir una nueva especie 🐾`
+        : '¡Hemos alcanzado la cumbre cósmica juntos! 🪐',
+      currentObjective.currentAmount >= currentObjective.goalAmount
+        ? `¡Completamos "${currentObjective.title}"! Eres imparable 🏆`
+        : `¡Vamos por "${currentObjective.title}"! Faltan ${remainingAmountFormatted} 🚀`,
+      '¡Gracias por cuidarme! Cada paso tuyo me hace evolucionar 💖',
+    ];
+
+    if (!hasPettedToday) {
+      const petXp = 15;
+      const prevLevel = level;
+      const nextTotalXp = state.gamification.totalXp + petXp;
+      const nextLevel = calculateLevelFromXp(nextTotalXp);
+
+      setState((prev) => ({
+        ...prev,
+        gamification: {
+          ...prev.gamification,
+          totalXp: prev.gamification.totalXp + petXp,
+          bonusXp: (prev.gamification.bonusXp || 0) + petXp,
+          lastPetDateKey: todayDateKey,
+        },
+      }));
+
+      setXpBurst({
+        id: nowId,
+        xp: petXp,
+        leveledUp: nextLevel > prevLevel,
+      });
+
+      triggerMascotSpeech('¡Caricia diaria recibida! +15 XP de vínculo 💖✨');
+    } else {
+      const randomPhrase =
+        contextualPhrases[Math.floor(Math.random() * contextualPhrases.length)];
+      triggerMascotSpeech(randomPhrase);
+    }
+  };
+
+  const handleClaimQuest = (questId: string, rewardXp: number, title: string) => {
+    if (claimedToday.includes(questId)) return;
+    const prevLevel = level;
+    const nextTotalXp = state.gamification.totalXp + rewardXp;
+    const nextLevel = calculateLevelFromXp(nextTotalXp);
+
+    setState((prev) => {
+      const prevClaimed = prev.gamification.claimedQuestsByDay?.[todayDateKey] || [];
+      if (prevClaimed.includes(questId)) return prev;
+      return {
+        ...prev,
+        gamification: {
+          ...prev.gamification,
+          totalXp: prev.gamification.totalXp + rewardXp,
+          bonusXp: (prev.gamification.bonusXp || 0) + rewardXp,
+          claimedQuestsByDay: {
+            ...(prev.gamification.claimedQuestsByDay || {}),
+            [todayDateKey]: [...prevClaimed, questId],
+          },
+        },
+      };
+    });
+
+    setMascotJoyId(Date.now());
+    setXpBurst({
+      id: Date.now(),
+      xp: rewardXp,
+      leveledUp: nextLevel > prevLevel,
+    });
+    triggerMascotSpeech(`¡Misión "${title}" completada! +${rewardXp} XP 🎯`);
+  };
+
+  const handleClaimAllDailyBonus = () => {
+    if (!canClaimAllDailyBonus) return;
+    const bonusXp = 40;
+    const prevLevel = level;
+    const nextTotalXp = state.gamification.totalXp + bonusXp;
+    const nextLevel = calculateLevelFromXp(nextTotalXp);
+
+    setState((prev) => {
+      const prevClaimed = prev.gamification.claimedQuestsByDay?.[todayDateKey] || [];
+      if (prevClaimed.includes('all_daily_bonus')) return prev;
+      return {
+        ...prev,
+        gamification: {
+          ...prev.gamification,
+          totalXp: prev.gamification.totalXp + bonusXp,
+          bonusXp: (prev.gamification.bonusXp || 0) + bonusXp,
+          claimedQuestsByDay: {
+            ...(prev.gamification.claimedQuestsByDay || {}),
+            [todayDateKey]: [...prevClaimed, 'all_daily_bonus'],
+          },
+        },
+      };
+    });
+
+    setMascotJoyId(Date.now());
+    setXpBurst({
+      id: Date.now(),
+      xp: bonusXp,
+      leveledUp: nextLevel > prevLevel,
+    });
+    triggerCelebration(
+      '¡Sello Diario Maestro!',
+      `Completaste las 3 misiones de hoy · +${bonusXp} XP extra`,
+      '👑',
+      '#FFD54F'
+    );
+  };
+
   // Derived objective properties
   const progress =
     currentObjective.goalAmount <= 0
@@ -472,6 +813,53 @@ export function App() {
     const parsed = Number(customAmountText.replace(',', '.'));
     return !Number.isNaN(parsed) && parsed > 0;
   }, [selectedQuickAmount, customAmountText]);
+
+  const liveXpPreview = useMemo(() => {
+    if (!hasValidSelectedAmount) return null;
+    const effectiveAmount = isAddition
+      ? selectedAmount
+      : -Math.min(selectedAmount, Math.max(1, currentObjective.currentAmount));
+    const todayKey = toLocalDateKey(new Date().toISOString());
+    const hadEntryToday = state.objectives.some((obj) =>
+      obj.entries.some((e) => toLocalDateKey(e.createdAt) === todayKey)
+    );
+    const previewStreak = hadEntryToday ? streakDays : streakDays + 1;
+    const estimatedXp = calculateSingleEntryXp(
+      effectiveAmount,
+      currentObjective.goalAmount,
+      !hadEntryToday,
+      previewStreak
+    );
+    const projectedTotalXp = totalXp + estimatedXp;
+    const willLevelUp = projectedTotalXp >= xpAtNextLevel;
+    const projectedProgress = Math.min(
+      1,
+      Math.max(0, (projectedTotalXp - xpAtLevelStart) / xpForCurrentLevel)
+    );
+    const bonusTag = !hadEntryToday
+      ? 'incluye bono diario'
+      : isAddition && previewStreak > 1
+      ? `racha x${previewStreak}d`
+      : '';
+    return {
+      estimatedXp,
+      willLevelUp,
+      projectedProgress,
+      bonusTag,
+    };
+  }, [
+    hasValidSelectedAmount,
+    isAddition,
+    selectedAmount,
+    currentObjective.currentAmount,
+    currentObjective.goalAmount,
+    state.objectives,
+    streakDays,
+    totalXp,
+    xpAtNextLevel,
+    xpAtLevelStart,
+    xpForCurrentLevel,
+  ]);
 
   const filteredEntries = useMemo(() => {
     return currentObjective.entries.filter((entry) => {
@@ -588,7 +976,10 @@ export function App() {
       !hadEntryToday,
       nextStreak
     );
-    const nextGamification = { totalXp: state.gamification.totalXp + entryXp };
+    const nextGamification = {
+      ...state.gamification,
+      totalXp: state.gamification.totalXp + entryXp,
+    };
     const newlyUnlocked = evaluateObjectiveAchievements(
       updatedObj,
       nextObjectives,
@@ -613,6 +1004,11 @@ export function App() {
     });
     setNewEntryDescription('');
     setPersistenceMessage('');
+    setXpBurst({
+      id: Date.now(),
+      xp: totalGainedXp,
+      leveledUp: nextLevel > previousLevel,
+    });
 
     if (amount > 0 && previousProgress < 1 && newProgress >= 1) {
       triggerCelebration(
@@ -741,7 +1137,10 @@ export function App() {
           : o
       );
       const updatedObj = nextObjectives.find((o) => o.id === currentObjective.id)!;
-      const nextGamification = { totalXp: prev.gamification.totalXp };
+      const nextGamification = {
+        ...prev.gamification,
+        totalXp: prev.gamification.totalXp,
+      };
       evaluateObjectiveAchievements(updatedObj, nextObjectives, nextGamification);
       return {
         ...prev,
@@ -807,7 +1206,10 @@ export function App() {
             ...prev,
             objectives: remaining,
             selectedObjectiveId: nextSelected,
-            gamification: { totalXp: recalculateAllXp(remaining) },
+            gamification: {
+              ...prev.gamification,
+              totalXp: recalculateAllXp(remaining, prev.gamification.bonusXp || 0),
+            },
           };
         });
       },
@@ -849,7 +1251,13 @@ export function App() {
           return {
             ...prev,
             objectives: nextObjectives,
-            gamification: { totalXp: recalculateAllXp(nextObjectives) },
+            gamification: {
+              ...prev.gamification,
+              totalXp: recalculateAllXp(
+                nextObjectives,
+                prev.gamification.bonusXp || 0
+              ),
+            },
           };
         });
       },
@@ -898,7 +1306,13 @@ export function App() {
       return {
         ...prev,
         objectives: nextObjectives,
-        gamification: { totalXp: recalculateAllXp(nextObjectives) },
+        gamification: {
+          ...prev.gamification,
+          totalXp: recalculateAllXp(
+            nextObjectives,
+            prev.gamification.bonusXp || 0
+          ),
+        },
       };
     });
     setEditingEntry(null);
@@ -949,7 +1363,32 @@ export function App() {
   const bannerImageSrc = customBannerDataUrl || heroPreset.imageUrl;
 
   return (
-    <div className="min-h-screen bg-[#11121C] text-[#F4F1FF] relative overflow-x-hidden">
+    <div
+      onTouchStart={(e) => {
+        const t = e.touches[0];
+        if (t && t.clientX <= 28 && !isNavigationOpen && !isHistoryOpen) {
+          touchEdgeStartRef.current = { x: t.clientX, y: t.clientY };
+        } else {
+          touchEdgeStartRef.current = null;
+        }
+      }}
+      onTouchMove={(e) => {
+        if (!touchEdgeStartRef.current) return;
+        const t = e.touches[0];
+        if (!t) return;
+        const dx = t.clientX - touchEdgeStartRef.current.x;
+        const dy = Math.abs(t.clientY - touchEdgeStartRef.current.y);
+        if (dx > 42 && dx > dy * 1.4) {
+          touchEdgeStartRef.current = null;
+          setIsHistoryOpen(false);
+          setIsNavigationOpen(true);
+        }
+      }}
+      onTouchEnd={() => {
+        touchEdgeStartRef.current = null;
+      }}
+      className="min-h-screen bg-[#11121C] text-[#F4F1FF] relative overflow-x-clip"
+    >
       {/* Celebration Overlay */}
       {celebration && (
         <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-auto bg-black/30 backdrop-blur-[2px]">
@@ -981,31 +1420,56 @@ export function App() {
             setIsNavigationOpen(false);
             setIsHistoryOpen(false);
           }}
-          className="fixed inset-0 z-30 bg-[#070810]/60 lg:hidden"
+          className="fixed inset-0 z-30 bg-[#070810]/65 backdrop-blur-[1px] lg:hidden"
         />
       )}
 
+      {/* Floating Left-Edge Quick Access Button for Thumb Reach when Scrolled (Ultra-thin Portrait & Landscape) */}
+      {!isNavigationOpen && !isHistoryOpen && showFloatingMenuBtn && (
+        <button
+          onClick={() => {
+            setIsHistoryOpen(false);
+            setIsNavigationOpen(true);
+          }}
+          aria-label="Abrir barra lateral"
+          title="Abrir navegación"
+          className="lg:hidden fixed left-2.5 bottom-4 z-30 h-11 px-3.5 rounded-full bg-[#242238]/95 border border-[#5B4588] text-[#E6D9FF] shadow-[0_8px_24px_rgba(0,0,0,0.55)] backdrop-blur-md flex items-center gap-2 active:scale-95 transition"
+        >
+          <span className="text-[18px] leading-none">☰</span>
+          <span className="text-[11px] font-semibold tracking-wide">Menú</span>
+        </button>
+      )}
+
       {/* Main 3-Column Grid matching MainPage.xaml */}
-      <div className="max-w-[1440px] mx-auto grid grid-cols-1 lg:grid-cols-[240px_1fr_320px] min-h-screen">
-        {/* Left Navigation Panel */}
+      <div className="max-w-[1440px] mx-auto grid grid-cols-1 lg:grid-cols-[240px_1fr_320px] min-h-screen items-start">
+        {/* Left Navigation Panel: Sticky on 16:9 Desktop, Scrollable Drawer on Portrait & Landscape Mobile */}
         <aside
-          className={`fixed inset-y-0 left-0 z-40 w-[280px] lg:static lg:w-auto lg:block bg-[#171723] border-r border-[#29283C] p-4 flex flex-col justify-between transition-transform duration-200 ${
+          className={`fixed inset-y-0 left-0 z-40 w-[268px] max-w-[82vw] lg:sticky lg:top-0 lg:h-screen lg:w-auto lg:max-w-none bg-[#171723] border-r border-[#29283C] p-3.5 sm:p-4 flex flex-col justify-between overflow-y-auto overscroll-contain transition-transform duration-200 ${
             isNavigationOpen
               ? 'translate-x-0'
               : '-translate-x-full lg:translate-x-0'
           }`}
         >
-          <div className="space-y-5">
-            <div className="space-y-1">
-              <div className="text-[19px] font-bold text-[#F4F1FF]">
-                🎯 ObjectiveReacher
+          <div className="space-y-3 sm:space-y-5">
+            <div className="flex items-start justify-between gap-2">
+              <div className="space-y-0.5 min-w-0">
+                <div className="text-[17px] sm:text-[19px] font-bold text-[#F4F1FF] truncate">
+                  🎯 ObjectiveReacher
+                </div>
+                <div className="text-[11px] sm:text-[12px] text-[#AAA5BB]">
+                  Tu progreso, a tu ritmo
+                </div>
               </div>
-              <div className="text-[12px] text-[#AAA5BB]">
-                Tu progreso, a tu ritmo
-              </div>
+              <button
+                onClick={() => setIsNavigationOpen(false)}
+                aria-label="Cerrar menú"
+                className="lg:hidden w-8 h-8 rounded-[10px] bg-[#242238] text-[#D9C9FF] text-sm flex items-center justify-center shrink-0"
+              >
+                ✕
+              </button>
             </div>
 
-            <nav className="space-y-1.5">
+            <nav className="grid grid-cols-1 max-[920px]:landscape:grid-cols-2 gap-1.5">
               {[
                 {
                   key: 'objective',
@@ -1051,7 +1515,7 @@ export function App() {
                   <button
                     key={item.key}
                     onClick={item.action}
-                    className={`w-full h-[48px] px-4 rounded-[12px] text-left font-medium text-sm transition flex items-center ${
+                    className={`w-full h-[42px] sm:h-[48px] px-3.5 rounded-[12px] text-left font-medium text-[13px] sm:text-sm transition flex items-center truncate ${
                       isSelected
                         ? 'bg-[#302747] text-[#E6D9FF]'
                         : 'bg-transparent text-[#F4F1FF] hover:bg-[#242238]'
@@ -1064,38 +1528,38 @@ export function App() {
             </nav>
           </div>
 
-          <div className="rounded-[14px] border border-[#343046] bg-[#211F30] p-3 space-y-1 mt-6">
+          <div className="rounded-[14px] border border-[#343046] bg-[#211F30] p-3 space-y-1 mt-4 shrink-0">
             <div className="text-[13px] text-[#FFC45D]">🔥</div>
             <div className="text-[12px] text-[#E4DFED]">{streakText}</div>
           </div>
         </aside>
 
         {/* Center Dashboard ScrollView */}
-        <main className="px-4 py-3 pb-8 space-y-3.5 min-w-0">
-          {/* Header Row */}
-          <div className="flex items-center gap-2">
+        <main className="px-2.5 sm:px-4 pb-16 lg:pb-8 space-y-3.5 min-w-0">
+          {/* Sticky Header Row: Always accessible without scrolling to top */}
+          <div className="sticky top-0 z-20 -mx-2.5 sm:-mx-4 px-2.5 sm:px-4 py-2 bg-[#11121C]/90 backdrop-blur-md border-b border-[#29283C]/70 flex items-center gap-1.5 sm:gap-2">
             <button
               onClick={() => {
                 setIsHistoryOpen(false);
                 setIsNavigationOpen(true);
               }}
               aria-label="Abrir navegación"
-              className="lg:hidden w-[44px] h-[44px] rounded-[12px] bg-[#242238] text-[#D9C9FF] text-[21px] flex items-center justify-center shrink-0"
+              className="lg:hidden w-[40px] h-[40px] sm:w-[44px] sm:h-[44px] rounded-[12px] bg-[#242238] text-[#D9C9FF] text-[20px] flex items-center justify-center shrink-0 hover:bg-[#302747] active:scale-95 transition"
             >
               ☰
             </button>
 
-            <div className="flex items-center gap-2 flex-1 min-w-0">
-              <span className="text-[23px]">🎯</span>
-              <h1 className="text-[18px] font-bold text-[#F4F1FF] truncate">
-                Objetivo Actual
+            <div className="flex items-center gap-1.5 sm:gap-2 flex-1 min-w-0">
+              <span className="text-[20px] sm:text-[23px] shrink-0">🎯</span>
+              <h1 className="text-[15px] sm:text-[18px] font-bold text-[#F4F1FF] truncate">
+                {currentObjective.title || 'Objetivo Actual'}
               </h1>
             </div>
 
             <button
               onClick={() => setIsEditorOpen(true)}
               aria-label="Editar objetivo"
-              className="w-[44px] h-[44px] rounded-[12px] bg-[#242238] text-[#D9C9FF] text-[19px] flex items-center justify-center hover:bg-[#302747] transition shrink-0"
+              className="w-[40px] h-[40px] sm:w-[44px] sm:h-[44px] rounded-[12px] bg-[#242238] text-[#D9C9FF] text-[18px] sm:text-[19px] flex items-center justify-center hover:bg-[#302747] transition shrink-0"
             >
               ✎
             </button>
@@ -1106,7 +1570,7 @@ export function App() {
                 setIsHistoryOpen(true);
               }}
               aria-label="Abrir historial de entradas"
-              className="lg:hidden w-[44px] h-[44px] rounded-[12px] bg-[#242238] text-[#D9C9FF] text-[20px] flex items-center justify-center shrink-0"
+              className="lg:hidden w-[40px] h-[40px] sm:w-[44px] sm:h-[44px] rounded-[12px] bg-[#242238] text-[#D9C9FF] text-[19px] sm:text-[20px] flex items-center justify-center shrink-0 hover:bg-[#302747] active:scale-95 transition"
             >
               ☷
             </button>
@@ -1215,7 +1679,7 @@ export function App() {
                   <div className="text-[11px] font-bold text-[#9AF0AE] tracking-wide">
                     AHORRADO
                   </div>
-                  <div className="text-[22px] sm:text-[24px] font-bold text-white break-words">
+                  <div className="text-[22px] sm:text-[24px] font-bold text-white break-words tabular-nums transition-transform duration-300">
                     {formatObjectiveAmount(
                       currentObjective.currentAmount,
                       currentObjective
@@ -1225,7 +1689,7 @@ export function App() {
 
                 {/* CircularProgressView */}
                 <div className="w-[70px] h-[70px] mx-auto relative flex items-center justify-center">
-                  <svg className="w-full h-full -rotate-90" viewBox="0 0 70 70">
+                  <svg className="w-full h-full -rotate-90 drop-shadow-[0_0_8px_rgba(229,185,69,0.25)]" viewBox="0 0 70 70">
                     <circle
                       cx="35"
                       cy="35"
@@ -1245,10 +1709,11 @@ export function App() {
                         strokeLinecap="round"
                         strokeDasharray={2 * Math.PI * 29}
                         strokeDashoffset={2 * Math.PI * 29 * (1 - progress)}
+                        className="transition-all duration-700 ease-out"
                       />
                     )}
                   </svg>
-                  <span className="absolute text-[18px] font-bold text-white">
+                  <span className="absolute text-[18px] font-bold text-white tabular-nums">
                     {progressText}
                   </span>
                 </div>
@@ -1257,7 +1722,7 @@ export function App() {
                   <div className="text-[11px] font-bold text-[#DEC2FF] tracking-wide">
                     META
                   </div>
-                  <div className="text-[22px] sm:text-[24px] font-bold text-white break-words">
+                  <div className="text-[22px] sm:text-[24px] font-bold text-white break-words tabular-nums">
                     {formatObjectiveAmount(
                       currentObjective.goalAmount,
                       currentObjective
@@ -1268,11 +1733,13 @@ export function App() {
 
               {/* Bottom Progress Bar & Remaining Text */}
               <div className="space-y-2">
-                <div className="w-full h-[12px] rounded-full bg-[#51436C] overflow-hidden">
+                <div className="w-full h-[12px] rounded-full bg-[#51436C]/90 overflow-hidden relative">
                   <div
-                    className="h-full bg-[#58D477] transition-all duration-300"
+                    className="h-full bg-gradient-to-r from-[#45B965] via-[#58D477] to-[#82E59B] transition-all duration-700 ease-out relative overflow-hidden"
                     style={{ width: `${progress * 100}%` }}
-                  />
+                  >
+                    <div className="absolute inset-0 w-1/2 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer" />
+                  </div>
                 </div>
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-[12px] text-[#F0EAF8]">
@@ -1362,9 +1829,34 @@ export function App() {
               />
             </div>
 
-            <div className="text-[11px] text-[#BDB6CE]">
-              Monto seleccionado:{' '}
-              {formatObjectiveAmount(selectedAmount, currentObjective)}
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="text-[11px] text-[#BDB6CE] tabular-nums">
+                Monto seleccionado:{' '}
+                <span className="font-semibold text-[#F4F1FF]">
+                  {formatObjectiveAmount(selectedAmount, currentObjective)}
+                </span>
+              </div>
+              {liveXpPreview && (
+                <div
+                  className={`text-[11px] font-bold px-2.5 py-1 rounded-[8px] border bg-[#231F35] flex items-center gap-1.5 transition-all duration-200 ${
+                    liveXpPreview.willLevelUp
+                      ? 'border-[#FFD54F]/60 text-[#FFD54F] shadow-[0_0_12px_rgba(255,213,79,0.2)]'
+                      : isAddition
+                      ? 'border-[#3D3559] text-[#82E59B]'
+                      : 'border-[#3D3559] text-[#D8C5FF]'
+                  }`}
+                >
+                  <span>
+                    ⚡ +{liveXpPreview.estimatedXp} XP con este registro
+                    {liveXpPreview.bonusTag ? ` · ${liveXpPreview.bonusTag}` : ''}
+                  </span>
+                  {liveXpPreview.willLevelUp && (
+                    <span className="text-[10px] font-extrabold text-[#FFE082]">
+                      · ¡SUBES DE NIVEL!
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="flex items-center gap-2">
@@ -1376,12 +1868,12 @@ export function App() {
                   if (e.key === 'Enter') handleAddEntry();
                 }}
                 placeholder="¿Qué fue esta entrada? (opcional)"
-                className="flex-1 h-[48px] px-3 rounded-[11px] bg-[#151520] text-[#F4F1FF] placeholder-[#88849A] text-sm border border-[#29283C] focus:outline-none focus:border-[#7549B8]"
+                className="flex-1 h-[48px] px-3 rounded-[11px] bg-[#151520] text-[#F4F1FF] placeholder-[#88849A] text-sm border border-[#29283C] focus:outline-none focus:border-[#7549B8] transition"
               />
               <button
                 onClick={handleAddEntry}
                 disabled={!hasValidSelectedAmount}
-                className="h-[48px] px-4 rounded-[11px] bg-[#7549B8] text-white font-bold text-sm hover:bg-[#8658cc] disabled:opacity-50 transition shrink-0"
+                className="h-[48px] px-5 rounded-[11px] bg-gradient-to-r from-[#7549B8] to-[#8C5CE0] text-white font-bold text-sm hover:brightness-110 active:scale-95 disabled:opacity-50 transition-all shadow-[0_4px_14px_rgba(117,73,184,0.35)] shrink-0"
               >
                 AGREGAR
               </button>
@@ -1459,43 +1951,351 @@ export function App() {
             </div>
           </div>
 
-          {/* Mascot & Level Progress Card */}
-          <div className="p-3.5 rounded-[18px] border border-[#29283C] bg-[#1C1C2A] flex items-center gap-3">
-            <button
-              onClick={() => setIsMascotGalleryOpen(true)}
-              title="Ver las 200 evoluciones"
-              className="shrink-0 hover:scale-105 transition"
-            >
-              <MascotAvatarSvg level={level} size={56} />
-            </button>
-            <div className="flex-1 min-w-0 space-y-1">
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-[15px] font-bold text-[#D8C5FF]">
-                  {experienceText}
-                </div>
-                <div className="text-[10px] text-[#A8A3B8] text-right">
-                  {levelProgressText}
-                </div>
+          {/* Unified Santuario Evolutivo & Ritual Diario (Pilares A + B + C) */}
+          <div className="p-3.5 sm:p-4 rounded-[20px] border border-[#342D4B] bg-gradient-to-b from-[#1E1C2E] to-[#171624] space-y-3 relative overflow-hidden shadow-[0_8px_28px_rgba(10,9,20,0.45)]">
+            {/* Ambient subtle glow matching mascot tier */}
+            <div className="pointer-events-none absolute -top-12 -left-10 w-36 h-36 rounded-full bg-[#7549B8]/15 blur-2xl" />
+            <div className="pointer-events-none absolute -bottom-12 -right-10 w-36 h-36 rounded-full bg-[#65DB85]/10 blur-2xl" />
+
+            {xpBurst && (
+              <div
+                key={xpBurst.id}
+                className="pointer-events-none absolute right-4 top-2.5 z-30 text-xs font-extrabold text-[#82E59B] drop-shadow-[0_2px_8px_rgba(101,219,133,0.45)] animate-xp-float"
+              >
+                +{xpBurst.xp} XP ✨
               </div>
-              <div className="w-full h-[7px] rounded-full bg-[#38324E] overflow-hidden">
-                <div
-                  className="h-full bg-[#B58BFF] transition-all duration-300"
-                  style={{ width: `${levelProgress * 100}%` }}
-                />
-              </div>
-              <div className="text-[12px] text-[#A8A3B8]">{mascotMessage}</div>
-              <div className="flex items-center justify-between gap-2 pt-0.5 flex-wrap">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[11px] text-[#FFC45D]">🔥</span>
-                  <span className="text-[11px] text-[#F4F1FF]">{streakText}</span>
-                </div>
+            )}
+
+            {/* Speech bubble when mascot is petted or reacts */}
+            {mascotSpeech && (
+              <div
+                key={mascotJoyId}
+                className="relative z-20 px-3 py-1.5 rounded-[12px] bg-[#29233E]/95 border border-[#B58BFF]/40 text-[11px] font-medium text-[#F4F1FF] flex items-center justify-between gap-2 shadow-md animate-in fade-in slide-in-from-bottom-1 duration-200"
+              >
+                <span>💬 {mascotSpeech}</span>
                 <button
-                  onClick={() => setIsMascotGalleryOpen(true)}
-                  className="text-[10px] font-bold text-[#C7A4FF] hover:underline"
+                  onClick={() => setMascotSpeech(null)}
+                  className="text-[#A8A3B8] hover:text-white text-xs shrink-0"
                 >
-                  VER EVOLUCIONES
+                  ×
                 </button>
               </div>
+            )}
+
+            {/* Top Row: Interactive Mascot + Level & XP Progress */}
+            <div className="flex items-center gap-3.5 relative z-10">
+              <div className="relative shrink-0 flex flex-col items-center">
+                <button
+                  onClick={handlePetMascot}
+                  title={
+                    !hasPettedToday
+                      ? '¡Acaricia a tu guardián para ganar +15 XP hoy!'
+                      : 'Toca para interactuar con tu mascota'
+                  }
+                  className="relative group focus:outline-none"
+                >
+                  {/* Unclaimed daily pet pulse ring */}
+                  {!hasPettedToday && (
+                    <span className="pointer-events-none absolute -inset-1 rounded-full border border-[#FF80AB]/60 animate-ping opacity-40" />
+                  )}
+                  <div
+                    key={
+                      mascotJoyId
+                        ? `joy-${mascotJoyId}`
+                        : xpBurst
+                        ? `burst-${xpBurst.id}`
+                        : `lvl-${level}`
+                    }
+                    className={
+                      mascotJoyId && Date.now() - mascotJoyId < 900
+                        ? 'animate-mascot-joy'
+                        : 'animate-mascot-float'
+                    }
+                  >
+                    <MascotAvatarSvg level={level} size={66} />
+                  </div>
+                  {/* Floating heart/sparkle badge */}
+                  <span
+                    className={`absolute -bottom-1 -right-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold border shadow-sm transition-transform group-hover:scale-110 ${
+                      !hasPettedToday
+                        ? 'bg-[#3A1E36] text-[#FF9EC2] border-[#FF80AB]/60'
+                        : 'bg-[#262238] text-[#D8C5FF] border-[#51436C]'
+                    }`}
+                  >
+                    {!hasPettedToday ? '👋 +15 XP' : '💖 Vínculo'}
+                  </span>
+                </button>
+              </div>
+
+              <div className="flex-1 min-w-0 space-y-1.5">
+                <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="text-[15px] font-bold text-[#F4F1FF] tabular-nums truncate">
+                      {experienceText}
+                    </span>
+                    <span
+                      style={{
+                        color: mascotMood.color,
+                        backgroundColor: mascotMood.bg,
+                        borderColor: mascotMood.border,
+                      }}
+                      className="text-[9px] font-bold px-2 py-0.5 rounded-full border shrink-0"
+                    >
+                      {mascotMood.badge}
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-[#B8B2C8] text-right tabular-nums">
+                    {levelProgressText}
+                  </div>
+                </div>
+
+                {/* XP Bar with Live Preview */}
+                <div className="w-full h-[9px] rounded-full bg-[#322C47] overflow-hidden relative">
+                  {liveXpPreview && (
+                    <div
+                      className="absolute inset-y-0 left-0 bg-[#82E59B]/40 transition-all duration-300"
+                      style={{
+                        width: `${liveXpPreview.projectedProgress * 100}%`,
+                      }}
+                    />
+                  )}
+                  <div
+                    className="h-full bg-gradient-to-r from-[#8C5CE0] via-[#B58BFF] to-[#E2D4FF] transition-all duration-700 ease-out relative overflow-hidden"
+                    style={{ width: `${levelProgress * 100}%` }}
+                  >
+                    <div className="absolute inset-0 w-1/2 bg-gradient-to-r from-transparent via-white/35 to-transparent animate-shimmer" />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-[11px] text-[#C6C0D6] truncate">
+                    {mascotMessage}
+                  </div>
+                  <button
+                    onClick={() => {
+                      setMascotGalleryStartLevel(level);
+                      setIsMascotGalleryOpen(true);
+                    }}
+                    className="text-[10px] font-bold text-[#C7A4FF] hover:text-white hover:underline transition shrink-0"
+                  >
+                    CÓDICE (1–200) →
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Pillar C: 10-Node Species Evolution Track + Next Mystery Species Teaser (Zeigarnik Effect) */}
+            <div className="pt-2 border-t border-[#2B263D]/90 flex items-center justify-between gap-2">
+              <div className="flex-1 min-w-0 space-y-1">
+                <div className="flex items-center justify-between text-[10px] text-[#A8A3B8]">
+                  <span className="font-semibold text-[#D8C5FF] truncate">
+                    Etapa {mascotTier + 1}/20 · Evolución {currentSubLevelIndex + 1}/10
+                  </span>
+                  <span className="text-[#9AF0AE] font-mono-tabular shrink-0">
+                    {mascotTier < 19
+                      ? `Próxima especie en ${levelsToNextSpecies} nv.`
+                      : 'Etapa Suprema Desbloqueada'}
+                  </span>
+                </div>
+
+                {/* 10 Sub-level Rune Nodes */}
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: 10 }, (_, idx) => {
+                    const nodeLevel = tierStartLevel + idx;
+                    const isPassed = idx < currentSubLevelIndex;
+                    const isCurrent = idx === currentSubLevelIndex;
+                    return (
+                      <button
+                        key={nodeLevel}
+                        onClick={() => {
+                          setMascotGalleryStartLevel(nodeLevel);
+                          setIsMascotGalleryOpen(true);
+                        }}
+                        title={`Ver Nivel ${nodeLevel} en el Códice`}
+                        className={`h-[7px] flex-1 rounded-full transition-all ${
+                          isCurrent
+                            ? 'bg-gradient-to-r from-[#FFD54F] to-[#82E59B] shadow-[0_0_8px_rgba(255,213,79,0.65)] scale-y-125'
+                            : isPassed
+                            ? 'bg-[#8C5CE0] hover:bg-[#B58BFF]'
+                            : 'bg-[#2C273F] hover:bg-[#3B3454]'
+                        }`}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Next Species Mystery Silhouette Medallion */}
+              {mascotTier < 19 && (
+                <button
+                  onClick={() => {
+                    setMascotGalleryStartLevel(nextSpeciesLevel);
+                    setIsMascotGalleryOpen(true);
+                  }}
+                  title={`Espiar silueta de Nivel ${nextSpeciesLevel}: ${MASCOT_STAGE_HINTS[nextSpeciesTier]}`}
+                  className="shrink-0 flex items-center gap-1.5 pl-2 pr-2.5 py-1 rounded-[12px] bg-[#221E33] border border-[#4D3E73] hover:border-[#C7A4FF] transition group animate-mystery-beacon"
+                >
+                  <div className="relative">
+                    <MascotAvatarSvg
+                      level={nextSpeciesLevel}
+                      size={30}
+                      isLocked={level < nextSpeciesLevel}
+                    />
+                    <span className="absolute -top-1 -right-1 text-[9px]">
+                      ❔
+                    </span>
+                  </div>
+                  <div className="text-left leading-tight">
+                    <div className="text-[9px] font-extrabold text-[#FFD54F] group-hover:text-white transition">
+                      NV. {nextSpeciesLevel}
+                    </div>
+                    <div className="text-[8px] text-[#C7A4FF]">
+                      ¿Nueva especie?
+                    </div>
+                  </div>
+                </button>
+              )}
+            </div>
+
+            {/* Pillar B: 7-Day Streak Stamp Bar + Expandable Daily Micro-Quests */}
+            <div className="pt-2 border-t border-[#2B263D]/90 space-y-2">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                {/* 7-Day Week Stamps */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-bold text-[#FFC45D] mr-0.5">
+                    🔥 {streakDays}d
+                  </span>
+                  <div className="flex items-center gap-1">
+                    {weekDaysStrip.map((d) => (
+                      <div
+                        key={d.key}
+                        title={
+                          d.isToday
+                            ? `Hoy (${d.isActive ? 'Activo' : 'Pendiente'})`
+                            : d.key
+                        }
+                        className={`w-[22px] h-[22px] rounded-[7px] text-[9px] font-bold flex items-center justify-center border transition-all ${
+                          d.isActive
+                            ? 'bg-gradient-to-b from-[#3E7B52] to-[#234931] border-[#82E59B] text-white shadow-[0_0_6px_rgba(130,229,155,0.3)]'
+                            : d.isToday
+                            ? 'bg-[#2B253E] border-[#FFD54F] text-[#FFD54F]'
+                            : d.isFuture
+                            ? 'bg-[#171624] border-[#262338] text-[#635E78]'
+                            : 'bg-[#1B1A29] border-[#2C293E] text-[#7D7894]'
+                        }`}
+                      >
+                        {d.isActive ? '✓' : d.label}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Toggle Daily Quests Button */}
+                <button
+                  onClick={() => setIsDailyRitualOpen((prev) => !prev)}
+                  className={`px-2.5 py-1 rounded-[9px] text-[10px] font-bold border flex items-center gap-1.5 transition ${
+                    unclaimedReadyQuestsCount > 0 || canClaimAllDailyBonus
+                      ? 'bg-[#35294F] border-[#FFD54F] text-[#FFE082] shadow-[0_0_10px_rgba(255,213,79,0.25)]'
+                      : 'bg-[#252136] border-[#3D3559] text-[#D8C5FF] hover:bg-[#2F2A44]'
+                  }`}
+                >
+                  <span>
+                    🎯 Misiones hoy ({completedQuestsCount}/{dailyQuests.length})
+                  </span>
+                  {(unclaimedReadyQuestsCount > 0 || canClaimAllDailyBonus) && (
+                    <span className="px-1.5 py-0.2 rounded-full bg-[#FFD54F] text-[#1A162B] text-[9px] font-extrabold">
+                      ¡RECLAMAR!
+                    </span>
+                  )}
+                  <span className="text-[9px] opacity-80">
+                    {isDailyRitualOpen ? '▲' : '▼'}
+                  </span>
+                </button>
+              </div>
+
+              {/* Collapsible Daily Quests Drawer (Auto-highlights if unclaimed rewards or opened) */}
+              {(isDailyRitualOpen ||
+                unclaimedReadyQuestsCount > 0 ||
+                canClaimAllDailyBonus) && (
+                <div className="p-2.5 rounded-[14px] bg-[#141320]/90 border border-[#2E2942] space-y-2 animate-in fade-in duration-150">
+                  <div className="flex items-center justify-between text-[10px] text-[#A8A3B8]">
+                    <span>
+                      Completa las 3 misiones diarias para el Cofre de Sello (+40 XP)
+                    </span>
+                    {isAllDailyBonusClaimed ? (
+                      <span className="text-[#82E59B] font-bold">
+                        👑 Sello diario completado
+                      </span>
+                    ) : canClaimAllDailyBonus ? (
+                      <button
+                        onClick={handleClaimAllDailyBonus}
+                        className="px-2.5 py-0.5 rounded-[7px] bg-gradient-to-r from-[#E5B945] to-[#FFD54F] text-[#1A162B] font-extrabold text-[10px] hover:brightness-110 active:scale-95 transition shadow"
+                      >
+                        🎁 Reclamar Cofre +40 XP
+                      </button>
+                    ) : (
+                      <span className="text-[#FFD54F] font-mono-tabular">
+                        Cofre: {completedQuestsCount}/3
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                    {dailyQuests.map((q) => {
+                      const canClaim = q.isCompleted && !q.isClaimed;
+                      return (
+                        <div
+                          key={q.id}
+                          className={`p-2 rounded-[10px] border flex items-center justify-between gap-2 transition ${
+                            q.isClaimed
+                              ? 'bg-[#1B2623]/70 border-[#3A6B52]/60'
+                              : canClaim
+                              ? 'bg-[#2B2342] border-[#FFD54F]/80'
+                              : 'bg-[#1B1A29] border-[#2B283E]'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-base shrink-0">{q.icon}</span>
+                            <div className="min-w-0">
+                              <div
+                                className={`text-[11px] font-bold truncate ${
+                                  q.isClaimed
+                                    ? 'text-[#82E59B]'
+                                    : 'text-[#F4F1FF]'
+                                }`}
+                              >
+                                {q.title}
+                              </div>
+                              <div className="text-[9px] text-[#A8A3B8] truncate">
+                                {q.subtitle}
+                              </div>
+                            </div>
+                          </div>
+
+                          {q.isClaimed ? (
+                            <span className="text-[9px] font-bold text-[#82E59B] px-1.5 py-0.5 rounded bg-[#1F3A2E] shrink-0">
+                              ✓ +{q.rewardXp}
+                            </span>
+                          ) : canClaim ? (
+                            <button
+                              onClick={() =>
+                                handleClaimQuest(q.id, q.rewardXp, q.title)
+                              }
+                              className="px-2 py-1 rounded-[7px] bg-[#82E59B] text-[#102618] font-extrabold text-[10px] hover:brightness-110 active:scale-95 transition shrink-0 shadow-sm"
+                            >
+                              +{q.rewardXp} XP
+                            </button>
+                          ) : (
+                            <span className="text-[9px] font-mono-tabular text-[#88839E] shrink-0">
+                              +{q.rewardXp} XP
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1694,7 +2494,11 @@ export function App() {
       {isMascotGalleryOpen && (
         <MascotGalleryModal
           initialLevel={level}
-          onClose={() => setIsMascotGalleryOpen(false)}
+          initialPreviewLevel={mascotGalleryStartLevel ?? level}
+          onClose={() => {
+            setIsMascotGalleryOpen(false);
+            setMascotGalleryStartLevel(null);
+          }}
         />
       )}
 
@@ -1999,16 +2803,57 @@ const MASCOT_STAGE_HINTS = [
   'Un quásar viviente coronado en el centro del universo.',
 ];
 
+const MascotGridCard = React.memo(function MascotGridCard({
+  lvl,
+  itemTier,
+  isSelected,
+  isItemLocked,
+  onSelect,
+}: {
+  lvl: number;
+  itemTier: number;
+  isSelected: boolean;
+  isItemLocked: boolean;
+  onSelect: (level: number) => void;
+}) {
+  return (
+    <button
+      onClick={() => onSelect(lvl)}
+      className={`p-2 rounded-[14px] border flex flex-col items-center gap-1 transition ${
+        isSelected
+          ? 'border-[#C7A4FF] bg-[#302747]'
+          : isItemLocked
+          ? 'border-[#252438] bg-[#151521] hover:bg-[#1E1D2E]'
+          : 'border-[#4A3B6E] bg-[#1C1C2A] hover:bg-[#242238]'
+      }`}
+    >
+      <MascotAvatarSvg level={lvl} size={48} isLocked={isItemLocked} />
+      <span
+        className={`text-[11px] font-bold ${
+          isItemLocked ? 'text-[#88839E]' : 'text-[#F4F1FF]'
+        }`}
+      >
+        {isItemLocked ? `🔒 Nv. ${lvl}` : `Nv. ${lvl}`}
+      </span>
+      <span className="text-[9px] text-[#A8A3B8] truncate w-full text-center">
+        {isItemLocked ? '？？？' : MASCOT_STAGE_NAMES[itemTier]}
+      </span>
+    </button>
+  );
+});
+
 function MascotGalleryModal({
   initialLevel,
+  initialPreviewLevel,
   onClose,
 }: {
   initialLevel: number;
+  initialPreviewLevel?: number;
   onClose: () => void;
 }) {
   const unlockedLevel = Math.max(1, initialLevel);
   const [previewLevel, setPreviewLevel] = useState<number>(() =>
-    Math.min(200, unlockedLevel)
+    Math.min(200, Math.max(1, initialPreviewLevel ?? unlockedLevel))
   );
 
   const tier = Math.floor((previewLevel - 1) / 10);
@@ -2016,60 +2861,74 @@ function MascotGalleryModal({
   const isPreviewLocked = previewLevel > unlockedLevel;
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#11121C] flex flex-col p-[18px] overflow-hidden">
-      <div className="max-w-5xl w-full mx-auto flex-1 flex flex-col gap-3.5 min-h-0">
+    <div className="fixed inset-0 z-50 bg-[#11121C] flex flex-col p-3 sm:p-[18px] overflow-hidden">
+      <div className="max-w-5xl w-full mx-auto flex-1 flex flex-col gap-3 min-h-0">
         {/* Header */}
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="space-y-0.5">
-            <h2 className="text-[20px] font-bold text-[#F4F1FF]">
+        <div className="flex items-center justify-between gap-2">
+          <div className="space-y-0.5 min-w-0">
+            <h2 className="text-[17px] sm:text-[20px] font-bold text-[#F4F1FF] truncate">
               🐾 Códice de Mascotas (1–200)
             </h2>
-            <p className="text-[12px] text-[#A8A3B8]">
-              Sube de nivel registrando entradas para revelar las siluetas misteriosas.
+            <p className="text-[11px] sm:text-[12px] text-[#A8A3B8] truncate">
+              Arrastra la barra libremente del nivel 1 al 200 o toca cualquier tarjeta.
             </p>
           </div>
           <button
             onClick={onClose}
-            className="px-4 py-2 rounded-[10px] bg-[#302747] text-[#F4F1FF] text-sm font-medium hover:bg-[#3e335c]"
+            className="px-4 py-2 rounded-[10px] bg-[#302747] text-[#F4F1FF] text-sm font-medium hover:bg-[#3e335c] shrink-0"
           >
             Cerrar
           </button>
         </div>
 
-        {/* Interactive Slider Preview */}
-        <div className="p-3.5 rounded-[18px] border border-[#29283C] bg-[#1C1C2A] flex items-center gap-4">
-          <MascotAvatarSvg
-            level={previewLevel}
-            size={84}
-            isLocked={isPreviewLocked}
-          />
-          <div className="flex-1 min-w-0 space-y-1">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div className="text-[16px] font-bold text-[#D8C5FF]">
+        {/* Interactive Slider Preview (Fixed-height rows so slider never shifts while dragging) */}
+        <div className="p-3 sm:p-3.5 rounded-[18px] border border-[#29283C] bg-[#1C1C2A] flex items-center gap-3 sm:gap-4 shrink-0">
+          <div className="shrink-0">
+            <div className="animate-mascot-float">
+              <MascotAvatarSvg
+                level={previewLevel}
+                size={80}
+                isLocked={isPreviewLocked}
+              />
+            </div>
+          </div>
+          <div className="flex-1 min-w-0 space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-[14px] sm:text-[16px] font-bold text-[#D8C5FF] truncate">
                 {isPreviewLocked
                   ? `🔒 Nivel ${previewLevel} · Criatura Misteriosa`
                   : `✨ Nivel ${previewLevel} · ${MASCOT_STAGE_NAMES[tier]}`}
               </div>
-              <span className="text-xs px-2.5 py-0.5 rounded-full bg-[#302747] text-[#E6D9FF]">
-                Etapa {tier + 1}/20 · Evolución {subLevel}/10{' '}
-                {isPreviewLocked
-                  ? `(Alcanza el nivel ${previewLevel} para revelarla)`
-                  : '(Desbloqueada)'}
+              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-[#302747] text-[#E6D9FF] whitespace-nowrap shrink-0">
+                Etapa {tier + 1}/20 · Evol. {subLevel}/10{' '}
+                {isPreviewLocked ? '🔒' : '✓'}
               </span>
             </div>
-            <div className="text-[11px] text-[#C7A4FF]">
+            <div className="text-[11px] text-[#C7A4FF] truncate">
               {isPreviewLocked
-                ? `Pista: ${MASCOT_STAGE_HINTS[tier]}`
+                ? `Pista (Nv. ${previewLevel}): ${MASCOT_STAGE_HINTS[tier]}`
                 : MASCOT_STAGE_HINTS[tier]}
             </div>
-            <input
-              type="range"
-              min={1}
-              max={200}
-              value={previewLevel}
-              onChange={(e) => setPreviewLevel(Number(e.target.value))}
-              className="w-full accent-[#B58BFF] cursor-pointer"
-            />
+            <div className="flex items-center gap-2 pt-0.5">
+              <span className="text-[10px] font-mono-tabular text-[#88839E] shrink-0">
+                1
+              </span>
+              <input
+                type="range"
+                min={1}
+                max={200}
+                step={1}
+                value={previewLevel}
+                onInput={(e) =>
+                  setPreviewLevel(Number((e.target as HTMLInputElement).value))
+                }
+                onChange={(e) => setPreviewLevel(Number(e.target.value))}
+                className="w-full h-6 accent-[#B58BFF] cursor-grab active:cursor-grabbing touch-none"
+              />
+              <span className="text-[10px] font-mono-tabular text-[#88839E] shrink-0">
+                200
+              </span>
+            </div>
           </div>
         </div>
 
@@ -2078,36 +2937,15 @@ function MascotGalleryModal({
           {Array.from({ length: 200 }, (_, idx) => {
             const lvl = idx + 1;
             const itemTier = Math.floor((lvl - 1) / 10);
-            const isSelected = lvl === previewLevel;
-            const isItemLocked = lvl > unlockedLevel;
             return (
-              <button
+              <MascotGridCard
                 key={lvl}
-                onClick={() => setPreviewLevel(lvl)}
-                className={`p-2 rounded-[14px] border flex flex-col items-center gap-1 transition ${
-                  isSelected
-                    ? 'border-[#C7A4FF] bg-[#302747]'
-                    : isItemLocked
-                    ? 'border-[#252438] bg-[#151521] hover:bg-[#1E1D2E]'
-                    : 'border-[#4A3B6E] bg-[#1C1C2A] hover:bg-[#242238]'
-                }`}
-              >
-                <MascotAvatarSvg
-                  level={lvl}
-                  size={48}
-                  isLocked={isItemLocked}
-                />
-                <span
-                  className={`text-[11px] font-bold ${
-                    isItemLocked ? 'text-[#88839E]' : 'text-[#F4F1FF]'
-                  }`}
-                >
-                  {isItemLocked ? `🔒 Nv. ${lvl}` : `Nv. ${lvl}`}
-                </span>
-                <span className="text-[9px] text-[#A8A3B8] truncate w-full text-center">
-                  {isItemLocked ? '？？？' : MASCOT_STAGE_NAMES[itemTier]}
-                </span>
-              </button>
+                lvl={lvl}
+                itemTier={itemTier}
+                isSelected={lvl === previewLevel}
+                isItemLocked={lvl > unlockedLevel}
+                onSelect={setPreviewLevel}
+              />
             );
           })}
         </div>
@@ -2269,7 +3107,7 @@ function MascotAvatarSvg({
         opacity={isLocked ? 0.35 : 0.65 + subProgress * 0.3}
       />
 
-      {/* 1b. Sub-Level Evolution Background Aura Layers */}
+      {/* 1b. Sub-Level Evolution Background Aura Layers (Clean circular halo for Tier 0 Brote Esmeralda, geometric rays for higher tiers) */}
       {subLevel >= 2 && (
         <circle
           cx={cx}
@@ -2281,7 +3119,18 @@ function MascotAvatarSvg({
           opacity={isLocked ? 0.25 : 0.45}
         />
       )}
-      {subLevel >= 4 && (
+      {tier === 0 && subLevel >= 6 && (
+        <circle
+          cx={cx}
+          cy={cy}
+          r={radius * (0.58 + (subLevel - 6) * 0.03)}
+          fill="none"
+          stroke={accent}
+          strokeWidth={1}
+          opacity={isLocked ? 0.22 : 0.38}
+        />
+      )}
+      {tier > 0 && subLevel >= 4 && (
         <g
           stroke={accent}
           strokeWidth={1.3}
@@ -2318,7 +3167,7 @@ function MascotAvatarSvg({
           )}
         </g>
       )}
-      {subLevel >= 6 && (
+      {tier > 0 && subLevel >= 6 && (
         <polygon
           points={`${cx},${cy - radius * (0.58 + (subLevel - 6) * 0.035)} ${
             cx + radius * (0.58 + (subLevel - 6) * 0.035)
@@ -2331,7 +3180,7 @@ function MascotAvatarSvg({
           opacity={isLocked ? 0.25 : 0.55}
         />
       )}
-      {subLevel === 9 && (
+      {tier > 0 && subLevel === 9 && (
         <g
           stroke={accent}
           strokeWidth={1.15}
@@ -2374,71 +3223,110 @@ function MascotAvatarSvg({
       {/* 3. 20 Distinct Creature Forms with Progressive Sub-Level Evolution */}
       {tier === 0 && (
         <g>
+          {/* Soft base shadow / cushion */}
           <ellipse
             cx={cx}
-            cy={cy + u * 0.25}
-            rx={u * 0.42}
-            ry={u * 0.33}
+            cy={cy + u * 0.24}
+            rx={u * (0.43 + subProgress * 0.05)}
+            ry={u * (0.34 + subProgress * 0.04)}
             fill={secondary}
           />
+          {/* Subtle inner belly highlight on higher subLevels */}
+          {subLevel >= 2 && (
+            <ellipse
+              cx={cx}
+              cy={cy + u * 0.28}
+              rx={u * 0.26}
+              ry={u * 0.16}
+              fill={accent}
+              opacity={isLocked ? 0.18 : 0.35}
+            />
+          )}
           {(() => {
-            const stemH = u * (0.2 + subLevel * 0.055);
-            const leafPairs = 1 + Math.floor(subLevel / 3);
-            const leafW = u * (0.11 + subLevel * 0.009);
-            const flowerY = cy - u * 0.16 - stemH;
+            const stemH = u * (0.2 + subProgress * 0.24);
+            const stemTopY = cy - u * 0.06 - stemH;
+            const leafW = u * (0.14 + subProgress * 0.07);
+            const leafH = leafW * 0.58;
+            const leafY = cy - u * 0.08 - stemH * 0.62;
             return (
               <>
+                {/* Single clean organic stem */}
                 <line
                   x1={cx}
-                  y1={cy - u * 0.04}
+                  y1={cy - u * 0.05}
                   x2={cx}
-                  y2={cy - u * 0.04 - stemH}
+                  y2={stemTopY}
                   stroke={accent}
-                  strokeWidth={Math.max(2, u * 0.1)}
+                  strokeWidth={Math.max(2, u * 0.095)}
                   strokeLinecap="round"
                 />
-                {Array.from({ length: leafPairs }).map((_, p) => {
-                  const ly = cy - u * 0.06 - stemH * ((p + 1) / leafPairs);
-                  return (
-                    <g key={p} fill={accent}>
-                      <ellipse
-                        cx={cx - leafW * 1.15}
-                        cy={ly}
-                        rx={leafW}
-                        ry={leafW * 0.62}
-                      />
-                      {(subLevel >= 1 || p > 0) && (
-                        <ellipse
-                          cx={cx + leafW * 1.15}
-                          cy={ly}
-                          rx={leafW}
-                          ry={leafW * 0.62}
-                        />
-                      )}
-                    </g>
-                  );
-                })}
-                {subLevel >= 4 && (
-                  <g fill={isLocked ? primary : '#FFD54F'}>
-                    {subLevel >= 7 && (
-                      <>
-                        <circle
-                          cx={cx - leafW * 0.75}
-                          cy={flowerY}
-                          r={leafW * 0.68}
-                        />
-                        <circle
-                          cx={cx + leafW * 0.75}
-                          cy={flowerY}
-                          r={leafW * 0.68}
-                        />
-                      </>
-                    )}
-                    <circle
-                      cx={cx}
-                      cy={flowerY - leafW * 0.18}
-                      r={leafW * 0.85}
+                {/* Maximum 1 pair of smooth sprout leaves (2 cotiledones) */}
+                <ellipse
+                  cx={cx - leafW * 0.95}
+                  cy={leafY}
+                  rx={leafW}
+                  ry={leafH}
+                  transform={`rotate(-22 ${cx - leafW * 0.95} ${leafY})`}
+                  fill={accent}
+                />
+                {subLevel >= 1 && (
+                  <ellipse
+                    cx={cx + leafW * 0.95}
+                    cy={leafY}
+                    rx={leafW}
+                    ry={leafH}
+                    transform={`rotate(22 ${cx + leafW * 0.95} ${leafY})`}
+                    fill={accent}
+                  />
+                )}
+                {/* Levels 5-6: Clean little lotus bud at the tip */}
+                {subLevel >= 4 && subLevel < 7 && (
+                  <ellipse
+                    cx={cx}
+                    cy={stemTopY - leafW * 0.35}
+                    rx={leafW * 0.48}
+                    ry={leafW * 0.62}
+                    fill={isLocked ? primary : '#FFD54F'}
+                  />
+                )}
+                {/* Levels 8-10: Clean 3-petal blossom crowning the stem */}
+                {subLevel >= 7 && (
+                  <g>
+                    <ellipse
+                      cx={cx - leafW * 0.52}
+                      cy={stemTopY - leafW * 0.25}
+                      rx={leafW * 0.44}
+                      ry={leafW * 0.62}
+                      transform={`rotate(-28 ${cx - leafW * 0.52} ${
+                        stemTopY - leafW * 0.25
+                      })`}
+                      fill={isLocked ? primary : '#FFB74D'}
                     />
+                    <ellipse
+                      cx={cx + leafW * 0.52}
+                      cy={stemTopY - leafW * 0.25}
+                      rx={leafW * 0.44}
+                      ry={leafW * 0.62}
+                      transform={`rotate(28 ${cx + leafW * 0.52} ${
+                        stemTopY - leafW * 0.25
+                      })`}
+                      fill={isLocked ? primary : '#FFB74D'}
+                    />
+                    <ellipse
+                      cx={cx}
+                      cy={stemTopY - leafW * 0.42}
+                      rx={leafW * 0.5}
+                      ry={leafW * 0.7}
+                      fill={isLocked ? accent : '#FFD54F'}
+                    />
+                    {subLevel >= 8 && (
+                      <circle
+                        cx={cx}
+                        cy={stemTopY - leafW * 0.42}
+                        r={leafW * 0.22}
+                        fill={isLocked ? primary : '#FFF8E1'}
+                      />
+                    )}
                   </g>
                 )}
               </>
@@ -3337,8 +4225,8 @@ function MascotAvatarSvg({
         </g>
       )}
 
-      {/* 3b. Sub-Level Forehead Gem / Apex Diadem */}
-      {subLevel >= 5 && subLevel < 8 && (
+      {/* 3b. Sub-Level Forehead Gem / Apex Diadem (Skip spiky crown on Tier 0 since its lotus blossom is the crown) */}
+      {tier > 0 && subLevel >= 5 && subLevel < 8 && (
         <circle
           cx={cx}
           cy={cy - u * 0.78}
@@ -3347,7 +4235,7 @@ function MascotAvatarSvg({
           opacity={isLocked ? 0.4 : 0.95}
         />
       )}
-      {subLevel >= 8 && (
+      {tier > 0 && subLevel >= 8 && (
         <polygon
           points={`${cx - u * 0.22},${cy - u * 0.72} ${cx - u * 0.16},${
             cy - u * 0.9

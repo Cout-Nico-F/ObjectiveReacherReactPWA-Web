@@ -1,19 +1,70 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <svg width="456" height="456" viewBox="0 0 456 456" version="1.1" xmlns="http://www.w3.org/2000/svg">
 	<defs>
-		<radialGradient id="bg" cx="50%" cy="45%" r="70%">
-			<stop offset="0%" stop-color="#7C3AED"/>
-			<stop offset="100%" stop-color="#2B0B98"/>
+		<radialGradient id="medallionBg" cx="50%" cy="42%" r="58%">
+			<stop offset="0%" stop-color="#2A2248"/>
+			<stop offset="68%" stop-color="#1A172B"/>
+			<stop offset="100%" stop-color="#11121C"/>
 		</radialGradient>
-		<linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
-			<stop offset="0%" stop-color="#FBBF24"/>
-			<stop offset="100%" stop-color="#EC4899"/>
+		<linearGradient id="progressArc" x1="0%" y1="0%" x2="100%" y2="100%">
+			<stop offset="0%" stop-color="#65DB85"/>
+			<stop offset="50%" stop-color="#B58BFF"/>
+			<stop offset="100%" stop-color="#FFD54F"/>
+		</linearGradient>
+		<linearGradient id="sproutBody" x1="0%" y1="0%" x2="0%" y2="100%">
+			<stop offset="0%" stop-color="#76E896"/>
+			<stop offset="100%" stop-color="#2E7D5B"/>
+		</linearGradient>
+		<linearGradient id="lotusGold" x1="0%" y1="0%" x2="100%" y2="100%">
+			<stop offset="0%" stop-color="#FFF3B0"/>
+			<stop offset="55%" stop-color="#FFD54F"/>
+			<stop offset="100%" stop-color="#FF9800"/>
 		</linearGradient>
 	</defs>
-	<rect width="456" height="456" fill="url(#bg)"/>
-	<circle cx="228" cy="228" r="150" fill="none" stroke="url(#ring)" stroke-width="10"/>
-	<circle cx="228" cy="228" r="112" fill="none" stroke="#ffffff" stroke-opacity="0.35" stroke-width="4"/>
-	<circle cx="228" cy="228" r="6" fill="#FBBF24"/>
-	<path d="M228 228 L340 116" stroke="#FBBF24" stroke-width="8" stroke-linecap="round"/>
-	<path d="M228 66 l14 40 h42 l-34 24 l13 40 l-35 -25 l-35 25 l13 -40 l-34 -24 h42 z" fill="#FBBF24"/>
+
+	<!-- Circular Cosmic Medallion (Safe inside Android 12+, iOS, Windows & MacCatalyst splash masks) -->
+	<circle cx="228" cy="228" r="184" fill="url(#medallionBg)"/>
+	<circle cx="228" cy="228" r="176" fill="none" stroke="#362C54" stroke-width="4"/>
+
+	<!-- Progress Goal Ring -->
+	<circle cx="228" cy="228" r="154" fill="none" stroke="#242038" stroke-width="14"/>
+	<path d="M 228 74 A 154 154 0 1 1 88 293" fill="none" stroke="url(#progressArc)" stroke-width="14" stroke-linecap="round"/>
+
+	<!-- Inner Runic Ring -->
+	<circle cx="228" cy="228" r="126" fill="none" stroke="#7549B8" stroke-opacity="0.42" stroke-width="2.5" stroke-dasharray="10 8"/>
+
+	<!-- Orbital Level Stars -->
+	<circle cx="228" cy="74" r="7" fill="#FFD54F"/>
+	<circle cx="348" cy="132" r="5" fill="#BFF5CE" fill-opacity="0.9"/>
+	<circle cx="372" cy="252" r="4.5" fill="#C7A4FF" fill-opacity="0.85"/>
+	<circle cx="302" cy="362" r="5.5" fill="#FFD54F" fill-opacity="0.9"/>
+	<circle cx="134" cy="350" r="4.5" fill="#65DB85" fill-opacity="0.85"/>
+	<circle cx="104" cy="142" r="5" fill="#C7A4FF" fill-opacity="0.85"/>
+
+	<!-- Iconic Mascot Centerpiece: Brote Esmeralda in Bloom -->
+	<!-- Soft Glow Behind Mascot -->
+	<circle cx="228" cy="248" r="74" fill="#2E7D5B" fill-opacity="0.22"/>
+
+	<!-- Stem -->
+	<line x1="228" y1="222" x2="228" y2="152" stroke="#BFF5CE" stroke-width="12" stroke-linecap="round"/>
+
+	<!-- Single Pair of Smooth Cotyledons / Sprout Leaves -->
+	<ellipse cx="195" cy="184" rx="28" ry="15" transform="rotate(-22 195 184)" fill="#80E89E"/>
+	<ellipse cx="261" cy="184" rx="28" ry="15" transform="rotate(22 261 184)" fill="#80E89E"/>
+
+	<!-- Golden Lotus Blossom at Top of Stem -->
+	<ellipse cx="210" cy="144" rx="14" ry="21" transform="rotate(-28 210 144)" fill="#FFB74D"/>
+	<ellipse cx="246" cy="144" rx="14" ry="21" transform="rotate(28 246 144)" fill="#FFB74D"/>
+	<ellipse cx="228" cy="138" rx="16" ry="24" fill="url(#lotusGold)"/>
+	<circle cx="228" cy="138" r="6.5" fill="#FFFDE7"/>
+
+	<!-- Emerald Mascot Body -->
+	<ellipse cx="228" cy="264" rx="68" ry="54" fill="url(#sproutBody)"/>
+	<ellipse cx="228" cy="274" rx="42" ry="26" fill="#BFF5CE" fill-opacity="0.28"/>
+
+	<!-- Expressive Eyes with Starlight Shine -->
+	<circle cx="201" cy="256" r="11.5" fill="#171725"/>
+	<circle cx="255" cy="256" r="11.5" fill="#171725"/>
+	<circle cx="197.5" cy="252.5" r="4.5" fill="#FFFFFF"/>
+	<circle cx="251.5" cy="252.5" r="4.5" fill="#FFFFFF"/>
 </svg>

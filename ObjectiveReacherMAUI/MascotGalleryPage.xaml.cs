@@ -96,6 +96,23 @@ public partial class MascotGalleryPage : ContentPage
         UpdatePreview(level);
     }
 
+    private async void OnMascotCardTapped(object? sender, TappedEventArgs e)
+    {
+        if (e.Parameter is int level)
+        {
+            LevelSlider.Value = level;
+            UpdatePreview(level);
+            try
+            {
+                PreviewMascotView.Scale = 0.88;
+                await PreviewMascotView.ScaleToAsync(1.0, 220, Easing.SpringOut);
+            }
+            catch
+            {
+            }
+        }
+    }
+
     private void UpdatePreview(int level)
     {
         var tier = Math.Clamp((level - 1) / 10, 0, StageNames.Length - 1);

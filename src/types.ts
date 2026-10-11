@@ -52,6 +52,9 @@ export interface Objective {
 
 export interface GamificationState {
   totalXp: number;
+  bonusXp?: number;
+  lastPetDateKey?: string;
+  claimedQuestsByDay?: Record<string, string[]>;
 }
 
 export interface DashboardState {

@@ -67,8 +67,8 @@ public sealed class MascotAvatarDrawable : IDrawable
         canvas.StrokeSize = Math.Max(1.5f, size * (0.035f + subProgress * 0.02f));
         canvas.DrawCircle(cx, cy, radius * 0.92f);
 
-        // 1b. Capas evolutivas de fondo según subnivel (Halo rúnico, rayos solares, cristales laterales)
-        DrawSubLevelAura(canvas, cx, cy, radius, size, subLevel, primaryColor, secondaryColor, accentColor, IsLocked);
+        // 1b. Capas evolutivas de fondo según subnivel (Halo rúnico circular limpio en Tier 0, rayos y cristales en etapas superiores)
+        DrawSubLevelAura(canvas, cx, cy, radius, size, tier, subLevel, primaryColor, secondaryColor, accentColor, IsLocked);
 
         // 2. Partículas orbitales (1 a 10 según subnivel)
         var starCount = subLevel + 1;
@@ -89,8 +89,9 @@ public sealed class MascotAvatarDrawable : IDrawable
         // 3. Dibujar la criatura única de cada una de las 20 etapas (con evolución anatómica por subnivel)
         DrawTierCreature(canvas, cx, cy, u, tier, subLevel, primaryColor, secondaryColor, accentColor, IsLocked);
 
-        // 3b. Insignias evolutivas superiores según subnivel (gema frontal, diadema real en subniveles altos)
-        DrawSubLevelCrown(canvas, cx, cy, u, subLevel, primaryColor, accentColor, IsLocked);
+        // 3b. Insignias evolutivas superiores según subnivel (gema frontal, diadema real en subniveles altos; Tier 0 usa su propia flor de loto)
+        if (tier > 0)
+            DrawSubLevelCrown(canvas, cx, cy, u, subLevel, primaryColor, accentColor, IsLocked);
 
         // 4. Si está bloqueado, cruzar la barra sólida inclinada de borde a borde del círculo con opacidad 90% y zigzag a 2/3
         if (IsLocked)
@@ -156,6 +157,7 @@ public sealed class MascotAvatarDrawable : IDrawable
         float cy,
         float radius,
         float size,
+        int tier,
         int subLevel,
         Color primary,
         Color secondary,
@@ -168,6 +170,18 @@ public sealed class MascotAvatarDrawable : IDrawable
             canvas.StrokeColor = primary.WithAlpha(isLocked ? 0.25f : 0.45f);
             canvas.StrokeSize = Math.Max(1f, size * 0.016f);
             canvas.DrawCircle(cx, cy, radius * 0.72f);
+        }
+
+        // En Tier 0 (Brote Esmeralda) usamos un segundo halo circular orgánico sin líneas rectas ni rombos
+        if (tier == 0)
+        {
+            if (subLevel >= 6)
+            {
+                canvas.StrokeColor = accent.WithAlpha(isLocked ? 0.22f : 0.38f);
+                canvas.StrokeSize = Math.Max(1f, size * 0.016f);
+                canvas.DrawCircle(cx, cy, radius * (0.58f + (subLevel - 6) * 0.03f));
+            }
+            return;
         }
 
         // Subnivel >= 4: Aletas/destellos laterales de energía
@@ -267,37 +281,52 @@ public sealed class MascotAvatarDrawable : IDrawable
 
         switch (tier)
         {
-            case 0: // Semilla -> Brote -> Planta -> Flor de Loto Esmeralda
+            case 0: // Semilla -> Brote -> Planta -> Flor de Loto Esmeralda (Máximo 1 par de cotiledones y flor limpia)
+                var subProg0 = subLevel / 9f;
                 canvas.FillColor = secondary;
-                canvas.FillEllipse(cx - u * 0.42f, cy - u * 0.08f, u * 0.84f, u * 0.66f);
-                var stemH = u * (0.20f + subLevel * 0.055f);
-                canvas.StrokeColor = accent;
-                canvas.StrokeSize = Math.Max(2f, u * 0.1f);
-                canvas.DrawLine(cx, cy - u * 0.04f, cx, cy - u * 0.04f - stemH);
+                var bodyRx = u * (0.43f + subProg0 * 0.05f);
+                var bodyRy = u * (0.34f + subProg0 * 0.04f);
+                canvas.FillEllipse(cx - bodyRx, cy + u * 0.24f - bodyRy, bodyRx * 2f, bodyRy * 2f);
 
-                // Pares de hojas que aumentan con el subnivel (1 a 3 pares)
-                var leafPairs = 1 + subLevel / 3;
-                var leafW = u * (0.20f + subLevel * 0.018f);
-                canvas.FillColor = accent;
-                for (var p = 0; p < leafPairs; p++)
+                if (subLevel >= 2)
                 {
-                    var ly = cy - u * 0.10f - stemH * ((p + 1f) / leafPairs);
-                    canvas.FillEllipse(cx - leafW, ly, leafW, leafW * 0.58f);
-                    if (subLevel >= 1 || p > 0)
-                        canvas.FillEllipse(cx, ly, leafW, leafW * 0.58f);
+                    canvas.FillColor = accent.WithAlpha(isLocked ? 0.18f : 0.35f);
+                    canvas.FillEllipse(cx - u * 0.26f, cy + u * 0.12f, u * 0.52f, u * 0.32f);
                 }
 
-                // Capullo (subLevel >= 4) que florece en flor completa (subLevel >= 7)
-                if (subLevel >= 4)
+                var stemH = u * (0.20f + subProg0 * 0.24f);
+                var stemTopY = cy - u * 0.06f - stemH;
+                canvas.StrokeColor = accent;
+                canvas.StrokeSize = Math.Max(2f, u * 0.095f);
+                canvas.DrawLine(cx, cy - u * 0.05f, cx, stemTopY);
+
+                // Un único par de cotiledones suaves (1 en Nv.1, 2 desde Nv.2)
+                var leafW = u * (0.26f + subProg0 * 0.12f);
+                var leafH = leafW * 0.58f;
+                var leafY = cy - u * 0.08f - stemH * 0.62f;
+                canvas.FillColor = accent;
+                canvas.FillEllipse(cx - leafW * 1.05f, leafY - leafH * 0.5f, leafW, leafH);
+                if (subLevel >= 1)
+                    canvas.FillEllipse(cx + leafW * 0.05f, leafY - leafH * 0.5f, leafW, leafH);
+
+                // Capullo limpio (Nv. 5-7) -> Flor de 3 pétalos en la punta (Nv. 8-10)
+                if (subLevel >= 4 && subLevel < 7)
                 {
-                    var flowerY = cy - u * 0.16f - stemH;
                     canvas.FillColor = isLocked ? primary : Color.FromArgb("#FFD54F");
-                    if (subLevel >= 7)
+                    canvas.FillEllipse(cx - leafW * 0.24f, stemTopY - leafW * 0.55f, leafW * 0.48f, leafW * 0.62f);
+                }
+                else if (subLevel >= 7)
+                {
+                    canvas.FillColor = isLocked ? primary : Color.FromArgb("#FFB74D");
+                    canvas.FillEllipse(cx - leafW * 0.55f, stemTopY - leafW * 0.48f, leafW * 0.46f, leafW * 0.58f);
+                    canvas.FillEllipse(cx + leafW * 0.09f, stemTopY - leafW * 0.48f, leafW * 0.46f, leafW * 0.58f);
+                    canvas.FillColor = isLocked ? accent : Color.FromArgb("#FFD54F");
+                    canvas.FillEllipse(cx - leafW * 0.26f, stemTopY - leafW * 0.68f, leafW * 0.52f, leafW * 0.68f);
+                    if (subLevel >= 8)
                     {
-                        canvas.FillCircle(cx - leafW * 0.35f, flowerY, leafW * 0.35f);
-                        canvas.FillCircle(cx + leafW * 0.35f, flowerY, leafW * 0.35f);
+                        canvas.FillColor = isLocked ? primary : Color.FromArgb("#FFF8E1");
+                        canvas.FillCircle(cx, stemTopY - leafW * 0.34f, leafW * 0.12f);
                     }
-                    canvas.FillCircle(cx, flowerY - leafW * 0.1f, leafW * 0.42f);
                 }
                 DrawEyes(canvas, cx, cy + u * 0.20f, u * 0.18f, u * 0.08f, eyeColor, !isLocked);
                 break;

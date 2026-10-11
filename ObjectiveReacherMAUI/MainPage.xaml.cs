@@ -17,6 +17,7 @@ namespace ObjectiveReacherMAUI
         private int _sectionHighlightGeneration;
         private int _celebrationGeneration;
         private CancellationTokenSource? _celebrationCancellation;
+        private CancellationTokenSource? _mascotIdleCancellation;
 
         public MainPage(DashboardViewModel viewModel)
         {
@@ -30,6 +31,7 @@ namespace ObjectiveReacherMAUI
             base.OnAppearing();
             _viewModel.CelebrationRequested -= OnCelebrationRequested;
             _viewModel.CelebrationRequested += OnCelebrationRequested;
+            StartMascotIdleAnimation();
             try
             {
                 await _viewModel.InitializeAsync();
@@ -44,6 +46,7 @@ namespace ObjectiveReacherMAUI
         protected override void OnDisappearing()
         {
             _viewModel.CelebrationRequested -= OnCelebrationRequested;
+            StopMascotIdleAnimation();
             CancelCelebration();
             _sectionHighlightGeneration++;
             if (_highlightedSection is not null)
@@ -78,6 +81,7 @@ namespace ObjectiveReacherMAUI
                     CelebrationOverlay.IsVisible = true;
                     CelebrationOverlay.Opacity = 0;
                     CelebrationOverlay.Scale = 0.82;
+                    _ = PulseDashboardIndicatorsAsync();
                     await Task.WhenAll(
                         CelebrationOverlay.FadeToAsync(1, 220, Easing.CubicOut),
                         CelebrationOverlay.ScaleToAsync(1, 300, Easing.SpringOut));
@@ -111,6 +115,60 @@ namespace ObjectiveReacherMAUI
             CelebrationOverlay.IsVisible = false;
             CelebrationOverlay.Opacity = 0;
             CelebrationOverlay.Scale = 0.82;
+        }
+
+        private void StartMascotIdleAnimation()
+        {
+            StopMascotIdleAnimation();
+            _mascotIdleCancellation = new CancellationTokenSource();
+            var token = _mascotIdleCancellation.Token;
+            MainThread.BeginInvokeOnMainThread(async () =>
+            {
+                try
+                {
+                    while (!token.IsCancellationRequested)
+                    {
+                        await Task.WhenAll(
+                            DashboardMascotAvatar.ScaleToAsync(1.06, 1500, Easing.SinInOut),
+                            DashboardMascotAvatar.TranslateToAsync(0, -2.5, 1500, Easing.SinInOut));
+                        if (token.IsCancellationRequested)
+                            break;
+                        await Task.WhenAll(
+                            DashboardMascotAvatar.ScaleToAsync(1.0, 1500, Easing.SinInOut),
+                            DashboardMascotAvatar.TranslateToAsync(0, 0, 1500, Easing.SinInOut));
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            });
+        }
+
+        private void StopMascotIdleAnimation()
+        {
+            _mascotIdleCancellation?.Cancel();
+            _mascotIdleCancellation?.Dispose();
+            _mascotIdleCancellation = null;
+            DashboardMascotAvatar?.CancelAnimations();
+        }
+
+        private async Task PulseDashboardIndicatorsAsync()
+        {
+            try
+            {
+                await Task.WhenAll(
+                    CurrentAmountLabel.ScaleToAsync(1.12, 130, Easing.CubicOut),
+                    CircularProgressContainer.ScaleToAsync(1.10, 130, Easing.CubicOut),
+                    DashboardMascotAvatar.ScaleToAsync(1.22, 150, Easing.SpringOut));
+                await Task.WhenAll(
+                    CurrentAmountLabel.ScaleToAsync(1.0, 180, Easing.SpringOut),
+                    CircularProgressContainer.ScaleToAsync(1.0, 180, Easing.SpringOut),
+                    DashboardMascotAvatar.ScaleToAsync(1.0, 200, Easing.SpringOut));
+            }
+            catch
+            {
+                // Ignore transient animation cancellation
+            }
         }
 
         private async void OnCelebrationCloseClicked(object? sender, EventArgs e)

@@ -428,11 +428,35 @@ public sealed class DashboardViewModel : INotifyPropertyChanged
         private set
         {
             if (SetProperty(ref _selectedAmount, value))
+            {
                 OnPropertyChanged(nameof(SelectedAmountText));
+                OnPropertyChanged(nameof(EstimatedXpPreviewText));
+            }
         }
     }
 
     public string SelectedAmountText => $"Monto seleccionado: {FormatAmount(SelectedAmount)}";
+
+    public string EstimatedXpPreviewText
+    {
+        get
+        {
+            if (!HasValidSelectedAmount)
+                return "Selecciona un monto para ver tu recompensa de XP";
+
+            var effectiveAmount = IsAddition ? SelectedAmount : -Math.Min(SelectedAmount, Math.Max(1m, _objective.CurrentAmount));
+            var today = DateOnly.FromDateTime(DateTime.Now);
+            var hadEntryToday = _objectives
+                .SelectMany(item => item.Entries)
+                .Any(item => DateOnly.FromDateTime(item.CreatedAt.LocalDateTime) == today);
+            var previewStreak = hadEntryToday ? StreakDays : StreakDays + 1;
+            var xp = CalculateSingleEntryXp(effectiveAmount, _objective.GoalAmount, !hadEntryToday, previewStreak);
+            var bonusTag = !hadEntryToday ? " · incluye bono diario" : (IsAddition && previewStreak > 1 ? $" · racha x{previewStreak}d" : string.Empty);
+            return $"⚡ +{xp} XP con este registro{bonusTag}";
+        }
+    }
+
+    public Color EstimatedXpPreviewColor => Color.FromArgb(IsAddition ? "#82E59B" : "#D8C5FF");
 
     public bool HasValidSelectedAmount => _selectedQuickAmount is not null ||
         decimal.TryParse(_customAmountText, NumberStyles.Number, CultureInfo.CurrentCulture, out var amount) && amount > 0 ||
@@ -472,6 +496,8 @@ public sealed class DashboardViewModel : INotifyPropertyChanged
             {
                 OnPropertyChanged(nameof(AddModeBackground));
                 OnPropertyChanged(nameof(SubtractModeBackground));
+                OnPropertyChanged(nameof(EstimatedXpPreviewText));
+                OnPropertyChanged(nameof(EstimatedXpPreviewColor));
             }
         }
     }
@@ -858,6 +884,8 @@ public sealed class DashboardViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(ProgressText));
         OnPropertyChanged(nameof(RemainingText));
         OnPropertyChanged(nameof(SelectedAmountText));
+        OnPropertyChanged(nameof(EstimatedXpPreviewText));
+        OnPropertyChanged(nameof(EstimatedXpPreviewColor));
         OnPropertyChanged(nameof(QuickAmount50Text));
         OnPropertyChanged(nameof(QuickAmount100Text));
         OnPropertyChanged(nameof(QuickAmount500Text));
@@ -991,6 +1019,7 @@ public sealed class DashboardViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(MascotMessage));
         OnPropertyChanged(nameof(StreakDays));
         OnPropertyChanged(nameof(StreakText));
+        OnPropertyChanged(nameof(EstimatedXpPreviewText));
     }
 
     private async Task PersistStateAsync(CancellationToken cancellationToken)
