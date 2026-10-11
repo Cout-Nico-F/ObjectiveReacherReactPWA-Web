@@ -38,13 +38,13 @@ public static class AchievementCatalog
     {
         var achievements = new List<AchievementDefinition>
         {
-            new(FirstEntryId, "Primer paso", "Registra tu primera entrada", "🟢", 10),
-            new(ThreeDayStreakId, "En marcha", "3 días consecutivos", "🌱", 15),
-            new(SevenDayStreakId, "Constante", "7 días consecutivos", "🔥", 30),
-            new(Progress25Id, "Un cuarto", "Alcanza el 25% de tu objetivo", "🥉", 10),
-            new(Progress50Id, "A mitad de camino", "Alcanza el 50% de tu objetivo", "🎯", 20),
-            new(Progress100Id, "Al máximo", "Alcanza el 100% de tu objetivo", "💯", 30),
-            new(GoalCompleteId, "Objetivo cumplido", "Completa tu objetivo", "🏆", 50)
+            new(FirstEntryId, "Primer paso", "Registra tu primera entrada", "🟢", 50),
+            new(ThreeDayStreakId, "En marcha", "3 días consecutivos", "🌱", 90),
+            new(SevenDayStreakId, "Constante", "7 días consecutivos", "🔥", 180),
+            new(Progress25Id, "Un cuarto", "Alcanza el 25% de tu objetivo", "🥉", 100),
+            new(Progress50Id, "A mitad de camino", "Alcanza el 50% de tu objetivo", "🎯", 200),
+            new(Progress100Id, "Al máximo", "Alcanza el 100% de tu objetivo", "💯", 350),
+            new(GoalCompleteId, "Objetivo cumplido", "Completa tu objetivo", "🏆", 500)
         };
 
         AddThresholdAchievements(achievements, AchievementCondition.EntryCount,
@@ -86,6 +86,9 @@ public static class AchievementCatalog
         return achievements;
     }
 
+    private static readonly int[] TenStepRewards = [40, 70, 110, 160, 220, 300, 400, 520, 660, 850];
+    private static readonly int[] FiveStepRewards = [50, 100, 180, 300, 480];
+
     private static void AddThresholdAchievements(
         ICollection<AchievementDefinition> achievements,
         AchievementCondition condition,
@@ -94,17 +97,19 @@ public static class AchievementCatalog
         IReadOnlyList<string> hints,
         string icon)
     {
+        var rewardTable = thresholds.Count == 5 ? FiveStepRewards : TenStepRewards;
         for (var index = 0; index < thresholds.Count; index++)
         {
             var threshold = thresholds[index];
             var title = titles[index];
             var hint = hints[index % hints.Count];
+            var rewardXp = rewardTable[Math.Clamp(index, 0, rewardTable.Length - 1)];
             achievements.Add(new AchievementDefinition(
                 $"secret-{condition.ToString().ToLowerInvariant()}-{threshold}",
                 title,
                 string.Format(System.Globalization.CultureInfo.InvariantCulture, hint, threshold),
                 icon,
-                10 + index % 3 * 5,
+                rewardXp,
                 IsSecret: true,
                 Condition: condition,
                 Threshold: threshold));

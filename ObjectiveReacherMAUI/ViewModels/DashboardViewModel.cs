@@ -85,7 +85,7 @@ public sealed class DashboardViewModel : INotifyPropertyChanged
 
     public int TotalXp => _gamification.TotalXp;
 
-    public int Level => (int)Math.Floor(Math.Sqrt(Math.Max(0, TotalXp) / 100d)) + 1;
+    public int Level => (int)Math.Floor((Math.Sqrt(1d + 4d * Math.Max(0, TotalXp) / 25d) - 1d) / 2d) + 1;
 
     public string ExperienceText => $"Nivel {Level} · {TotalXp} XP";
 
@@ -93,8 +93,8 @@ public sealed class DashboardViewModel : INotifyPropertyChanged
     {
         get
         {
-            var xpAtLevelStart = 100L * (Level - 1) * (Level - 1);
-            var xpForCurrentLevel = 100L * (2L * Level - 1);
+            var xpAtLevelStart = 25L * (Level - 1) * Level;
+            var xpForCurrentLevel = 50L * Level;
             return Math.Clamp((TotalXp - xpAtLevelStart) / (double)xpForCurrentLevel, 0, 1);
         }
     }
@@ -143,14 +143,8 @@ public sealed class DashboardViewModel : INotifyPropertyChanged
             if (objective is null || _objectives.Count(item => !item.IsArchived) <= 1 && !objective.IsArchived)
                 return false;
 
-            _gamification.TotalXp = Math.Max(0, _gamification.TotalXp - objective.Entries.Count * 10);
-            foreach (var achievementId in objective.UnlockedAchievementIds)
-            {
-                var achievement = AchievementCatalog.All.FirstOrDefault(item => item.Id == achievementId);
-                if (achievement is not null)
-                    _gamification.TotalXp = Math.Max(0, _gamification.TotalXp - achievement.RewardXp);
-            }
             _objectives.Remove(objective);
+            RecalculateAllXp();
             if (_objective.Id == objectiveId)
             {
                 _objective = _objectives.FirstOrDefault(item => !item.IsArchived) ?? _objectives[0];
@@ -237,18 +231,54 @@ public sealed class DashboardViewModel : INotifyPropertyChanged
 
     private void RecalculateGamificationAfterEntryChange(bool removeEntryReward)
     {
-        if (removeEntryReward)
-            _gamification.TotalXp = Math.Max(0, _gamification.TotalXp - 10);
-        foreach (var id in _objective.UnlockedAchievementIds)
-        {
-            var achievement = AchievementCatalog.All.FirstOrDefault(item => item.Id == id);
-            if (achievement is not null)
-                _gamification.TotalXp = Math.Max(0, _gamification.TotalXp - achievement.RewardXp);
-        }
-
+        _ = removeEntryReward;
         _objective.UnlockedAchievementIds.Clear();
         _recentAchievementUnlocks.Clear();
         EvaluateObjectiveAchievements();
+        RecalculateAllXp();
+    }
+
+    private void RecalculateAllXp()
+    {
+        var total = 0;
+        var seenDays = new HashSet<DateOnly>();
+
+        foreach (var entry in _objectives
+                     .SelectMany(obj => obj.Entries.Select(e => (Objective: obj, Entry: e)))
+                     .OrderBy(item => item.Entry.CreatedAt))
+        {
+            var day = DateOnly.FromDateTime(entry.Entry.CreatedAt.LocalDateTime);
+            var isFirstOfDay = seenDays.Add(day);
+            total += CalculateSingleEntryXp(entry.Entry.Amount, entry.Objective.GoalAmount, isFirstOfDay, streakDays: seenDays.Count);
+        }
+
+        foreach (var obj in _objectives)
+        {
+            foreach (var id in obj.UnlockedAchievementIds)
+            {
+                var achievement = AchievementCatalog.All.FirstOrDefault(item => item.Id == id);
+                if (achievement is not null)
+                    total += achievement.RewardXp;
+            }
+        }
+
+        _gamification.TotalXp = Math.Max(0, total);
+    }
+
+    private static int CalculateSingleEntryXp(decimal amount, decimal goalAmount, bool isFirstOfDay, int streakDays)
+    {
+        if (amount > 0)
+        {
+            const int baseAdditionXp = 35;
+            var impactRatio = goalAmount > 0 ? Math.Clamp(amount / goalAmount, 0m, 1m) : 0m;
+            var impactBonus = (int)Math.Round(5m + impactRatio * 60m);
+            var firstOfDayBonus = isFirstOfDay ? 25 : 0;
+            var streakBonus = streakDays > 1 ? Math.Min(45, (streakDays - 1) * 3) : 0;
+            return baseAdditionXp + impactBonus + firstOfDayBonus + streakBonus;
+        }
+
+        const int baseSubtractionXp = 15;
+        return baseSubtractionXp + (isFirstOfDay ? 10 : 0);
     }
 
     private void RefreshAfterEntryChange()
@@ -264,8 +294,8 @@ public sealed class DashboardViewModel : INotifyPropertyChanged
     {
         get
         {
-            var xpAtLevelStart = 100L * (Level - 1) * (Level - 1);
-            var xpAtNextLevel = 100L * Level * Level;
+            var xpAtLevelStart = 25L * (Level - 1) * Level;
+            var xpAtNextLevel = 25L * Level * (Level + 1);
             return $"{TotalXp - xpAtLevelStart}/{xpAtNextLevel - xpAtLevelStart} XP para el siguiente nivel";
         }
     }
@@ -688,16 +718,31 @@ public sealed class DashboardViewModel : INotifyPropertyChanged
             }
 
             var previousProgress = Progress;
+            var previousLevel = Level;
+            var previousXp = TotalXp;
+            var previousTier = (Math.Clamp(previousLevel, 1, 200) - 1) / 10;
+
+            var now = DateTimeOffset.Now;
+            var today = DateOnly.FromDateTime(now.LocalDateTime);
+            var hadEntryToday = _objectives
+                .SelectMany(item => item.Entries)
+                .Any(item => DateOnly.FromDateTime(item.CreatedAt.LocalDateTime) == today);
+
             _objective.CurrentAmount += amount;
             _recentAchievementUnlocks.Clear();
             _objective.Entries.Insert(0, new ObjectiveEntry
             {
                 Description = description,
                 Amount = amount,
-                CreatedAt = DateTimeOffset.Now
+                CreatedAt = now
             });
-            _gamification.TotalXp += 10;
+
+            var entryXp = CalculateSingleEntryXp(amount, _objective.GoalAmount, !hadEntryToday, StreakDays);
+            _gamification.TotalXp += entryXp;
             EvaluateObjectiveAchievements();
+            var totalGainedXp = Math.Max(entryXp, TotalXp - previousXp);
+            var newTier = (Math.Clamp(Level, 1, 200) - 1) / 10;
+
             NewEntryDescription = string.Empty;
             PersistenceMessage = string.Empty;
             NotifyObjectiveChanged();
@@ -707,11 +752,15 @@ public sealed class DashboardViewModel : INotifyPropertyChanged
             RefreshHistory();
             await PersistStateAsync(cancellationToken);
             if (amount > 0 && previousProgress < 1 && Progress >= 1)
-                RequestCelebration("¡Objetivo completado!", "¡Lo lograste! Cada paso te trajo hasta aquí.", "🏆", "#E5B945", requiresDismissal: true);
+                RequestCelebration("¡Objetivo completado!", $"¡Lo lograste! +{totalGainedXp} XP · {ExperienceText}", "🏆", "#E5B945", requiresDismissal: true);
+            else if (newTier > previousTier)
+                RequestCelebration("¡Nueva especie desbloqueada!", $"Nivel {Level} · +{totalGainedXp} XP · {MascotMessage}", MascotEmoji, "#FFD54F", requiresDismissal: true);
+            else if (Level > previousLevel)
+                RequestCelebration($"¡Subiste al Nivel {Level}!", $"+{totalGainedXp} XP · {(_recentAchievementUnlocks.Count > 0 ? "Logro: " + string.Join(" · ", _recentAchievementUnlocks) : "Tu mascota sigue evolucionando")}", MascotEmoji, "#B58BFF");
             else if (_recentAchievementUnlocks.Count > 0)
-                RequestCelebration("¡Nuevo logro!", string.Join(" · ", _recentAchievementUnlocks), "🏅", "#B58BFF");
+                RequestCelebration("¡Nuevo logro!", $"{string.Join(" · ", _recentAchievementUnlocks)} (+{totalGainedXp} XP)", "🏅", "#B58BFF");
             else
-                RequestCelebration(amount > 0 ? "¡Buen paso!" : "Entrada registrada", $"+10 XP · {ExperienceText}", "✨", "#65DB85");
+                RequestCelebration(amount > 0 ? "¡Gran impulso!" : "Registro actualizado", $"+{totalGainedXp} XP · {ExperienceText}", amount > 0 ? "✨" : "📝", "#65DB85");
         }
         finally
         {
@@ -772,6 +821,9 @@ public sealed class DashboardViewModel : INotifyPropertyChanged
             _objective = objective;
             EvaluateObjectiveAchievements();
         }
+        var previousSavedXp = _gamification.TotalXp;
+        RecalculateAllXp();
+        _gamification.TotalXp = Math.Max(previousSavedXp, _gamification.TotalXp);
         _objective = _objectives.FirstOrDefault(item => item.Id == state.SelectedObjectiveId && !item.IsArchived)
             ?? _objectives.FirstOrDefault(item => !item.IsArchived)
             ?? _objectives[0];

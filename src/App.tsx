@@ -47,6 +47,62 @@ function createEmptyState(): DashboardState {
   };
 }
 
+function calculateLevelFromXp(xp: number): number {
+  return Math.floor((Math.sqrt(1 + (4 * Math.max(0, xp)) / 25) - 1) / 2) + 1;
+}
+
+function calculateSingleEntryXp(
+  amount: number,
+  goalAmount: number,
+  isFirstOfDay: boolean,
+  streakDays: number
+): number {
+  if (amount > 0) {
+    const baseAdditionXp = 35;
+    const impactRatio =
+      goalAmount > 0 ? Math.min(1, Math.max(0, amount / goalAmount)) : 0;
+    const impactBonus = Math.round(5 + impactRatio * 60);
+    const firstOfDayBonus = isFirstOfDay ? 25 : 0;
+    const streakBonus = streakDays > 1 ? Math.min(45, (streakDays - 1) * 3) : 0;
+    return baseAdditionXp + impactBonus + firstOfDayBonus + streakBonus;
+  }
+  const baseSubtractionXp = 15;
+  return baseSubtractionXp + (isFirstOfDay ? 10 : 0);
+}
+
+function recalculateAllXp(objectives: Objective[]): number {
+  let total = 0;
+  const seenDays = new Set<string>();
+  const allEntries = objectives
+    .flatMap((obj) => obj.entries.map((entry) => ({ obj, entry })))
+    .sort(
+      (a, b) =>
+        new Date(a.entry.createdAt).getTime() -
+        new Date(b.entry.createdAt).getTime()
+    );
+
+  for (const { obj, entry } of allEntries) {
+    const dayKey = toLocalDateKey(entry.createdAt);
+    const isFirstOfDay = !seenDays.has(dayKey);
+    seenDays.add(dayKey);
+    total += calculateSingleEntryXp(
+      entry.amount,
+      obj.goalAmount,
+      isFirstOfDay,
+      seenDays.size
+    );
+  }
+
+  for (const obj of objectives) {
+    for (const id of obj.unlockedAchievementIds) {
+      const ach = ACHIEVEMENT_CATALOG.find((a) => a.id === id);
+      if (ach) total += ach.rewardXp;
+    }
+  }
+
+  return Math.max(0, total);
+}
+
 function loadState(): DashboardState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -60,6 +116,11 @@ function loadState(): DashboardState {
       parsed.gamification &&
       typeof parsed.gamification.totalXp === 'number'
     ) {
+      const recalculated = recalculateAllXp(parsed.objectives);
+      parsed.gamification.totalXp = Math.max(
+        parsed.gamification.totalXp,
+        recalculated
+      );
       return parsed;
     }
   } catch {
@@ -312,11 +373,11 @@ export function App() {
 
   // Derived gamification properties
   const totalXp = state.gamification.totalXp;
-  const level = Math.floor(Math.sqrt(Math.max(0, totalXp) / 100)) + 1;
+  const level = calculateLevelFromXp(totalXp);
   const experienceText = `Nivel ${level} · ${totalXp} XP`;
-  const xpAtLevelStart = 100 * (level - 1) * (level - 1);
-  const xpForCurrentLevel = 100 * (2 * level - 1);
-  const xpAtNextLevel = 100 * level * level;
+  const xpAtLevelStart = 25 * (level - 1) * level;
+  const xpForCurrentLevel = 50 * level;
+  const xpAtNextLevel = 25 * level * (level + 1);
   const levelProgress = Math.min(
     1,
     Math.max(0, (totalXp - xpAtLevelStart) / xpForCurrentLevel)
@@ -326,6 +387,29 @@ export function App() {
   } XP para el siguiente nivel`;
 
   const mascotTier = Math.floor((Math.min(200, Math.max(1, level)) - 1) / 10);
+  const mascotEmojis = [
+    '🌱',
+    '🐱',
+    '🦊',
+    '🦉',
+    '🐺',
+    '🐯',
+    '🦁',
+    '🦌',
+    '🦅',
+    '🪽',
+    '🔥',
+    '💎',
+    '🐉',
+    '⚡',
+    '🌌',
+    '🔮',
+    '✨',
+    '🌊',
+    '👑',
+    '🪐',
+  ];
+  const mascotEmoji = mascotEmojis[mascotTier] || '🪐';
   const mascotMessages = [
     'Brote Esmeralda · Tu viaje acaba de comenzar 💪',
     'Espíritu Neko · ¡Buen comienzo, sigue así!',
@@ -467,6 +551,15 @@ export function App() {
         : newEntryDescription.trim();
 
     const previousProgress = progress;
+    const previousLevel = level;
+    const previousXp = totalXp;
+    const previousTier = mascotTier;
+
+    const nowIso = new Date().toISOString();
+    const todayKey = toLocalDateKey(nowIso);
+    const hadEntryToday = state.objectives.some((obj) =>
+      obj.entries.some((e) => toLocalDateKey(e.createdAt) === todayKey)
+    );
 
     const nextObjectives = state.objectives.map((o) =>
       o.id === currentObjective.id
@@ -478,7 +571,7 @@ export function App() {
                 id: crypto.randomUUID(),
                 description,
                 amount,
-                createdAt: new Date().toISOString(),
+                createdAt: nowIso,
               },
               ...o.entries,
             ],
@@ -488,15 +581,25 @@ export function App() {
     );
 
     const updatedObj = nextObjectives.find((o) => o.id === currentObjective.id)!;
-    const nextGamification = { totalXp: state.gamification.totalXp + 10 };
+    const nextStreak = calculateCurrentStreak(nextObjectives);
+    const entryXp = calculateSingleEntryXp(
+      amount,
+      updatedObj.goalAmount,
+      !hadEntryToday,
+      nextStreak
+    );
+    const nextGamification = { totalXp: state.gamification.totalXp + entryXp };
     const newlyUnlocked = evaluateObjectiveAchievements(
       updatedObj,
       nextObjectives,
       nextGamification
     );
 
-    const nextLevel =
-      Math.floor(Math.sqrt(Math.max(0, nextGamification.totalXp) / 100)) + 1;
+    const totalGainedXp = Math.max(entryXp, nextGamification.totalXp - previousXp);
+    const nextLevel = calculateLevelFromXp(nextGamification.totalXp);
+    const nextTier = Math.floor((Math.min(200, Math.max(1, nextLevel)) - 1) / 10);
+    const nextMascotEmoji = mascotEmojis[nextTier] || '🪐';
+    const nextMascotMessage = mascotMessages[nextTier] || mascotMessages[0];
     const nextExperienceText = `Nivel ${nextLevel} · ${nextGamification.totalXp} XP`;
     const newProgress =
       updatedObj.goalAmount <= 0
@@ -514,23 +617,42 @@ export function App() {
     if (amount > 0 && previousProgress < 1 && newProgress >= 1) {
       triggerCelebration(
         '¡Objetivo completado!',
-        '¡Lo lograste! Cada paso te trajo hasta aquí.',
+        `¡Lo lograste! +${totalGainedXp} XP · ${nextExperienceText}`,
         '🏆',
         '#E5B945',
         true
       );
+    } else if (nextTier > previousTier) {
+      triggerCelebration(
+        '¡Nueva especie desbloqueada!',
+        `Nivel ${nextLevel} · +${totalGainedXp} XP · ${nextMascotMessage}`,
+        nextMascotEmoji,
+        '#FFD54F',
+        true
+      );
+    } else if (nextLevel > previousLevel) {
+      triggerCelebration(
+        `¡Subiste al Nivel ${nextLevel}!`,
+        `+${totalGainedXp} XP · ${
+          newlyUnlocked.length > 0
+            ? 'Logro: ' + newlyUnlocked.join(' · ')
+            : 'Tu mascota sigue evolucionando'
+        }`,
+        nextMascotEmoji,
+        '#B58BFF'
+      );
     } else if (newlyUnlocked.length > 0) {
       triggerCelebration(
         '¡Nuevo logro!',
-        newlyUnlocked.join(' · '),
+        `${newlyUnlocked.join(' · ')} (+${totalGainedXp} XP)`,
         '🏅',
         '#B58BFF'
       );
     } else {
       triggerCelebration(
-        amount > 0 ? '¡Buen paso!' : 'Entrada registrada',
-        `+10 XP · ${nextExperienceText}`,
-        '✨',
+        amount > 0 ? '¡Gran impulso!' : 'Registro actualizado',
+        `+${totalGainedXp} XP · ${nextExperienceText}`,
+        amount > 0 ? '✨' : '📝',
         '#65DB85'
       );
     }
@@ -676,11 +798,6 @@ export function App() {
           return;
         }
         setState((prev) => {
-          let deductedXp = prev.gamification.totalXp - target.entries.length * 10;
-          for (const achId of target.unlockedAchievementIds) {
-            const ach = ACHIEVEMENT_CATALOG.find((a) => a.id === achId);
-            if (ach) deductedXp -= ach.rewardXp;
-          }
           const remaining = prev.objectives.filter((o) => o.id !== target.id);
           const nextSelected =
             prev.selectedObjectiveId === target.id
@@ -690,7 +807,7 @@ export function App() {
             ...prev,
             objectives: remaining,
             selectedObjectiveId: nextSelected,
-            gamification: { totalXp: Math.max(0, deductedXp) },
+            gamification: { totalXp: recalculateAllXp(remaining) },
           };
         });
       },
@@ -708,12 +825,6 @@ export function App() {
           const entry = currentObjective.entries.find((e) => e.id === entryId);
           if (!entry) return prev;
 
-          let nextXp = Math.max(0, prev.gamification.totalXp - 10);
-          for (const id of currentObjective.unlockedAchievementIds) {
-            const ach = ACHIEVEMENT_CATALOG.find((a) => a.id === id);
-            if (ach) nextXp = Math.max(0, nextXp - ach.rewardXp);
-          }
-
           const nextObjectives = prev.objectives.map((o) =>
             o.id === currentObjective.id
               ? {
@@ -728,17 +839,17 @@ export function App() {
           const updatedObj = nextObjectives.find(
             (o) => o.id === currentObjective.id
           )!;
-          const nextGamification = { totalXp: nextXp };
+          const dummyGamification = { totalXp: 0 };
           evaluateObjectiveAchievements(
             updatedObj,
             nextObjectives,
-            nextGamification
+            dummyGamification
           );
 
           return {
             ...prev,
             objectives: nextObjectives,
-            gamification: nextGamification,
+            gamification: { totalXp: recalculateAllXp(nextObjectives) },
           };
         });
       },
@@ -757,12 +868,6 @@ export function App() {
       const sign = entry.amount < 0 ? -1 : 1;
       const updatedAmount = positiveAmount * sign;
       const diff = updatedAmount - entry.amount;
-
-      let nextXp = prev.gamification.totalXp;
-      for (const id of currentObjective.unlockedAchievementIds) {
-        const ach = ACHIEVEMENT_CATALOG.find((a) => a.id === id);
-        if (ach) nextXp = Math.max(0, nextXp - ach.rewardXp);
-      }
 
       const nextObjectives = prev.objectives.map((o) =>
         o.id === currentObjective.id
@@ -787,13 +892,13 @@ export function App() {
       );
 
       const updatedObj = nextObjectives.find((o) => o.id === currentObjective.id)!;
-      const nextGamification = { totalXp: nextXp };
-      evaluateObjectiveAchievements(updatedObj, nextObjectives, nextGamification);
+      const dummyGamification = { totalXp: 0 };
+      evaluateObjectiveAchievements(updatedObj, nextObjectives, dummyGamification);
 
       return {
         ...prev,
         objectives: nextObjectives,
-        gamification: nextGamification,
+        gamification: { totalXp: recalculateAllXp(nextObjectives) },
       };
     });
     setEditingEntry(null);

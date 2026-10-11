@@ -77,7 +77,7 @@ function createAllAchievements(): AchievementDefinition[] {
       title: 'Primer paso',
       description: 'Registra tu primera entrada',
       icon: '🟢',
-      rewardXp: 10,
+      rewardXp: 50,
       isSecret: false,
       condition: AchievementCondition.None,
       threshold: 0,
@@ -87,7 +87,7 @@ function createAllAchievements(): AchievementDefinition[] {
       title: 'En marcha',
       description: '3 días consecutivos',
       icon: '🌱',
-      rewardXp: 15,
+      rewardXp: 90,
       isSecret: false,
       condition: AchievementCondition.None,
       threshold: 0,
@@ -97,7 +97,7 @@ function createAllAchievements(): AchievementDefinition[] {
       title: 'Constante',
       description: '7 días consecutivos',
       icon: '🔥',
-      rewardXp: 30,
+      rewardXp: 180,
       isSecret: false,
       condition: AchievementCondition.None,
       threshold: 0,
@@ -107,7 +107,7 @@ function createAllAchievements(): AchievementDefinition[] {
       title: 'Un cuarto',
       description: 'Alcanza el 25% de tu objetivo',
       icon: '🥉',
-      rewardXp: 10,
+      rewardXp: 100,
       isSecret: false,
       condition: AchievementCondition.None,
       threshold: 0,
@@ -117,7 +117,7 @@ function createAllAchievements(): AchievementDefinition[] {
       title: 'A mitad de camino',
       description: 'Alcanza el 50% de tu objetivo',
       icon: '🎯',
-      rewardXp: 20,
+      rewardXp: 200,
       isSecret: false,
       condition: AchievementCondition.None,
       threshold: 0,
@@ -127,7 +127,7 @@ function createAllAchievements(): AchievementDefinition[] {
       title: 'Al máximo',
       description: 'Alcanza el 100% de tu objetivo',
       icon: '💯',
-      rewardXp: 30,
+      rewardXp: 350,
       isSecret: false,
       condition: AchievementCondition.None,
       threshold: 0,
@@ -137,12 +137,15 @@ function createAllAchievements(): AchievementDefinition[] {
       title: 'Objetivo cumplido',
       description: 'Completa tu objetivo',
       icon: '🏆',
-      rewardXp: 50,
+      rewardXp: 500,
       isSecret: false,
       condition: AchievementCondition.None,
       threshold: 0,
     },
   ];
+
+  const tenStepRewards = [40, 70, 110, 160, 220, 300, 400, 520, 660, 850];
+  const fiveStepRewards = [50, 100, 180, 300, 480];
 
   const addThresholdAchievements = (
     condition: AchievementCondition,
@@ -151,16 +154,18 @@ function createAllAchievements(): AchievementDefinition[] {
     hints: string[],
     icon: string
   ) => {
+    const rewardTable = thresholds.length === 5 ? fiveStepRewards : tenStepRewards;
     for (let index = 0; index < thresholds.length; index++) {
       const threshold = thresholds[index];
       const title = titles[index];
       const hint = hints[index % hints.length];
+      const rewardXp = rewardTable[Math.min(index, rewardTable.length - 1)];
       achievements.push({
         id: `secret-${condition.toLowerCase()}-${threshold}`,
         title,
         description: hint.replace('{0}', String(threshold)),
         icon,
-        rewardXp: 10 + (index % 3) * 5,
+        rewardXp,
         isSecret: true,
         condition,
         threshold,
