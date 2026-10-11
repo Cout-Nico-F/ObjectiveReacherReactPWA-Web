@@ -28,19 +28,13 @@
 		<MauiXamlInflator>SourceGen</MauiXamlInflator>
 
 		<!-- Display name -->
-		<ApplicationTitle>ObjectiveReacherMAUI</ApplicationTitle>
-
-		<AndroidKeyStore Condition="'$(Configuration)' == 'Release'">True</AndroidKeyStore>
-		<AndroidSigningKeyStore Condition="'$(Configuration)' == 'Release'">$(USERPROFILE)\.keys\ObjectiveReacher\objectivereacher.keystore</AndroidSigningKeyStore>
-		<AndroidSigningKeyAlias Condition="'$(Configuration)' == 'Release'">objectivereacher</AndroidSigningKeyAlias>
-		<AndroidSigningStorePass Condition="'$(Configuration)' == 'Release'">$(ObjectiveReacherStorePass)</AndroidSigningStorePass>
-		<AndroidSigningKeyPass Condition="'$(Configuration)' == 'Release'">$(ObjectiveReacherStorePass)</AndroidSigningKeyPass>
+		<ApplicationTitle>Objective Reacher</ApplicationTitle>
 
 		<!-- App Identifier -->
-		<ApplicationId>com.CNF.ObjectiveReacher</ApplicationId>
+		<ApplicationId>com.cnf.objectiveReacher</ApplicationId>
 
 		<!-- Versions -->
-		<ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+		<ApplicationDisplayVersion>1.0.0</ApplicationDisplayVersion>
 		<ApplicationVersion>1</ApplicationVersion>
 
 		<!-- To develop, package, and publish an app to the Microsoft Store, see: https://aka.ms/MauiTemplateUnpackaged -->
@@ -51,6 +45,25 @@
 		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">21.0</SupportedOSPlatformVersion>
 		<SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.17763.0</SupportedOSPlatformVersion>
 		<TargetPlatformMinVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.17763.0</TargetPlatformMinVersion>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+		<AndroidKeyStore>False</AndroidKeyStore>
+		<AndroidPackageFormat>apk</AndroidPackageFormat>
+		<DebugSymbols>True</DebugSymbols>
+		<DebugType>portable</DebugType>
+		<Optimize>False</Optimize>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(Configuration)' == 'Release'">
+		<AndroidKeyStore>True</AndroidKeyStore>
+		<AndroidSigningKeyStore>..\public\android-signing\com.cnf.objectiveReacher-release.keystore</AndroidSigningKeyStore>
+		<AndroidSigningKeyAlias>objectivereacher</AndroidSigningKeyAlias>
+		<AndroidSigningStorePass>ObjReacher2026!</AndroidSigningStorePass>
+		<AndroidSigningKeyPass>ObjReacher2026!</AndroidSigningKeyPass>
+		<AndroidPackageFormat>apk</AndroidPackageFormat>
+		<AndroidUseAapt2>True</AndroidUseAapt2>
+		<Optimize>True</Optimize>
 	</PropertyGroup>
 
 	<ItemGroup>

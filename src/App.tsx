@@ -1184,9 +1184,9 @@ export function App() {
     ASMR_TEXTURES.find((t) => t.id === asmrPreferredTexture) || ASMR_TEXTURES[0];
 
   const isAsmrStyleUnlocked = (tex: AsmrTextureOption): boolean => {
-    if (tex.unlockType === 'free') return true;
+    if (tex.unlockKind === 'free') return true;
     if (isIndieFounder) return true;
-    if (tex.unlockType === 'taps') {
+    if (tex.unlockKind === 'taps') {
       return (
         asmrTotalTaps >= tex.requiredTaps ||
         unlockedVaultIds.includes(`asmr_skin_${tex.id}`)
@@ -1234,7 +1234,7 @@ export function App() {
       return;
     }
 
-    if (tex.unlockType === 'taps') {
+    if (tex.unlockKind === 'taps') {
       const remainingTaps = Math.max(1, tex.requiredTaps - asmrTotalTaps);
       triggerMascotSpeech(
         `🔒 «${tex.name}» (${tex.emoji}) se desbloquea GRATIS en ${remainingTaps} toques más (${asmrTotalTaps}/${tex.requiredTaps}). ¡Sigue tocando el Orbe!`
@@ -1294,7 +1294,7 @@ export function App() {
 
     // Check if this tap unlocks a new Tap-Milestone ASMR Style (50, 150, 300, 500)
     const newlyUnlockedTapStyle = ASMR_TEXTURES.find(
-      (t) => t.unlockType === 'taps' && t.requiredTaps === nextTaps
+      (t) => t.unlockKind === 'taps' && t.requiredTaps === nextTaps
     );
 
     playAsmrClickSound(
@@ -3000,6 +3000,23 @@ export function App() {
                 Explora Skins, Buffs y cómo apoyar.
               </div>
             </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                playUiTap(2);
+                setIsNavigationOpen(false);
+                setIsAndroidSigningModalOpen(true);
+              }}
+              className="w-full rounded-[12px] border border-[#458B6E] bg-[#192B26] px-3 py-2.5 text-left flex items-center justify-between gap-2 hover:bg-[#213B34] transition"
+            >
+              <span className="text-[11px] font-extrabold text-[#9AF0AE]">
+                🤖 Builds Android (.APK)
+              </span>
+              <span className="text-[10px] font-mono-tabular text-[#D4FBE1]">
+                Release & Debug
+              </span>
+            </button>
           </div>
         </aside>
 
@@ -4449,15 +4466,15 @@ export function App() {
                       if (asmrFilterCategory === 'unlocked')
                         return isAsmrStyleUnlocked(tex);
                       if (asmrFilterCategory === 'taps')
-                        return tex.unlockType === 'taps';
+                        return tex.unlockKind === 'taps';
                       if (asmrFilterCategory === 'skins')
-                        return tex.unlockType === 'gems';
+                        return tex.unlockKind === 'gems';
                       return true;
                     }).map((tex) => {
                       const unlocked = isAsmrStyleUnlocked(tex);
                       const isSelected = asmrPreferredTexture === tex.id;
                       const tapProgPct =
-                        tex.unlockType === 'taps' && tex.requiredTaps > 0
+                        tex.unlockKind === 'taps' && tex.requiredTaps > 0
                           ? Math.min(
                               100,
                               Math.floor((asmrTotalTaps / tex.requiredTaps) * 100)
@@ -4473,7 +4490,7 @@ export function App() {
                             isSelected
                               ? {
                                   borderColor: tex.accentColor,
-                                  boxShadow: `0 0 16px -3px ${tex.glowColor}`,
+                                  boxShadow: `0 0 16px -3px ${tex.secondaryColor}`,
                                 }
                               : undefined
                           }
@@ -4491,7 +4508,7 @@ export function App() {
                               style={{
                                 background: tex.orbGradient,
                                 borderColor: tex.accentColor,
-                                boxShadow: `0 0 10px ${tex.glowColor}`,
+                                boxShadow: `0 0 10px ${tex.secondaryColor}`,
                               }}
                               className={`w-8 h-8 rounded-full border flex items-center justify-center text-sm shrink-0 ${
                                 tex.ringStyle === 'dashed'
@@ -4518,7 +4535,7 @@ export function App() {
                               <span className="px-1.5 py-0.5 rounded-full bg-[#1C3329] text-[#82E59B] text-[8px] font-extrabold">
                                 ✓ LISTO
                               </span>
-                            ) : tex.unlockType === 'taps' ? (
+                            ) : tex.unlockKind === 'taps' ? (
                               <span className="px-1.5 py-0.5 rounded-full bg-[#242038] border border-[#64D8FF]/40 text-[#90E0FF] text-[8px] font-mono-tabular font-extrabold">
                                 🎯 {asmrTotalTaps}/{tex.requiredTaps}
                               </span>
@@ -4538,7 +4555,7 @@ export function App() {
                             </div>
                           </div>
 
-                          {!unlocked && tex.unlockType === 'taps' && (
+                          {!unlocked && tex.unlockKind === 'taps' && (
                             <div className="w-full h-1.5 rounded-full bg-[#221F33] overflow-hidden">
                               <div
                                 style={{
@@ -4550,7 +4567,7 @@ export function App() {
                             </div>
                           )}
 
-                          {!unlocked && tex.unlockType === 'gems' && (
+                          {!unlocked && tex.unlockKind === 'gems' && (
                             <div className="text-[8px] font-bold text-[#FFD54F] flex items-center justify-between pt-0.5 border-t border-white/5">
                               <span>🔊 Toca para probar</span>
                               <span>Desbloquear →</span>
@@ -4584,7 +4601,7 @@ export function App() {
                         style={{
                           background: activeAsmrTextureObj.orbGradient,
                           borderColor: activeAsmrTextureObj.accentColor,
-                          boxShadow: `0 0 28px -2px ${activeAsmrTextureObj.glowColor}`,
+                          boxShadow: `0 0 28px -2px ${activeAsmrTextureObj.secondaryColor}`,
                         }}
                         className={`w-28 h-28 sm:w-24 sm:h-24 rounded-full border-2 flex flex-col items-center justify-center gap-0.5 active:scale-90 hover:scale-105 transition select-none cursor-pointer relative ${
                           activeAsmrTextureObj.ringStyle === 'dashed'
@@ -4633,7 +4650,7 @@ export function App() {
                       {(() => {
                         const nextTapSkin = ASMR_TEXTURES.find(
                           (t) =>
-                            t.unlockType === 'taps' &&
+                            t.unlockKind === 'taps' &&
                             t.requiredTaps > asmrTotalTaps
                         );
                         if (!nextTapSkin) return null;
@@ -5474,17 +5491,17 @@ export function App() {
         </div>
       )}
 
-      {/* Modal: Android Signing Keystore & .apksigned Kit (com.cnf.objectiveReacher) */}
+      {/* Modal: Android Signing Keystore & Separate Release / Debug APKs (com.cnf.objectiveReacher) */}
       {isAndroidSigningModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
           <div className="w-full max-w-xl rounded-[22px] border border-[#458B6E] bg-[#151724] p-4 sm:p-6 space-y-4 my-auto shadow-2xl">
             <div className="flex items-start justify-between gap-2">
               <div className="space-y-0.5">
                 <div className="text-[10px] font-extrabold uppercase tracking-wider text-[#82E59B]">
-                  🤖 KIT DE FIRMA OFICIAL ANDROID · GOOGLE PLAY & APK
+                  🤖 BUILDS ANDROID OFICIALES · RELEASE & DEBUG SEPARADOS
                 </div>
                 <h3 className="text-lg sm:text-xl font-extrabold text-[#F4F1FF]">
-                  com.cnf.objectiveReacher (.keystore & .apksigned)
+                  com.cnf.objectiveReacher (.apk Release & Debug)
                 </h3>
               </div>
               <button
@@ -5496,69 +5513,107 @@ export function App() {
             </div>
 
             <p className="text-xs text-[#C8C2D8] leading-relaxed">
-              Tu clave criptográfica RSA-2048 de producción (<strong>PKCS#12</strong>) y el manifiesto TWA ya están generados y vinculados a la app. Descarga y guarda el paquete en un lugar seguro:
+              Ambos APKs incluyen la última versión compilada con soporte de notch y barra fluida. Elige la variante <strong>Release</strong> (firmada para producción) o <strong>Debug</strong> (con inspector WebView activo):
             </p>
 
-            {/* Primary Download Buttons */}
+            {/* Separate APK Download Cards: Release vs Debug */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <a
+                href="/android-signing/com.cnf.objectiveReacher-release-signed.apk"
+                download="com.cnf.objectiveReacher-release-signed.apk"
+                className="p-3 rounded-[14px] bg-gradient-to-r from-[#215E46] to-[#2F7D5D] border border-[#82E59B] text-white font-extrabold text-xs flex flex-col items-center justify-center gap-1 hover:brightness-110 transition shadow"
+              >
+                <div className="flex items-center gap-1.5">
+                  <span>🚀</span>
+                  <span>Descargar APK Release (.apk)</span>
+                </div>
+                <span className="text-[10px] font-normal text-[#D4FBE1]">
+                  Firmado v1/v2/v3 · Clave producción
+                </span>
+              </a>
+
+              <a
+                href="/android-signing/com.cnf.objectiveReacher-debug.apk"
+                download="com.cnf.objectiveReacher-debug.apk"
+                className="p-3 rounded-[14px] bg-gradient-to-r from-[#34265C] to-[#4A3580] border border-[#B58BFF] text-white font-extrabold text-xs flex flex-col items-center justify-center gap-1 hover:brightness-110 transition shadow"
+              >
+                <div className="flex items-center gap-1.5">
+                  <span>🛠️</span>
+                  <span>Descargar APK Debug (.apk)</span>
+                </div>
+                <span className="text-[10px] font-normal text-[#E6D9FF]">
+                  debuggable=true · WebView Inspect
+                </span>
+              </a>
+            </div>
+
+            {/* Keystores & Complete Kit Downloads */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <a
                 href="/android-signing/com.cnf.objectiveReacher-signing-kit.zip"
                 download="com.cnf.objectiveReacher-signing-kit.zip"
-                className="p-3 rounded-[14px] bg-gradient-to-r from-[#215E46] to-[#2F7D5D] border border-[#82E59B] text-white font-extrabold text-xs flex items-center justify-center gap-2 hover:brightness-110 transition shadow"
+                className="p-2.5 rounded-[12px] bg-[#1E2726] border border-[#458B6E] text-[#9AF0AE] font-bold text-[11px] flex items-center justify-center gap-1.5 hover:bg-[#263533] transition"
               >
                 <span>📦</span>
-                <span>Descargar Kit Completo (.ZIP)</span>
+                <span>Kit Completo (.ZIP)</span>
               </a>
 
               <a
                 href="/android-signing/com.cnf.objectiveReacher-release.keystore"
                 download="com.cnf.objectiveReacher-release.keystore"
-                className="p-3 rounded-[14px] bg-[#232038] border border-[#65499C] text-[#E6D9FF] font-extrabold text-xs flex items-center justify-center gap-2 hover:border-[#B58BFF] transition"
+                className="p-2.5 rounded-[12px] bg-[#232038] border border-[#65499C] text-[#E6D9FF] font-bold text-[11px] flex items-center justify-center gap-1.5 hover:border-[#B58BFF] transition"
               >
                 <span>🔑</span>
-                <span>Descargar .keystore directo</span>
+                <span>Release .keystore</span>
+              </a>
+
+              <a
+                href="/android-signing/com.cnf.objectiveReacher-debug.keystore"
+                download="com.cnf.objectiveReacher-debug.keystore"
+                className="p-2.5 rounded-[12px] bg-[#232038] border border-[#4A3E6D] text-[#C8C2D8] font-bold text-[11px] flex items-center justify-center gap-1.5 hover:border-[#B58BFF] transition"
+              >
+                <span>🧪</span>
+                <span>Debug .keystore</span>
               </a>
             </div>
 
-            {/* Copyable Credentials Box */}
-            <div className="p-3.5 rounded-[14px] bg-[#0F101A] border border-[#2B2840] space-y-2 text-xs select-copyable">
+            {/* Copyable Credentials Box: Release & Debug */}
+            <div className="p-3.5 rounded-[14px] bg-[#0F101A] border border-[#2B2840] space-y-2.5 text-xs select-copyable">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[#A8A3B8]">Package Name (ID):</span>
+                <span className="text-[#A8A3B8]">Package Name (ID) & Versión:</span>
                 <code className="font-mono-tabular font-bold text-[#82E59B] select-copyable">
-                  com.cnf.objectiveReacher
+                  com.cnf.objectiveReacher · v1.0.0 (1)
                 </code>
               </div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[#A8A3B8]">Key Alias:</span>
-                <code className="font-mono-tabular font-bold text-[#FFD54F] select-copyable">
-                  objectivereacher
-                </code>
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[#A8A3B8]">Store & Key Password:</span>
-                <code className="font-mono-tabular font-bold text-[#FFD54F] select-copyable">
-                  ObjReacher2026!
-                </code>
-              </div>
-              <div className="pt-1.5 border-t border-[#232036] space-y-1">
-                <div className="text-[10px] text-[#A8A3B8]">
-                  Huella SHA-256 (configurada en /.well-known/assetlinks.json):
+
+              <div className="pt-2 border-t border-[#232036] space-y-1">
+                <div className="text-[10px] font-extrabold uppercase tracking-wider text-[#82E59B]">
+                  🚀 Configuración Release (Producción)
+                </div>
+                <div className="flex items-center justify-between gap-2 text-[11px]">
+                  <span className="text-[#A8A3B8]">Alias / Password:</span>
+                  <code className="font-mono-tabular font-bold text-[#FFD54F] select-copyable">
+                    objectivereacher / ObjReacher2026!
+                  </code>
                 </div>
                 <code className="block text-[10px] font-mono-tabular text-[#D8C5FF] break-all select-copyable">
-                  7E:F7:B4:06:D4:EE:06:C2:5A:0F:9E:36:B2:BD:AC:E6:55:57:35:20:E5:AF:82:66:F9:63:4D:F5:9C:2C:99:6A
+                  SHA-256: 7E:F7:B4:06:D4:EE:06:C2:5A:0F:9E:36:B2:BD:AC:E6:55:57:35:20:E5:AF:82:66:F9:63:4D:F5:9C:2C:99:6A
                 </code>
               </div>
-            </div>
 
-            <div className="p-3 rounded-[12px] bg-[#1C1A2E] border border-[#342E4E] text-[11px] text-[#D8C5FF] space-y-1 leading-relaxed">
-              <div className="font-extrabold text-white">
-                ⚡ ¿Cómo obtener tu .apk firmado en 1 minuto?
-              </div>
-              <div>
-                1. Entra a <strong>pwabuilder.com</strong> con la URL de esta app o ejecuta <code className="text-[#82E59B]">npx @bubblewrap/cli build</code> junto al <code className="text-[#FFD54F]">twa-manifest.json</code> incluido en el ZIP.
-              </div>
-              <div>
-                2. Elige <strong>&quot;Use my own keystore&quot;</strong>, sube <code className="text-[#FFD54F]">com.cnf.objectiveReacher-release.keystore</code> e ingresa el alias <code className="text-[#FFD54F]">objectivereacher</code> y clave <code className="text-[#FFD54F]">ObjReacher2026!</code>.
+              <div className="pt-2 border-t border-[#232036] space-y-1">
+                <div className="text-[10px] font-extrabold uppercase tracking-wider text-[#B58BFF]">
+                  🛠️ Configuración Debug (Pruebas & Inspect)
+                </div>
+                <div className="flex items-center justify-between gap-2 text-[11px]">
+                  <span className="text-[#A8A3B8]">Alias / Password:</span>
+                  <code className="font-mono-tabular font-bold text-[#FFD54F] select-copyable">
+                    androiddebugkey / android
+                  </code>
+                </div>
+                <code className="block text-[10px] font-mono-tabular text-[#A8A3B8] break-all select-copyable">
+                  SHA-256: 2D:BD:B8:FD:DA:8D:7E:B3:B2:80:CA:A5:82:58:9D:08:85:DA:B1:24:DC:DF:97:C9:85:89:F4:C2:E3:66:A1:57
+                </code>
               </div>
             </div>
           </div>
