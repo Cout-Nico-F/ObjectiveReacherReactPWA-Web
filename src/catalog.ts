@@ -331,9 +331,9 @@ export interface BannerPreset {
 export const BANNER_PRESETS: BannerPreset[] = [
   {
     id: 'gradient',
-    name: 'Degradado',
+    name: 'Noche Violeta',
     startColor: '#33294E',
-    endColor: '#211D35',
+    endColor: '#19162B',
     emoji: '✦',
     imageUrl: null,
   },
@@ -360,5 +360,218 @@ export const BANNER_PRESETS: BannerPreset[] = [
     endColor: '#55776B',
     emoji: '♧',
     imageUrl: '/banners/banner_forest.svg',
+  },
+  {
+    id: 'aurora',
+    name: 'Aurora Boreal',
+    startColor: '#0F2942',
+    endColor: '#1E6F5C',
+    emoji: '🌌',
+    imageUrl: null,
+  },
+  {
+    id: 'cosmos',
+    name: 'Cosmos Astral',
+    startColor: '#1F1147',
+    endColor: '#6A1B9A',
+    emoji: '🪐',
+    imageUrl: null,
+  },
+  {
+    id: 'ocean',
+    name: 'Abismo Turquesa',
+    startColor: '#0B2545',
+    endColor: '#136F63',
+    emoji: '🌊',
+    imageUrl: null,
+  },
+  {
+    id: 'gold',
+    name: 'Cumbre Dorada',
+    startColor: '#3B2314',
+    endColor: '#9C6B21',
+    emoji: '👑',
+    imageUrl: null,
+  },
+];
+
+export interface AccentTheme {
+  id: string;
+  name: string;
+  primary: string;
+  secondary: string;
+  softBg: string;
+  glow: string;
+}
+
+export const OBJECTIVE_ACCENT_THEMES: AccentTheme[] = [
+  {
+    id: '#65DB85',
+    name: 'Esmeralda',
+    primary: '#65DB85',
+    secondary: '#45B965',
+    softBg: 'rgba(101, 219, 133, 0.16)',
+    glow: 'rgba(101, 219, 133, 0.38)',
+  },
+  {
+    id: '#FFD54F',
+    name: 'Oro Solar',
+    primary: '#FFD54F',
+    secondary: '#E5B945',
+    softBg: 'rgba(255, 213, 79, 0.16)',
+    glow: 'rgba(255, 213, 79, 0.38)',
+  },
+  {
+    id: '#B58BFF',
+    name: 'Amatista',
+    primary: '#B58BFF',
+    secondary: '#8C5CE0',
+    softBg: 'rgba(181, 139, 255, 0.18)',
+    glow: 'rgba(181, 139, 255, 0.4)',
+  },
+  {
+    id: '#64D8FF',
+    name: 'Cian Boreal',
+    primary: '#64D8FF',
+    secondary: '#26A69A',
+    softBg: 'rgba(100, 216, 255, 0.16)',
+    glow: 'rgba(100, 216, 255, 0.38)',
+  },
+  {
+    id: '#FF8A65',
+    name: 'Coral Fénix',
+    primary: '#FF8A65',
+    secondary: '#E64A19',
+    softBg: 'rgba(255, 138, 101, 0.16)',
+    glow: 'rgba(255, 138, 101, 0.38)',
+  },
+  {
+    id: '#FF80AB',
+    name: 'Rosa Astral',
+    primary: '#FF80AB',
+    secondary: '#D81B60',
+    softBg: 'rgba(255, 128, 171, 0.16)',
+    glow: 'rgba(255, 128, 171, 0.38)',
+  },
+];
+
+export const OBJECTIVE_ICONS = [
+  '🎯',
+  '✈️',
+  '🏠',
+  '💻',
+  '🛡️',
+  '🏋️',
+  '📚',
+  '🚗',
+  '🎸',
+  '💍',
+  '🌴',
+  '🎮',
+  '🎓',
+  '🚀',
+  '🧘',
+  '💎',
+];
+
+export interface ObjectiveTemplate {
+  id: string;
+  label: string;
+  title: string;
+  description: string;
+  icon: string;
+  category: string;
+  goalAmount: number;
+  unitId: string;
+  customUnitLabel: string;
+  bannerId: string;
+  accentColor: string;
+  pledge: string;
+}
+
+export const OBJECTIVE_TEMPLATES: ObjectiveTemplate[] = [
+  {
+    id: 'travel',
+    label: '✈️ Viaje Soñado',
+    title: 'Viaje a Japón',
+    description: 'Vuelos, estadía y experiencias inolvidables',
+    icon: '✈️',
+    category: 'Aventura',
+    goalAmount: 3000,
+    unitId: 'USD',
+    customUnitLabel: '',
+    bannerId: 'japan',
+    accentColor: '#FF8A65',
+    pledge: 'Brindar en Tokio al aterrizar 🥂',
+  },
+  {
+    id: 'emergency',
+    label: '🛡️ Fondo de Paz',
+    title: 'Fondo de Tranquilidad',
+    description: 'Respaldo financiero para vivir con calma',
+    icon: '🛡️',
+    category: 'Finanzas',
+    goalAmount: 5000,
+    unitId: 'USD',
+    customUnitLabel: '',
+    bannerId: 'forest',
+    accentColor: '#65DB85',
+    pledge: 'Dormir con total tranquilidad financiera 🌿',
+  },
+  {
+    id: 'tech',
+    label: '💻 Setup / Tech',
+    title: 'Nuevo Setup Pro',
+    description: 'Herramientas para crear y jugar al máximo nivel',
+    icon: '💻',
+    category: 'Tecnología',
+    goalAmount: 1500,
+    unitId: 'USD',
+    customUnitLabel: '',
+    bannerId: 'cosmos',
+    accentColor: '#64D8FF',
+    pledge: 'Estrenar mi espacio creativo ideal ⚡',
+  },
+  {
+    id: 'fitness',
+    label: '🏋️ Reto Fitness',
+    title: '100 Entrenamientos',
+    description: 'Forjando disciplina, energía y salud día a día',
+    icon: '🏋️',
+    category: 'Salud',
+    goalAmount: 100,
+    unitId: CUSTOM_UNIT_ID,
+    customUnitLabel: 'sesiones',
+    bannerId: 'sunset',
+    accentColor: '#FFD54F',
+    pledge: 'Sentirme en mi mejor forma física 🔥',
+  },
+  {
+    id: 'reading',
+    label: '📚 Hábito Lector',
+    title: 'Leer 2.500 Páginas',
+    description: 'Un capítulo cada noche para expandir la mente',
+    icon: '📚',
+    category: 'Crecimiento',
+    goalAmount: 2500,
+    unitId: CUSTOM_UNIT_ID,
+    customUnitLabel: 'páginas',
+    bannerId: 'aurora',
+    accentColor: '#B58BFF',
+    pledge: 'Regalarme mi próxima edición coleccionista 📖',
+  },
+  {
+    id: 'custom',
+    label: '✨ A tu medida',
+    title: '',
+    description: '',
+    icon: '🎯',
+    category: 'Personal',
+    goalAmount: 1000,
+    unitId: CUSTOM_UNIT_ID,
+    customUnitLabel: '$',
+    bannerId: 'gradient',
+    accentColor: '#65DB85',
+    pledge: '',
   },
 ];

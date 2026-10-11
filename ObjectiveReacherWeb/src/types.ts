@@ -48,6 +48,11 @@ export interface Objective {
   isArchived: boolean;
   entries: ObjectiveEntry[];
   unlockedAchievementIds: string[];
+  icon?: string;
+  category?: string;
+  accentColor?: string;
+  targetDate?: string;
+  pledge?: string;
 }
 
 export interface GamificationState {

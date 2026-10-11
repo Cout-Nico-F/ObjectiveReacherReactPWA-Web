@@ -6,8 +6,22 @@ import {
   CUSTOM_UNIT_ID,
   findObjectiveUnit,
   formatObjectiveAmount,
+  OBJECTIVE_ACCENT_THEMES,
+  OBJECTIVE_ICONS,
+  OBJECTIVE_TEMPLATES,
   OBJECTIVE_UNITS,
 } from './catalog';
+import {
+  loadSensoryPreferences,
+  playAddEntrySound,
+  playCelebrationFanfare,
+  playMascotVoice,
+  playQuestClaimSound,
+  playSubtractEntrySound,
+  playUiTap,
+  saveSensoryPreferences,
+  SensoryPreferences,
+} from './soundEffects';
 import {
   AchievementCondition,
   AchievementDefinition,
@@ -38,6 +52,11 @@ function createEmptyState(): DashboardState {
         isArchived: false,
         entries: [],
         unlockedAchievementIds: [],
+        icon: '🎯',
+        category: 'Personal',
+        accentColor: '#65DB85',
+        targetDate: '',
+        pledge: '',
       },
     ],
     selectedObjectiveId: id,
@@ -326,6 +345,22 @@ export function App() {
   const [mascotSpeech, setMascotSpeech] = useState<string | null>(null);
   const mascotSpeechTimerRef = useRef<number | null>(null);
   const [isDailyRitualOpen, setIsDailyRitualOpen] = useState<boolean>(false);
+  const [sensoryPrefs, setSensoryPrefs] = useState<SensoryPreferences>(() =>
+    loadSensoryPreferences()
+  );
+
+  const toggleSoundAndHaptics = () => {
+    const nextEnabled = !sensoryPrefs.soundEnabled;
+    const nextPrefs: SensoryPreferences = {
+      soundEnabled: nextEnabled,
+      hapticsEnabled: nextEnabled,
+    };
+    saveSensoryPreferences(nextPrefs);
+    setSensoryPrefs(nextPrefs);
+    if (nextEnabled) {
+      playUiTap(2);
+    }
+  };
 
   const [selectedAchievementDetail, setSelectedAchievementDetail] = useState<{
     title: string;
@@ -692,6 +727,7 @@ export function App() {
     ];
 
     if (!hasPettedToday) {
+      playMascotVoice(level, true);
       const petXp = 15;
       const prevLevel = level;
       const nextTotalXp = state.gamification.totalXp + petXp;
@@ -715,6 +751,7 @@ export function App() {
 
       triggerMascotSpeech('¡Caricia diaria recibida! +15 XP de vínculo 💖✨');
     } else {
+      playMascotVoice(level, false);
       const randomPhrase =
         contextualPhrases[Math.floor(Math.random() * contextualPhrases.length)];
       triggerMascotSpeech(randomPhrase);
@@ -723,6 +760,7 @@ export function App() {
 
   const handleClaimQuest = (questId: string, rewardXp: number, title: string) => {
     if (claimedToday.includes(questId)) return;
+    playQuestClaimSound(false);
     const prevLevel = level;
     const nextTotalXp = state.gamification.totalXp + rewardXp;
     const nextLevel = calculateLevelFromXp(nextTotalXp);
@@ -755,6 +793,7 @@ export function App() {
 
   const handleClaimAllDailyBonus = () => {
     if (!canClaimAllDailyBonus) return;
+    playQuestClaimSound(true);
     const bonusXp = 40;
     const prevLevel = level;
     const nextTotalXp = state.gamification.totalXp + bonusXp;
@@ -900,6 +939,8 @@ export function App() {
   };
 
   const handleSelectQuickAmount = (amount: number) => {
+    const idx = quickPresetAmounts.indexOf(amount);
+    playUiTap(idx >= 0 ? idx : 1);
     setSelectedQuickAmount(amount);
     setSelectedAmount(amount);
     setCustomAmountText('');
@@ -1011,6 +1052,7 @@ export function App() {
     });
 
     if (amount > 0 && previousProgress < 1 && newProgress >= 1) {
+      playCelebrationFanfare('goal');
       triggerCelebration(
         '¡Objetivo completado!',
         `¡Lo lograste! +${totalGainedXp} XP · ${nextExperienceText}`,
@@ -1019,6 +1061,7 @@ export function App() {
         true
       );
     } else if (nextTier > previousTier) {
+      playCelebrationFanfare('species');
       triggerCelebration(
         '¡Nueva especie desbloqueada!',
         `Nivel ${nextLevel} · +${totalGainedXp} XP · ${nextMascotMessage}`,
@@ -1027,6 +1070,7 @@ export function App() {
         true
       );
     } else if (nextLevel > previousLevel) {
+      playCelebrationFanfare('levelUp');
       triggerCelebration(
         `¡Subiste al Nivel ${nextLevel}!`,
         `+${totalGainedXp} XP · ${
@@ -1038,6 +1082,7 @@ export function App() {
         '#B58BFF'
       );
     } else if (newlyUnlocked.length > 0) {
+      playCelebrationFanfare('levelUp');
       triggerCelebration(
         '¡Nuevo logro!',
         `${newlyUnlocked.join(' · ')} (+${totalGainedXp} XP)`,
@@ -1045,6 +1090,11 @@ export function App() {
         '#B58BFF'
       );
     } else {
+      if (amount > 0) {
+        playAddEntrySound();
+      } else {
+        playSubtractEntrySound();
+      }
       triggerCelebration(
         amount > 0 ? '¡Gran impulso!' : 'Registro actualizado',
         `+${totalGainedXp} XP · ${nextExperienceText}`,
@@ -1055,6 +1105,7 @@ export function App() {
   };
 
   const handleSelectObjective = (id: string) => {
+    playUiTap(1);
     setState((prev) => ({ ...prev, selectedObjectiveId: id }));
     setHistoryFilter('all');
     setActiveNav('objective');
@@ -1070,7 +1121,7 @@ export function App() {
       id: newId,
       title: `Objetivo ${state.objectives.length + 1}`,
       description: '',
-      goalAmount: 1,
+      goalAmount: 1000,
       currentAmount: 0,
       unitId: CUSTOM_UNIT_ID,
       customUnitLabel: '$',
@@ -1080,6 +1131,11 @@ export function App() {
       isArchived: false,
       entries: [],
       unlockedAchievementIds: [],
+      icon: '🎯',
+      category: 'Personal',
+      accentColor: '#65DB85',
+      targetDate: '',
+      pledge: '',
     };
     setPreviousObjectiveId(currentObjective.id);
     setIsDraftObjective(true);
@@ -1120,7 +1176,14 @@ export function App() {
     goalAmount: number;
     unitId: string;
     customUnitLabel: string;
+    icon: string;
+    category: string;
+    accentColor: string;
+    bannerId: string;
+    targetDate: string;
+    pledge: string;
   }) => {
+    const wasDraft = isDraftObjective;
     setState((prev) => {
       const nextObjectives = prev.objectives.map((o) =>
         o.id === currentObjective.id
@@ -1132,6 +1195,12 @@ export function App() {
               unitId: input.unitId,
               customUnitLabel:
                 input.unitId === CUSTOM_UNIT_ID ? input.customUnitLabel.trim() : '',
+              icon: input.icon || '🎯',
+              category: input.category.trim() || 'Personal',
+              accentColor: input.accentColor || '#65DB85',
+              bannerId: input.bannerId || o.bannerId || 'gradient',
+              targetDate: input.targetDate || '',
+              pledge: input.pledge.trim(),
               unlockedAchievementIds: [...o.unlockedAchievementIds],
             }
           : o
@@ -1151,6 +1220,14 @@ export function App() {
     setIsDraftObjective(false);
     setPreviousObjectiveId(null);
     setIsEditorOpen(false);
+    if (wasDraft) {
+      triggerCelebration(
+        '¡Objetivo Forjado!',
+        `${input.icon || '🎯'} ${input.title.trim()} está listo para tu primer impulso`,
+        input.icon || '🚀',
+        input.accentColor || '#65DB85'
+      );
+    }
   };
 
   const handleArchiveCurrentObjective = () => {
@@ -1353,7 +1430,7 @@ export function App() {
     setSelectedAchievementDetail({ title, detail, status });
   };
 
-  // Hero background style
+  // Hero background & customization style
   const heroPreset =
     BANNER_PRESETS.find((p) => p.id === currentObjective.bannerId) ||
     BANNER_PRESETS[0];
@@ -1361,6 +1438,110 @@ export function App() {
     ? currentObjective.bannerId.slice('custom:'.length)
     : null;
   const bannerImageSrc = customBannerDataUrl || heroPreset.imageUrl;
+
+  const currentAccentTheme = useMemo(() => {
+    return (
+      OBJECTIVE_ACCENT_THEMES.find(
+        (t) => t.id === currentObjective.accentColor
+      ) || OBJECTIVE_ACCENT_THEMES[0]
+    );
+  }, [currentObjective.accentColor]);
+
+  const currentIcon = currentObjective.icon || '🎯';
+  const currentCategory = currentObjective.category || 'Objetivo';
+
+  // Projected objective progress when user selects an amount
+  const projectedObjectiveProgress = useMemo(() => {
+    if (!hasValidSelectedAmount || currentObjective.goalAmount <= 0)
+      return progress;
+    const delta = isAddition ? selectedAmount : -selectedAmount;
+    return Math.min(
+      1,
+      Math.max(0, (currentObjective.currentAmount + delta) / currentObjective.goalAmount)
+    );
+  }, [
+    hasValidSelectedAmount,
+    isAddition,
+    selectedAmount,
+    currentObjective.currentAmount,
+    currentObjective.goalAmount,
+    progress,
+  ]);
+
+  // Smart Pace & Deadline Metrics
+  const objectiveInsights = useMemo(() => {
+    const remaining = Math.max(
+      0,
+      currentObjective.goalAmount - currentObjective.currentAmount
+    );
+    const positiveEntries = currentObjective.entries.filter((e) => e.amount > 0);
+    const bestEntry = positiveEntries.reduce(
+      (max, e) => Math.max(max, e.amount),
+      0
+    );
+
+    let daysLeft: number | null = null;
+    let dailyPaceNeeded: number | null = null;
+
+    if (currentObjective.targetDate) {
+      const [y, m, d] = currentObjective.targetDate.split('-').map(Number);
+      if (y && m && d) {
+        const target = new Date(y, m - 1, d, 23, 59, 59);
+        const now = new Date();
+        const diffDays = Math.ceil(
+          (target.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+        );
+        daysLeft = diffDays;
+        if (diffDays > 0 && remaining > 0) {
+          dailyPaceNeeded = remaining / diffDays;
+        }
+      }
+    }
+
+    const nextMilestonePct =
+      progress < 0.25
+        ? 25
+        : progress < 0.5
+        ? 50
+        : progress < 0.75
+        ? 75
+        : progress < 1
+        ? 100
+        : null;
+    const amountToNextMilestone =
+      nextMilestonePct !== null
+        ? Math.max(
+            0,
+            currentObjective.goalAmount * (nextMilestonePct / 100) -
+              currentObjective.currentAmount
+          )
+        : 0;
+
+    return {
+      remaining,
+      bestEntry,
+      daysLeft,
+      dailyPaceNeeded,
+      nextMilestonePct,
+      amountToNextMilestone,
+    };
+  }, [currentObjective, progress]);
+
+  // Smart quick amounts adapted to the objective's scale so small goals (e.g. 30 sessions) and large goals both feel natural
+  const quickPresetAmounts = useMemo(() => {
+    const g = currentObjective.goalAmount;
+    if (g > 0 && g <= 100) return [1, 2, 5, 10];
+    if (g > 100 && g <= 1000) return [10, 25, 50, 100];
+    return [50, 100, 500, 1000];
+  }, [currentObjective.goalAmount]);
+
+  useEffect(() => {
+    if (customAmountText === '' && !quickPresetAmounts.includes(selectedAmount)) {
+      const fallback = quickPresetAmounts[0];
+      setSelectedQuickAmount(fallback);
+      setSelectedAmount(fallback);
+    }
+  }, [currentObjective.id, quickPresetAmounts, customAmountText, selectedAmount]);
 
   return (
     <div
@@ -1391,16 +1572,21 @@ export function App() {
     >
       {/* Celebration Overlay */}
       {celebration && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-auto bg-black/30 backdrop-blur-[2px]">
-          <div className="w-[270px] rounded-[24px] border-2 border-[#806F62] bg-[#1C1C2B]/95 px-6 py-5 shadow-2xl flex flex-col items-center text-center space-y-2 animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-auto bg-black/40 backdrop-blur-[3px] p-4">
+          <div className="w-full max-w-[300px] rounded-[24px] border-2 border-[#806F62] bg-[#1C1C2B]/95 px-5 py-5 shadow-2xl flex flex-col items-center text-center space-y-2.5 animate-in fade-in zoom-in-95 duration-200">
+            <div className="px-2.5 py-0.5 rounded-full bg-[#29233E] border border-[#5B4588]/60 text-[9px] font-extrabold tracking-widest uppercase text-[#C7A4FF]">
+              🎯 OBJECTIVE REACHER
+            </div>
             <div className="text-[54px] leading-none">{celebration.emoji}</div>
             <div
-              className="text-[22px] font-bold"
+              className="text-[20px] sm:text-[22px] font-bold leading-snug break-words"
               style={{ color: celebration.color }}
             >
               {celebration.title}
             </div>
-            <div className="text-[13px] text-[#E6E0F2]">{celebration.message}</div>
+            <div className="text-[13px] text-[#E6E0F2] leading-relaxed break-words">
+              {celebration.message}
+            </div>
             {celebration.requiresDismissal && (
               <button
                 onClick={() => setCelebration(null)}
@@ -1452,12 +1638,17 @@ export function App() {
         >
           <div className="space-y-3 sm:space-y-5">
             <div className="flex items-start justify-between gap-2">
-              <div className="space-y-0.5 min-w-0">
-                <div className="text-[17px] sm:text-[19px] font-bold text-[#F4F1FF] truncate">
-                  🎯 ObjectiveReacher
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-10 h-10 rounded-[13px] bg-gradient-to-br from-[#7549B8] to-[#4A2E7F] border border-[#B58BFF]/50 shadow-[0_0_16px_rgba(140,92,224,0.35)] flex items-center justify-center text-lg shrink-0">
+                  🎯
                 </div>
-                <div className="text-[11px] sm:text-[12px] text-[#AAA5BB]">
-                  Tu progreso, a tu ritmo
+                <div className="min-w-0">
+                  <div className="text-[16px] sm:text-[17px] font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-[#FFFFFF] via-[#F0E6FF] to-[#C7A4FF] leading-tight">
+                    Objective Reacher
+                  </div>
+                  <div className="text-[11px] text-[#AAA5BB] leading-tight">
+                    Tu progreso, a tu ritmo
+                  </div>
                 </div>
               </div>
               <button
@@ -1536,61 +1727,133 @@ export function App() {
 
         {/* Center Dashboard ScrollView */}
         <main className="px-2.5 sm:px-4 pb-16 lg:pb-8 space-y-3.5 min-w-0">
-          {/* Sticky Header Row: Always accessible without scrolling to top */}
-          <div className="sticky top-0 z-20 -mx-2.5 sm:-mx-4 px-2.5 sm:px-4 py-2 bg-[#11121C]/90 backdrop-blur-md border-b border-[#29283C]/70 flex items-center gap-1.5 sm:gap-2">
-            <button
-              onClick={() => {
-                setIsHistoryOpen(false);
-                setIsNavigationOpen(true);
-              }}
-              aria-label="Abrir navegación"
-              className="lg:hidden w-[40px] h-[40px] sm:w-[44px] sm:h-[44px] rounded-[12px] bg-[#242238] text-[#D9C9FF] text-[20px] flex items-center justify-center shrink-0 hover:bg-[#302747] active:scale-95 transition"
-            >
-              ☰
-            </button>
+          {/* Sticky Header Row: Brand Identity + Active Objective (Portrait-First, zero cutoff) */}
+          <div className="sticky top-0 z-20 -mx-2.5 sm:-mx-4 px-2.5 sm:px-4 py-2 bg-[#11121C]/92 backdrop-blur-md border-b border-[#29283C]/80 flex items-center justify-between gap-1.5 sm:gap-2">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <button
+                onClick={() => {
+                  playUiTap(1);
+                  setIsHistoryOpen(false);
+                  setIsNavigationOpen(true);
+                }}
+                aria-label="Abrir navegación"
+                className="lg:hidden w-[38px] h-[38px] sm:w-[42px] sm:h-[42px] rounded-[11px] bg-[#242238] border border-[#383252] text-[#D9C9FF] text-[18px] flex items-center justify-center shrink-0 hover:bg-[#302747] active:scale-95 transition"
+              >
+                ☰
+              </button>
 
-            <div className="flex items-center gap-1.5 sm:gap-2 flex-1 min-w-0">
-              <span className="text-[20px] sm:text-[23px] shrink-0">🎯</span>
-              <h1 className="text-[15px] sm:text-[18px] font-bold text-[#F4F1FF] truncate">
-                {currentObjective.title || 'Objetivo Actual'}
-              </h1>
+              <div className="min-w-0 flex-1">
+                {/* Flagship Brand Crest — Always visible in Portrait & Landscape */}
+                <div className="flex items-center gap-1.5">
+                  <span className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-extrabold uppercase tracking-[0.12em] text-transparent bg-clip-text bg-gradient-to-r from-[#D8C5FF] via-[#B58BFF] to-[#82E59B]">
+                    🎯 OBJECTIVE REACHER
+                  </span>
+                  <span className="hidden sm:inline-block text-[10px] text-[#6E6885]">
+                    •
+                  </span>
+                  <span className="hidden sm:inline-block text-[10px] font-semibold text-[#9E97B0]">
+                    Santuario de Metas
+                  </span>
+                </div>
+
+                {/* Active Objective Title — Full wrap on Portrait so it never cuts with (...) */}
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-[16px] sm:text-[19px] shrink-0 leading-none">
+                    {currentIcon}
+                  </span>
+                  <h1 className="text-[14px] sm:text-[17px] font-bold text-[#F4F1FF] leading-snug break-words">
+                    {currentObjective.title || 'Objetivo Actual'}
+                  </h1>
+                </div>
+              </div>
             </div>
 
-            <button
-              onClick={() => setIsEditorOpen(true)}
-              aria-label="Editar objetivo"
-              className="w-[40px] h-[40px] sm:w-[44px] sm:h-[44px] rounded-[12px] bg-[#242238] text-[#D9C9FF] text-[18px] sm:text-[19px] flex items-center justify-center hover:bg-[#302747] transition shrink-0"
-            >
-              ✎
-            </button>
+            <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+              <button
+                onClick={toggleSoundAndHaptics}
+                aria-label={
+                  sensoryPrefs.soundEnabled
+                    ? 'Silenciar sonidos y vibración'
+                    : 'Activar sonidos y vibración'
+                }
+                title={
+                  sensoryPrefs.soundEnabled
+                    ? 'Sonido sintetizado y vibración activos (toca para silenciar)'
+                    : 'Sonido y vibración en silencio (toca para activar)'
+                }
+                className={`w-[36px] h-[36px] sm:w-[42px] sm:h-[42px] rounded-[11px] text-[15px] sm:text-[17px] flex items-center justify-center transition shrink-0 border ${
+                  sensoryPrefs.soundEnabled
+                    ? 'bg-[#242238] border-[#3E355B] text-[#D9C9FF] hover:bg-[#302747]'
+                    : 'bg-[#1A1928] border-[#29283C] text-[#7D7894] hover:bg-[#242238]'
+                }`}
+              >
+                {sensoryPrefs.soundEnabled ? '🔊' : '🔇'}
+              </button>
 
-            <button
-              onClick={() => {
-                setIsNavigationOpen(false);
-                setIsHistoryOpen(true);
-              }}
-              aria-label="Abrir historial de entradas"
-              className="lg:hidden w-[40px] h-[40px] sm:w-[44px] sm:h-[44px] rounded-[12px] bg-[#242238] text-[#D9C9FF] text-[19px] sm:text-[20px] flex items-center justify-center shrink-0 hover:bg-[#302747] active:scale-95 transition"
-            >
-              ☷
-            </button>
+              <button
+                onClick={() => {
+                  playUiTap(2);
+                  setIsEditorOpen(true);
+                }}
+                aria-label="Personalizar objetivo"
+                title="Personalizar objetivo"
+                className="w-[36px] h-[36px] sm:w-[42px] sm:h-[42px] rounded-[11px] bg-[#242238] border border-[#383252] text-[#D9C9FF] text-[16px] sm:text-[18px] flex items-center justify-center hover:bg-[#302747] transition shrink-0"
+              >
+                ✎
+              </button>
+
+              <button
+                onClick={() => {
+                  playUiTap(1);
+                  setIsNavigationOpen(false);
+                  setIsHistoryOpen(true);
+                }}
+                aria-label="Abrir historial de entradas"
+                className="lg:hidden w-[36px] h-[36px] sm:w-[42px] sm:h-[42px] rounded-[11px] bg-[#242238] border border-[#383252] text-[#D9C9FF] text-[17px] sm:text-[19px] flex items-center justify-center shrink-0 hover:bg-[#302747] active:scale-95 transition"
+              >
+                ☷
+              </button>
+            </div>
           </div>
 
           {/* Objective Tabs */}
           <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
             {activeObjectives.map((obj) => {
               const isSelected = obj.id === currentObjective.id;
+              const tabIcon = obj.icon || '🎯';
+              const tabAccent = obj.accentColor || '#65DB85';
+              const objProg =
+                obj.goalAmount > 0
+                  ? Math.min(100, Math.floor((obj.currentAmount / obj.goalAmount) * 100))
+                  : 0;
               return (
                 <button
                   key={obj.id}
                   onClick={() => handleSelectObjective(obj.id)}
-                  className={`px-4 py-2 rounded-[12px] text-sm font-medium whitespace-nowrap transition ${
+                  style={
                     isSelected
-                      ? 'bg-[#604094] text-white'
-                      : 'bg-[#252437] text-[#C9C2D8] hover:bg-[#302747]'
+                      ? {
+                          borderColor: tabAccent,
+                          boxShadow: `0 4px 14px -4px ${tabAccent}55`,
+                        }
+                      : undefined
+                  }
+                  className={`px-3.5 py-2 rounded-[13px] text-xs sm:text-sm font-medium whitespace-nowrap transition flex items-center gap-2 border ${
+                    isSelected
+                      ? 'bg-[#2E2348] text-white'
+                      : 'bg-[#1F1E2E] border-[#2C2A40] text-[#C9C2D8] hover:bg-[#29263D]'
                   }`}
                 >
-                  {obj.title}
+                  <span>{tabIcon}</span>
+                  <span>{obj.title}</span>
+                  <span
+                    style={{
+                      color: isSelected ? tabAccent : '#9E97B0',
+                    }}
+                    className="text-[10px] font-mono-tabular font-bold"
+                  >
+                    {objProg}%
+                  </span>
                 </button>
               );
             })}
@@ -1599,7 +1862,8 @@ export function App() {
           {/* Subheader: Count + Archivados + Nuevo objetivo */}
           <div className="flex items-center justify-between gap-2">
             <span className="text-[12px] text-[#A8A3B8]">
-              {activeObjectives.length} objetivos
+              {activeObjectives.length}{' '}
+              {activeObjectives.length === 1 ? 'objetivo activo' : 'objetivos activos'}
             </span>
             <div className="flex items-center gap-2">
               <button
@@ -1613,29 +1877,33 @@ export function App() {
                     setIsArchivedModalOpen(true);
                   }
                 }}
-                className="px-2.5 py-1.5 rounded-[10px] bg-[#302747] text-white text-[12px] hover:bg-[#3e335c] transition"
+                className="px-2.5 py-1.5 rounded-[10px] bg-[#262338] border border-[#383350] text-[#E2D8FF] text-[12px] hover:bg-[#322D49] transition"
               >
-                Archivados
+                Archivados ({archivedObjectives.length})
               </button>
               <button
                 onClick={handleStartNewObjective}
-                className="px-3 py-1.5 rounded-[10px] bg-[#7549B8] text-white text-[12px] font-medium hover:bg-[#8658cc] transition"
+                className="px-3.5 py-1.5 rounded-[11px] bg-gradient-to-r from-[#7549B8] to-[#9B6BFF] text-white text-[12px] font-bold hover:brightness-110 active:scale-95 transition shadow-[0_4px_14px_rgba(117,73,184,0.4)] flex items-center gap-1"
               >
-                ＋ Nuevo objetivo
+                <span>✨</span>
+                <span>Forjar objetivo</span>
               </button>
             </div>
           </div>
 
-          {/* Hero Objective Section */}
+          {/* Hero Objective Section (Upgraded Customizable Sanctuary Card) */}
           <div
             ref={objectiveRef}
             style={{
               background: `linear-gradient(135deg, ${heroPreset.startColor}, ${heroPreset.endColor})`,
+              borderColor:
+                highlightedSection === 'objective'
+                  ? '#C7A4FF'
+                  : `${currentAccentTheme.primary}55`,
+              boxShadow: `0 12px 34px -8px rgba(8, 7, 16, 0.7), 0 0 24px -6px ${currentAccentTheme.glow}`,
             }}
-            className={`relative h-[370px] rounded-[22px] overflow-hidden transition-all ${
-              highlightedSection === 'objective'
-                ? 'border-[3px] border-[#C7A4FF]'
-                : 'border border-[#3C3158]'
+            className={`relative min-h-[385px] rounded-[24px] overflow-hidden transition-all border ${
+              highlightedSection === 'objective' ? 'border-[3px]' : ''
             }`}
           >
             {bannerImageSrc && (
@@ -1647,219 +1915,473 @@ export function App() {
                     50 - currentObjective.bannerOffsetY * 50
                   }%`,
                 }}
-                className="absolute inset-0 w-full h-full object-cover opacity-72 pointer-events-none select-none"
+                className="absolute inset-0 w-full h-full object-cover opacity-70 pointer-events-none select-none transition-all duration-500"
               />
             )}
-            <div className="absolute inset-0 bg-[#211D35]/60 pointer-events-none" />
+            {/* Multi-layer atmospheric vignette for crisp legibility */}
+            <div className="absolute inset-0 bg-gradient-to-b from-[#131122]/75 via-[#181528]/55 to-[#12101F]/90 pointer-events-none" />
+            <div
+              style={{ backgroundColor: currentAccentTheme.primary }}
+              className="pointer-events-none absolute -top-16 -right-16 w-48 h-48 rounded-full opacity-15 blur-3xl"
+            />
 
-            <div className="relative z-10 h-full p-[18px] flex flex-col justify-between">
-              {/* Top Row */}
-              <div className="flex items-start justify-between gap-2">
-                <div className="space-y-0.5">
-                  <h2 className="text-[21px] font-bold text-white leading-tight">
-                    {currentObjective.title}
-                  </h2>
-                  {currentObjective.description && (
-                    <p className="text-[13px] text-[#D0C5E7]">
-                      {currentObjective.description}
-                    </p>
-                  )}
+            <div className="relative z-10 h-full p-4 sm:p-[20px] flex flex-col justify-between gap-3.5">
+              {/* Top Row: Emblem + Category/Deadline Badges + Title + Quick Customize Actions */}
+              <div className="flex items-start justify-between gap-2.5">
+                <div className="flex items-start gap-3 min-w-0">
+                  {/* Custom Emblem Medallion */}
+                  <button
+                    onClick={() => setIsEditorOpen(true)}
+                    title="Cambiar icono y estilo del objetivo"
+                    style={{
+                      borderColor: `${currentAccentTheme.primary}80`,
+                      backgroundColor: 'rgba(20, 18, 34, 0.65)',
+                      boxShadow: `0 0 16px ${currentAccentTheme.softBg}`,
+                    }}
+                    className="w-12 h-12 rounded-[16px] border backdrop-blur-md flex items-center justify-center text-[25px] shrink-0 hover:scale-105 active:scale-95 transition"
+                  >
+                    {currentIcon}
+                  </button>
+
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span
+                        style={{
+                          color: currentAccentTheme.primary,
+                          backgroundColor: currentAccentTheme.softBg,
+                          borderColor: `${currentAccentTheme.primary}50`,
+                        }}
+                        className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider border backdrop-blur-sm"
+                      >
+                        {currentCategory}
+                      </span>
+
+                      {objectiveInsights.daysLeft !== null && (
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold border backdrop-blur-sm ${
+                            objectiveInsights.daysLeft < 0
+                              ? 'bg-[#4A202A]/80 border-[#F27783]/50 text-[#FFD1D7]'
+                              : objectiveInsights.daysLeft <= 7
+                              ? 'bg-[#443318]/80 border-[#FFD54F]/60 text-[#FFE082]'
+                              : 'bg-black/35 border-white/15 text-[#E6E0F2]'
+                          }`}
+                        >
+                          {objectiveInsights.daysLeft < 0
+                            ? '⌛ Fecha cumplida'
+                            : objectiveInsights.daysLeft === 0
+                            ? '⏳ ¡Hoy es la fecha meta!'
+                            : `⏳ ${objectiveInsights.daysLeft}d restantes`}
+                        </span>
+                      )}
+                    </div>
+
+                    <h2 className="text-[19px] sm:text-[23px] font-extrabold text-white leading-snug break-words drop-shadow-sm">
+                      {currentObjective.title}
+                    </h2>
+                    {currentObjective.description ? (
+                      <p className="text-[12px] sm:text-[13px] text-[#DFD7F2] leading-snug break-words">
+                        {currentObjective.description}
+                      </p>
+                    ) : (
+                      <button
+                        onClick={() => setIsEditorOpen(true)}
+                        className="text-[11px] text-[#C7A4FF]/90 hover:text-white hover:underline text-left"
+                      >
+                        ＋ Añadir propósito o fecha límite…
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <button
-                  onClick={() => setIsBannerPickerOpen(true)}
-                  className="px-3 py-2 rounded-[12px] bg-[#211D35]/70 text-white text-[12px] hover:bg-[#211D35]/90 transition shrink-0"
-                >
-                  ▧  Fondo
-                </button>
+
+                {/* Floating Glass Customization Buttons */}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    onClick={() => setIsEditorOpen(true)}
+                    title="Personalizar objetivo"
+                    className="px-2.5 py-2 rounded-[12px] bg-black/40 hover:bg-black/60 border border-white/15 backdrop-blur-md text-white text-[11px] font-semibold transition flex items-center gap-1"
+                  >
+                    <span>🎨</span>
+                    <span className="hidden sm:inline">Personalizar</span>
+                  </button>
+                  <button
+                    onClick={() => setIsBannerPickerOpen(true)}
+                    title="Cambiar arte o foto de fondo"
+                    className="px-2.5 py-2 rounded-[12px] bg-black/40 hover:bg-black/60 border border-white/15 backdrop-blur-md text-white text-[11px] font-semibold transition flex items-center gap-1"
+                  >
+                    <span>▧</span>
+                    <span className="hidden sm:inline">Fondo</span>
+                  </button>
+                </div>
               </div>
 
-              {/* Middle Row: Ahorrado | Circular Progress | Meta */}
-              <div className="grid grid-cols-[1fr_76px_1fr] items-center gap-1.5 py-1">
-                <div className="text-center space-y-1">
-                  <div className="text-[11px] font-bold text-[#9AF0AE] tracking-wide">
-                    AHORRADO
+              {/* Middle Row: Frosted Glass Stat Pods + Energy Ring with Live Projection */}
+              <div className="grid grid-cols-[1fr_92px_1fr] sm:grid-cols-[1fr_104px_1fr] items-center gap-2 sm:gap-3 my-1">
+                {/* Saved Pod */}
+                <div className="p-2.5 sm:p-3 rounded-[16px] bg-black/30 backdrop-blur-md border border-white/10 text-center space-y-0.5">
+                  <div
+                    style={{ color: currentAccentTheme.primary }}
+                    className="text-[10px] sm:text-[11px] font-extrabold tracking-wider uppercase"
+                  >
+                    LOGRADO
                   </div>
-                  <div className="text-[22px] sm:text-[24px] font-bold text-white break-words tabular-nums transition-transform duration-300">
+                  <div className="text-[18px] sm:text-[22px] font-extrabold text-white break-words tabular-nums leading-tight">
                     {formatObjectiveAmount(
                       currentObjective.currentAmount,
                       currentObjective
                     )}
                   </div>
+                  {hasValidSelectedAmount && (
+                    <div
+                      className={`text-[10px] font-mono-tabular font-bold ${
+                        isAddition ? 'text-[#82E59B]' : 'text-[#FFD1D7]'
+                      }`}
+                    >
+                      {isAddition ? '▲ +' : '▼ −'}
+                      {formatObjectiveAmount(selectedAmount, currentObjective)}
+                    </div>
+                  )}
                 </div>
 
-                {/* CircularProgressView */}
-                <div className="w-[70px] h-[70px] mx-auto relative flex items-center justify-center">
-                  <svg className="w-full h-full -rotate-90 drop-shadow-[0_0_8px_rgba(229,185,69,0.25)]" viewBox="0 0 70 70">
+                {/* Central Energy Ring */}
+                <div className="w-[86px] h-[86px] sm:w-[96px] sm:h-[96px] mx-auto relative flex items-center justify-center">
+                  <div
+                    style={{ backgroundColor: currentAccentTheme.primary }}
+                    className="pointer-events-none absolute inset-2 rounded-full opacity-15 blur-md"
+                  />
+                  <svg
+                    className="w-full h-full -rotate-90"
+                    style={{
+                      filter: `drop-shadow(0 0 10px ${currentAccentTheme.glow})`,
+                    }}
+                    viewBox="0 0 80 80"
+                  >
+                    {/* Track */}
                     <circle
-                      cx="35"
-                      cy="35"
-                      r="29"
-                      fill="none"
-                      stroke="#51436C"
-                      strokeWidth="5.25"
+                      cx="40"
+                      cy="40"
+                      r="33"
+                      fill="rgba(16, 14, 28, 0.55)"
+                      stroke="rgba(255, 255, 255, 0.14)"
+                      strokeWidth="6"
                     />
+                    {/* Ghost Projected Progress Arc */}
+                    {projectedObjectiveProgress > progress && (
+                      <circle
+                        cx="40"
+                        cy="40"
+                        r="33"
+                        fill="none"
+                        stroke={currentAccentTheme.primary}
+                        strokeOpacity="0.35"
+                        strokeWidth="6"
+                        strokeLinecap="round"
+                        strokeDasharray={2 * Math.PI * 33}
+                        strokeDashoffset={
+                          2 * Math.PI * 33 * (1 - projectedObjectiveProgress)
+                        }
+                        className="transition-all duration-300"
+                      />
+                    )}
+                    {/* Active Progress Arc */}
                     {progress > 0 && (
                       <circle
-                        cx="35"
-                        cy="35"
-                        r="29"
+                        cx="40"
+                        cy="40"
+                        r="33"
                         fill="none"
-                        stroke="#E5B945"
-                        strokeWidth="5.25"
+                        stroke={currentAccentTheme.primary}
+                        strokeWidth="6"
                         strokeLinecap="round"
-                        strokeDasharray={2 * Math.PI * 29}
-                        strokeDashoffset={2 * Math.PI * 29 * (1 - progress)}
+                        strokeDasharray={2 * Math.PI * 33}
+                        strokeDashoffset={2 * Math.PI * 33 * (1 - progress)}
                         className="transition-all duration-700 ease-out"
                       />
                     )}
                   </svg>
-                  <span className="absolute text-[18px] font-bold text-white tabular-nums">
-                    {progressText}
-                  </span>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                    <span className="text-[19px] sm:text-[21px] font-extrabold text-white tabular-nums leading-none">
+                      {progressText}
+                    </span>
+                    <span className="text-[9px] font-bold text-[#D8C5FF] mt-0.5">
+                      {progress >= 1 ? '¡LOGRADO!' : 'AVANCE'}
+                    </span>
+                  </div>
                 </div>
 
-                <div className="text-center space-y-1">
-                  <div className="text-[11px] font-bold text-[#DEC2FF] tracking-wide">
-                    META
+                {/* Goal Pod */}
+                <div className="p-2.5 sm:p-3 rounded-[16px] bg-black/30 backdrop-blur-md border border-white/10 text-center space-y-0.5">
+                  <div className="text-[10px] sm:text-[11px] font-extrabold text-[#DEC2FF] tracking-wider uppercase">
+                    META FINAL
                   </div>
-                  <div className="text-[22px] sm:text-[24px] font-bold text-white break-words tabular-nums">
+                  <div className="text-[18px] sm:text-[22px] font-extrabold text-white break-words tabular-nums leading-tight">
                     {formatObjectiveAmount(
                       currentObjective.goalAmount,
                       currentObjective
                     )}
                   </div>
+                  <div className="text-[10px] text-[#C8C0DC] leading-tight break-words">
+                    {objectiveInsights.remaining > 0
+                      ? `Faltan ${formatObjectiveAmount(
+                          objectiveInsights.remaining,
+                          currentObjective
+                        )}`
+                      : '¡Meta superada! 🏆'}
+                  </div>
                 </div>
               </div>
 
-              {/* Bottom Progress Bar & Remaining Text */}
-              <div className="space-y-2">
-                <div className="w-full h-[12px] rounded-full bg-[#51436C]/90 overflow-hidden relative">
-                  <div
-                    className="h-full bg-gradient-to-r from-[#45B965] via-[#58D477] to-[#82E59B] transition-all duration-700 ease-out relative overflow-hidden"
-                    style={{ width: `${progress * 100}%` }}
-                  >
-                    <div className="absolute inset-0 w-1/2 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-shimmer" />
+              {/* Bottom Section: Milestone Bar (25/50/75/100%) + Smart Pace & Personal Pledge */}
+              <div className="space-y-2.5">
+                {/* Progress Bar with 4 Milestone Checkpoints */}
+                <div className="space-y-1">
+                  <div className="relative pt-1 pb-1">
+                    <div className="w-full h-[13px] rounded-full bg-black/45 border border-white/15 overflow-hidden relative">
+                      {/* Projected preview bar */}
+                      {projectedObjectiveProgress > progress && (
+                        <div
+                          style={{
+                            width: `${projectedObjectiveProgress * 100}%`,
+                            backgroundColor: currentAccentTheme.primary,
+                          }}
+                          className="absolute inset-y-0 left-0 opacity-30 transition-all duration-300"
+                        />
+                      )}
+                      {/* Actual progress bar */}
+                      <div
+                        style={{
+                          width: `${progress * 100}%`,
+                          background: `linear-gradient(90deg, ${currentAccentTheme.secondary}, ${currentAccentTheme.primary})`,
+                        }}
+                        className="h-full transition-all duration-700 ease-out relative overflow-hidden rounded-full"
+                      >
+                        <div className="absolute inset-0 w-1/2 bg-gradient-to-r from-transparent via-white/35 to-transparent animate-shimmer" />
+                      </div>
+                    </div>
+
+                    {/* Milestone Gems (25%, 50%, 75%, 100%) */}
+                    {[0.25, 0.5, 0.75, 1].map((m) => {
+                      const reached = progress >= m;
+                      const pctLabel = `${m * 100}%`;
+                      return (
+                        <div
+                          key={m}
+                          style={{
+                            left: `${m * 100}%`,
+                            borderColor: reached
+                              ? currentAccentTheme.primary
+                              : 'rgba(255,255,255,0.25)',
+                            backgroundColor: reached
+                              ? currentAccentTheme.secondary
+                              : '#1B182B',
+                          }}
+                          title={`Hito ${pctLabel}: ${formatObjectiveAmount(
+                            currentObjective.goalAmount * m,
+                            currentObjective
+                          )}`}
+                          className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-4 h-4 rounded-full border-2 flex items-center justify-center text-[8px] font-bold transition-all ${
+                            reached
+                              ? 'text-[#11121C] scale-110 shadow-[0_0_8px_rgba(255,255,255,0.5)]'
+                              : 'text-[#9E97B0]'
+                          }`}
+                        >
+                          {reached ? '✓' : ''}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Milestone Sub-info — Portrait-friendly wrapping */}
+                  <div className="flex items-center justify-between gap-2 flex-wrap text-[11px] text-[#EAE4F8] px-0.5">
+                    <span className="font-medium leading-snug">
+                      {objectiveInsights.nextMilestonePct !== null
+                        ? `Próximo hito (${objectiveInsights.nextMilestonePct}%): a ${formatObjectiveAmount(
+                            objectiveInsights.amountToNextMilestone,
+                            currentObjective
+                          )}`
+                        : '🏆 ¡Todos los hitos de este objetivo completados!'}
+                    </span>
+                    <span className="text-[10px] text-[#D8D1E5] font-mono-tabular shrink-0">
+                      {currentObjective.entries.length}{' '}
+                      {currentObjective.entries.length === 1
+                        ? 'registro'
+                        : 'registros'}
+                    </span>
                   </div>
                 </div>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[12px] text-[#F0EAF8]">
-                    {remainingText}
-                  </span>
-                  <span className="text-[11px] text-[#D8D1E5] shrink-0">
-                    {activeObjectives.length} objetivos
-                  </span>
+
+                {/* Smart Pace & Personal Pledge Banner — Portrait-friendly full text */}
+                <div className="px-3 py-2 rounded-[13px] bg-black/35 backdrop-blur-md border border-white/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5">
+                  <div className="flex items-start sm:items-center gap-1.5 text-[11px] text-[#F0EAF8] min-w-0 leading-snug">
+                    <span className="shrink-0">⚡</span>
+                    <span className="break-words">
+                      {objectiveInsights.dailyPaceNeeded !== null
+                        ? `Ritmo sugerido: ${formatObjectiveAmount(
+                            objectiveInsights.dailyPaceNeeded,
+                            currentObjective
+                          )} / día`
+                        : objectiveInsights.bestEntry > 0
+                        ? `Mayor impulso: +${formatObjectiveAmount(
+                            objectiveInsights.bestEntry,
+                            currentObjective
+                          )}`
+                        : remainingText}
+                    </span>
+                  </div>
+
+                  {currentObjective.pledge ? (
+                    <div
+                      style={{ color: currentAccentTheme.primary }}
+                      className="text-[11px] font-bold flex items-start sm:items-center gap-1 leading-snug break-words"
+                    >
+                      <span className="shrink-0">🎁</span>
+                      <span>Premio: {currentObjective.pledge}</span>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setIsEditorOpen(true)}
+                      className="text-[10px] font-bold text-[#DEC2FF] hover:text-white underline text-left sm:text-right shrink-0"
+                    >
+                      ＋ Definir mi premio al lograrlo
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Entries Section (Registrar Progreso) */}
+          {/* Entries Section (Registrar Progreso — Unified Sanctuary Card) */}
           <div
             ref={entriesRef}
-            className={`p-3.5 rounded-[18px] bg-[#1C1C2A] space-y-3 transition-all ${
+            className={`p-3.5 sm:p-4 rounded-[20px] bg-gradient-to-b from-[#1E1C2E] to-[#171624] space-y-3 relative overflow-hidden shadow-[0_8px_28px_rgba(10,9,20,0.45)] transition-all ${
               highlightedSection === 'entries'
-                ? 'border-[3px] border-[#C7A4FF]'
-                : 'border border-[#29283C]'
+                ? 'border-[2px] border-[#C7A4FF]'
+                : 'border border-[#342D4B]'
             }`}
           >
-            <div className="space-y-0.5">
-              <h3 className="text-[17px] font-bold text-[#F4F1FF]">
-                Registrar Progreso
-              </h3>
-              <p className="text-[11px] text-[#A8A3B8]">
-                Cada pequeño aporte te acerca a tu meta
-              </p>
-            </div>
+            <div
+              style={{
+                backgroundColor: isAddition
+                  ? currentAccentTheme.primary
+                  : '#FF6B8B',
+              }}
+              className="pointer-events-none absolute -top-14 -right-14 w-36 h-36 rounded-full opacity-10 blur-2xl transition-colors duration-300"
+            />
 
-            <div className="grid grid-cols-2 gap-2.5">
-              <button
-                onClick={() => setIsAddition(true)}
-                style={{
-                  backgroundColor: isAddition ? '#23563B' : '#29332F',
-                }}
-                className="h-[54px] rounded-[12px] font-bold text-[#BFF5CE] text-sm transition"
-              >
-                ＋ SUMAR
-              </button>
-              <button
-                onClick={() => setIsAddition(false)}
-                style={{
-                  backgroundColor: isAddition ? '#3B2932' : '#5A2E3B',
-                }}
-                className="h-[54px] rounded-[12px] font-bold text-[#FFD1D7] text-sm transition"
-              >
-                − RESTAR
-              </button>
-            </div>
-
-            <div className="text-[10px] font-bold text-[#A8A3B8] tracking-wider">
-              ACCESOS RÁPIDOS
-            </div>
-
-            <div className="grid grid-cols-4 gap-1.5">
-              {[50, 100, 500, 1000].map((amt) => {
-                const isSelected = selectedQuickAmount === amt;
-                return (
-                  <button
-                    key={amt}
-                    onClick={() => handleSelectQuickAmount(amt)}
-                    style={{
-                      backgroundColor: isSelected ? '#604094' : '#29283D',
-                    }}
-                    className="h-[42px] px-1 rounded-[10px] text-[12px] text-[#E2D8FF] font-medium truncate transition"
-                  >
-                    {formatObjectiveAmount(amt, currentObjective)}
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="flex items-center gap-2.5">
-              <label className="text-[11px] text-[#A8A3B8] shrink-0">
-                Otro importe
-              </label>
-              <input
-                type="number"
-                min="0"
-                step="any"
-                value={customAmountText}
-                onChange={(e) => handleCustomAmountChange(e.target.value)}
-                placeholder="Escribe un importe"
-                className="flex-1 h-[44px] px-3 rounded-[10px] bg-[#151520] text-[#F4F1FF] placeholder-[#88849A] text-sm border border-[#29283C] focus:outline-none focus:border-[#7549B8]"
-              />
-            </div>
-
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div className="text-[11px] text-[#BDB6CE] tabular-nums">
-                Monto seleccionado:{' '}
-                <span className="font-semibold text-[#F4F1FF]">
-                  {formatObjectiveAmount(selectedAmount, currentObjective)}
-                </span>
+            {/* Header Row with Live XP Pill */}
+            <div className="flex items-center justify-between gap-2 flex-wrap relative z-10">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-[10px] bg-[#252138] border border-[#3E355B] flex items-center justify-center text-sm shrink-0">
+                  {isAddition ? '⚡' : '📉'}
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-[15px] sm:text-[16px] font-bold text-[#F4F1FF] leading-tight">
+                    Registrar Progreso
+                  </h3>
+                  <p className="text-[11px] text-[#A8A3B8] leading-snug">
+                    Elige un monto rápido o escribe el tuyo
+                  </p>
+                </div>
               </div>
+
               {liveXpPreview && (
                 <div
-                  className={`text-[11px] font-bold px-2.5 py-1 rounded-[8px] border bg-[#231F35] flex items-center gap-1.5 transition-all duration-200 ${
+                  className={`text-[10px] sm:text-[11px] font-bold px-2.5 py-1 rounded-full border flex items-center gap-1 transition-all duration-200 shrink-0 ${
                     liveXpPreview.willLevelUp
-                      ? 'border-[#FFD54F]/60 text-[#FFD54F] shadow-[0_0_12px_rgba(255,213,79,0.2)]'
+                      ? 'bg-[#2E2519] border-[#FFD54F]/70 text-[#FFD54F] shadow-[0_0_12px_rgba(255,213,79,0.25)]'
                       : isAddition
-                      ? 'border-[#3D3559] text-[#82E59B]'
-                      : 'border-[#3D3559] text-[#D8C5FF]'
+                      ? 'bg-[#182923] border-[#65DB85]/45 text-[#82E59B]'
+                      : 'bg-[#241E36] border-[#4B3F6B] text-[#D8C5FF]'
                   }`}
                 >
                   <span>
-                    ⚡ +{liveXpPreview.estimatedXp} XP con este registro
+                    +{liveXpPreview.estimatedXp} XP
                     {liveXpPreview.bonusTag ? ` · ${liveXpPreview.bonusTag}` : ''}
                   </span>
                   {liveXpPreview.willLevelUp && (
-                    <span className="text-[10px] font-extrabold text-[#FFE082]">
-                      · ¡SUBES DE NIVEL!
+                    <span className="text-[9px] font-extrabold text-[#FFE082]">
+                      · ¡SUBES NV!
                     </span>
                   )}
                 </div>
               )}
             </div>
 
-            <div className="flex items-center gap-2">
+            {/* Segmented Mode Switcher (+ Sumar / - Restar) */}
+            <div className="p-1 rounded-[14px] bg-[#13121E] border border-[#2B263D] grid grid-cols-2 gap-1.5 relative z-10">
+              <button
+                type="button"
+                onClick={() => {
+                  playUiTap(2);
+                  setIsAddition(true);
+                }}
+                className={`h-[42px] rounded-[10px] font-bold text-xs sm:text-[13px] flex items-center justify-center gap-1.5 transition-all ${
+                  isAddition
+                    ? 'bg-gradient-to-r from-[#1F4E37] to-[#193C2B] border border-[#65DB85]/60 text-[#B8F7C8] shadow-[0_2px_12px_rgba(101,219,133,0.2)]'
+                    : 'bg-transparent border border-transparent text-[#8F89A3] hover:text-[#D5CFE6]'
+                }`}
+              >
+                <span className="text-sm leading-none">＋</span>
+                <span>Sumar avance</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  playUiTap(0);
+                  setIsAddition(false);
+                }}
+                className={`h-[42px] rounded-[10px] font-bold text-xs sm:text-[13px] flex items-center justify-center gap-1.5 transition-all ${
+                  !isAddition
+                    ? 'bg-gradient-to-r from-[#522435] to-[#3B1A26] border border-[#FF7A8A]/60 text-[#FFD1D7] shadow-[0_2px_12px_rgba(242,119,131,0.2)]'
+                    : 'bg-transparent border border-transparent text-[#8F89A3] hover:text-[#D5CFE6]'
+                }`}
+              >
+                <span className="text-sm leading-none">−</span>
+                <span>Restar / Gasto</span>
+              </button>
+            </div>
+
+            {/* Adaptive Quick Amount Chips */}
+            <div className="grid grid-cols-4 gap-1.5 relative z-10">
+              {quickPresetAmounts.map((amt) => {
+                const isSelected = selectedQuickAmount === amt;
+                return (
+                  <button
+                    key={amt}
+                    type="button"
+                    onClick={() => handleSelectQuickAmount(amt)}
+                    className={`h-[40px] px-1.5 rounded-[11px] text-[12px] font-mono-tabular font-bold truncate border transition-all active:scale-95 ${
+                      isSelected
+                        ? 'bg-[#2E2249] border-[#B58BFF] text-white shadow-[0_0_12px_rgba(140,92,224,0.3)]'
+                        : 'bg-[#141320]/90 border-[#2B273D] text-[#C9C2D8] hover:border-[#4A4068] hover:bg-[#1B192B]'
+                    }`}
+                  >
+                    {isAddition ? '+' : '−'}
+                    {formatObjectiveAmount(amt, currentObjective)}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Unified Custom Amount + Optional Note + Primary Action Row */}
+            <div className="grid grid-cols-1 sm:grid-cols-[145px_1fr_auto] gap-2 relative z-10">
+              <div className="relative">
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={customAmountText}
+                  onChange={(e) => handleCustomAmountChange(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleAddEntry();
+                  }}
+                  placeholder={`Otro (${formatObjectiveAmount(
+                    selectedAmount,
+                    currentObjective
+                  )})`}
+                  className="w-full h-[44px] px-3 rounded-[12px] bg-[#141320] text-[#F4F1FF] placeholder-[#8A849E] text-xs sm:text-[13px] font-mono-tabular border border-[#2D2840] focus:outline-none focus:border-[#9B6BFF] transition"
+                />
+              </div>
+
               <input
                 type="text"
                 value={newEntryDescription}
@@ -1867,82 +2389,124 @@ export function App() {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') handleAddEntry();
                 }}
-                placeholder="¿Qué fue esta entrada? (opcional)"
-                className="flex-1 h-[48px] px-3 rounded-[11px] bg-[#151520] text-[#F4F1FF] placeholder-[#88849A] text-sm border border-[#29283C] focus:outline-none focus:border-[#7549B8] transition"
+                placeholder="Nota opcional (ej. Ahorro semanal)"
+                className="w-full h-[44px] px-3 rounded-[12px] bg-[#141320] text-[#F4F1FF] placeholder-[#8A849E] text-xs sm:text-[13px] border border-[#2D2840] focus:outline-none focus:border-[#9B6BFF] transition"
               />
+
               <button
+                type="button"
                 onClick={handleAddEntry}
                 disabled={!hasValidSelectedAmount}
-                className="h-[48px] px-5 rounded-[11px] bg-gradient-to-r from-[#7549B8] to-[#8C5CE0] text-white font-bold text-sm hover:brightness-110 active:scale-95 disabled:opacity-50 transition-all shadow-[0_4px_14px_rgba(117,73,184,0.35)] shrink-0"
+                className={`h-[44px] px-4 rounded-[12px] text-white font-bold text-xs sm:text-[13px] hover:brightness-110 active:scale-95 disabled:opacity-50 transition-all shrink-0 flex items-center justify-center gap-1.5 ${
+                  isAddition
+                    ? 'bg-gradient-to-r from-[#7549B8] to-[#9B6BFF] shadow-[0_4px_14px_rgba(117,73,184,0.4)]'
+                    : 'bg-gradient-to-r from-[#8E354A] to-[#B5435E] shadow-[0_4px_14px_rgba(181,67,94,0.35)]'
+                }`}
               >
-                AGREGAR
+                <span>{isAddition ? '＋' : '−'}</span>
+                <span>
+                  Registrar{' '}
+                  {hasValidSelectedAmount
+                    ? formatObjectiveAmount(selectedAmount, currentObjective)
+                    : ''}
+                </span>
               </button>
             </div>
 
             {persistenceMessage && (
-              <div className="text-[11px] text-[#F2A5A5]">
+              <div className="text-[11px] text-[#FF9EAB] bg-[#291520] border border-[#542A38] px-3 py-1.5 rounded-[10px]">
                 {persistenceMessage}
               </div>
             )}
           </div>
 
-          {/* Achievements Horizontal Section */}
+          {/* Achievements Horizontal Section (Unified Sanctuary Medals) */}
           <div
             ref={achievementsRef}
-            className={`p-3.5 rounded-[18px] bg-[#1C1C2A] space-y-2.5 transition-all ${
+            className={`p-3.5 sm:p-4 rounded-[20px] bg-gradient-to-b from-[#1E1C2E] to-[#171624] space-y-3 relative overflow-hidden shadow-[0_8px_28px_rgba(10,9,20,0.45)] transition-all ${
               highlightedSection === 'achievements'
-                ? 'border-[3px] border-[#C7A4FF]'
-                : 'border border-[#29283C]'
+                ? 'border-[2px] border-[#C7A4FF]'
+                : 'border border-[#342D4B]'
             }`}
           >
-            <div className="flex items-center justify-between">
-              <h3 className="text-[17px] font-bold text-[#F4F1FF]">
-                🏆 Logros
-              </h3>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-[10px] bg-[#252138] border border-[#3E355B] flex items-center justify-center text-sm shrink-0">
+                  🏆
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-[15px] sm:text-[16px] font-bold text-[#F4F1FF] leading-tight">
+                      Logros
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full bg-[#252138] border border-[#3E355B] text-[10px] font-mono-tabular font-bold text-[#D8C5FF]">
+                      {currentObjective.unlockedAchievementIds.length}/
+                      {ACHIEVEMENT_CATALOG.length}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[#A8A3B8] leading-snug">
+                    Medallas e hitos desbloqueados en este objetivo
+                  </p>
+                </div>
+              </div>
               <button
                 onClick={() => setIsAllAchievementsOpen(true)}
-                className="text-[10px] font-bold text-[#C7A4FF] hover:underline"
+                className="text-[10px] font-bold text-[#C7A4FF] hover:text-white hover:underline transition shrink-0"
               >
-                VER TODOS
+                VER TODOS →
               </button>
             </div>
 
-            <div className="flex gap-2 overflow-x-auto pb-2">
+            <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
               {ACHIEVEMENT_CATALOG.map((ach) => {
                 const isUnlocked =
                   currentObjective.unlockedAchievementIds.includes(ach.id);
                 const title =
-                  ach.isSecret && !isUnlocked ? 'Logro oculto' : ach.title;
+                  ach.isSecret && !isUnlocked ? 'Logro misterioso' : ach.title;
                 const icon = ach.isSecret && !isUnlocked ? '❔' : ach.icon;
-                const statusText = isUnlocked
-                  ? `Desbloqueado · +${ach.rewardXp} XP`
-                  : 'Por desbloquear';
 
                 return (
                   <button
                     key={ach.id}
                     onClick={() => handleAchievementClick(ach)}
-                    style={{
-                      backgroundColor: isUnlocked ? '#202D2A' : '#232231',
-                      borderColor: isUnlocked ? '#82E59B' : '#A8A3B8',
-                    }}
-                    className="w-[210px] shrink-0 p-2.5 rounded-[12px] border text-left flex items-center gap-2 hover:brightness-110 transition"
+                    className={`w-[235px] shrink-0 p-2.5 rounded-[14px] border text-left flex items-start gap-2.5 transition-all active:scale-98 ${
+                      isUnlocked
+                        ? 'bg-gradient-to-br from-[#1B312A] to-[#14221E] border-[#65DB85]/50 shadow-[0_4px_14px_rgba(101,219,133,0.12)] hover:border-[#82E59B]'
+                        : 'bg-[#141320]/90 border-[#2B273D] hover:border-[#463D63] hover:bg-[#191728]'
+                    }`}
                   >
-                    <span className="text-[22px] shrink-0">{icon}</span>
-                    <div className="min-w-0 space-y-0.5">
+                    <div
+                      className={`w-10 h-10 rounded-[11px] border flex items-center justify-center text-[20px] shrink-0 mt-0.5 ${
+                        isUnlocked
+                          ? 'bg-[#12221C] border-[#65DB85]/45 shadow-[0_0_10px_rgba(101,219,133,0.2)]'
+                          : 'bg-[#1C1A2B] border-[#2C283E] opacity-75'
+                      }`}
+                    >
+                      {icon}
+                    </div>
+                    <div className="min-w-0 flex-1 space-y-0.5">
                       <div
-                        style={{
-                          color: isUnlocked ? '#82E59B' : '#A8A3B8',
-                        }}
-                        className="text-[12px] font-bold truncate"
+                        className={`text-[12px] font-bold leading-snug break-words ${
+                          isUnlocked ? 'text-[#9AF0AE]' : 'text-[#D5CFE6]'
+                        }`}
                       >
                         {title}
                       </div>
-                      <div className="text-[10px] text-[#C3C0CC] line-clamp-2">
+                      <div className="text-[10px] text-[#9E97B0] leading-snug break-words">
                         {ach.description}
                       </div>
-                      <div className="text-[9px] text-[#D8D1E5]">
-                        {statusText}
+                      <div className="flex items-center gap-1 pt-0.5">
+                        <span
+                          className={`text-[9px] font-mono-tabular font-bold px-1.5 py-0.2 rounded ${
+                            isUnlocked
+                              ? 'bg-[#1E3B2E] text-[#82E59B]'
+                              : 'bg-[#221F33] text-[#B58BFF]'
+                          }`}
+                        >
+                          {isUnlocked
+                            ? `✓ +${ach.rewardXp} XP`
+                            : `+${ach.rewardXp} XP`}
+                        </span>
                       </div>
                     </div>
                   </button>
@@ -2029,8 +2593,8 @@ export function App() {
 
               <div className="flex-1 min-w-0 space-y-1.5">
                 <div className="flex items-center justify-between gap-1.5 flex-wrap">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="text-[15px] font-bold text-[#F4F1FF] tabular-nums truncate">
+                  <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                    <span className="text-[14px] sm:text-[15px] font-bold text-[#F4F1FF] tabular-nums">
                       {experienceText}
                     </span>
                     <span
@@ -2067,16 +2631,18 @@ export function App() {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between gap-2">
-                  <div className="text-[11px] text-[#C6C0D6] truncate">
+                {/* Mascot Status Message + Códice Link (Portrait-First: full message without ellipsis) */}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                  <div className="text-[11px] text-[#C6C0D6] leading-snug break-words">
                     {mascotMessage}
                   </div>
                   <button
                     onClick={() => {
+                      playUiTap(3);
                       setMascotGalleryStartLevel(level);
                       setIsMascotGalleryOpen(true);
                     }}
-                    className="text-[10px] font-bold text-[#C7A4FF] hover:text-white hover:underline transition shrink-0"
+                    className="text-[10px] font-bold text-[#C7A4FF] hover:text-white hover:underline transition self-start sm:self-auto shrink-0"
                   >
                     CÓDICE (1–200) →
                   </button>
@@ -2087,11 +2653,11 @@ export function App() {
             {/* Pillar C: 10-Node Species Evolution Track + Next Mystery Species Teaser (Zeigarnik Effect) */}
             <div className="pt-2 border-t border-[#2B263D]/90 flex items-center justify-between gap-2">
               <div className="flex-1 min-w-0 space-y-1">
-                <div className="flex items-center justify-between text-[10px] text-[#A8A3B8]">
-                  <span className="font-semibold text-[#D8C5FF] truncate">
+                <div className="flex items-center justify-between gap-1.5 flex-wrap text-[10px] text-[#A8A3B8]">
+                  <span className="font-semibold text-[#D8C5FF]">
                     Etapa {mascotTier + 1}/20 · Evolución {currentSubLevelIndex + 1}/10
                   </span>
-                  <span className="text-[#9AF0AE] font-mono-tabular shrink-0">
+                  <span className="text-[#9AF0AE] font-mono-tabular">
                     {mascotTier < 19
                       ? `Próxima especie en ${levelsToNextSpecies} nv.`
                       : 'Etapa Suprema Desbloqueada'}
@@ -2258,7 +2824,7 @@ export function App() {
                             <span className="text-base shrink-0">{q.icon}</span>
                             <div className="min-w-0">
                               <div
-                                className={`text-[11px] font-bold truncate ${
+                                className={`text-[11px] font-bold leading-snug break-words ${
                                   q.isClaimed
                                     ? 'text-[#82E59B]'
                                     : 'text-[#F4F1FF]'
@@ -2266,7 +2832,7 @@ export function App() {
                               >
                                 {q.title}
                               </div>
-                              <div className="text-[9px] text-[#A8A3B8] truncate">
+                              <div className="text-[9px] text-[#A8A3B8] leading-snug break-words">
                                 {q.subtitle}
                               </div>
                             </div>
@@ -2299,63 +2865,215 @@ export function App() {
             </div>
           </div>
 
-          {/* Statistics Section */}
+          {/* Statistics Section (Unified Sanctuary Bento Grid) */}
           <div
             ref={statsRef}
-            className={`p-3.5 rounded-[18px] bg-[#1C1C2A] space-y-2 transition-all ${
+            className={`p-3.5 sm:p-4 rounded-[20px] bg-gradient-to-b from-[#1E1C2E] to-[#171624] space-y-3 relative overflow-hidden shadow-[0_8px_28px_rgba(10,9,20,0.45)] transition-all ${
               highlightedSection === 'stats'
-                ? 'border-[3px] border-[#C7A4FF]'
-                : 'border border-[#29283C]'
+                ? 'border-[2px] border-[#C7A4FF]'
+                : 'border border-[#342D4B]'
             }`}
           >
-            <h3 className="text-[17px] font-bold text-[#F4F1FF]">
-              ▥ Estadísticas
-            </h3>
-            <div className="text-sm text-[#F4F1FF]">
-              Entradas totales: {totalEntryCount}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-[10px] bg-[#252138] border border-[#3E355B] flex items-center justify-center text-sm shrink-0">
+                  📊
+                </div>
+                <div>
+                  <h3 className="text-[15px] sm:text-[16px] font-bold text-[#F4F1FF] leading-tight">
+                    Estadísticas de Impulso
+                  </h3>
+                  <p className="text-[11px] text-[#A8A3B8]">
+                    Resumen claro de tu constancia y progreso
+                  </p>
+                </div>
+              </div>
             </div>
-            <div className="text-sm text-[#FFC45D]">
-              Racha global: {streakText}
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="p-2.5 rounded-[14px] bg-[#141320]/90 border border-[#2B273D] space-y-0.5">
+                <div className="flex items-center justify-between text-[10px] text-[#A8A3B8]">
+                  <span>MOVIMIENTOS</span>
+                  <span>📝</span>
+                </div>
+                <div className="text-[17px] font-extrabold font-mono-tabular text-[#F4F1FF]">
+                  {totalEntryCount}
+                </div>
+                <div className="text-[10px] text-[#8F89A3] leading-tight break-words">
+                  {currentObjective.entries.length} en este objetivo
+                </div>
+              </div>
+
+              <div className="p-2.5 rounded-[14px] bg-[#141320]/90 border border-[#2B273D] space-y-0.5">
+                <div className="flex items-center justify-between text-[10px] text-[#A8A3B8]">
+                  <span>RACHA ACTIVA</span>
+                  <span>🔥</span>
+                </div>
+                <div className="text-[17px] font-extrabold font-mono-tabular text-[#FFC45D]">
+                  {streakDays} {streakDays === 1 ? 'día' : 'días'}
+                </div>
+                <div className="text-[10px] text-[#8F89A3] leading-tight break-words">
+                  {streakDays > 0 ? '¡Sigue sumando hoy!' : 'Registra hoy para iniciar'}
+                </div>
+              </div>
+
+              <div className="p-2.5 rounded-[14px] bg-[#141320]/90 border border-[#2B273D] space-y-0.5">
+                <div className="flex items-center justify-between text-[10px] text-[#A8A3B8]">
+                  <span>MAYOR IMPULSO</span>
+                  <span>🚀</span>
+                </div>
+                <div
+                  style={{ color: currentAccentTheme.primary }}
+                  className="text-[16px] sm:text-[17px] font-extrabold font-mono-tabular leading-tight break-words"
+                >
+                  {objectiveInsights.bestEntry > 0
+                    ? `+${formatObjectiveAmount(
+                        objectiveInsights.bestEntry,
+                        currentObjective
+                      )}`
+                    : '—'}
+                </div>
+                <div className="text-[10px] text-[#8F89A3] leading-tight break-words">
+                  Mejor aporte único
+                </div>
+              </div>
+
+              <div className="p-2.5 rounded-[14px] bg-[#141320]/90 border border-[#2B273D] space-y-0.5">
+                <div className="flex items-center justify-between text-[10px] text-[#A8A3B8]">
+                  <span>NIVEL GUARDIÁN</span>
+                  <span>✨</span>
+                </div>
+                <div className="text-[17px] font-extrabold font-mono-tabular text-[#D8C5FF]">
+                  Nv. {level}
+                </div>
+                <div className="text-[10px] text-[#8F89A3] font-mono-tabular leading-tight break-words">
+                  {state.gamification.totalXp} XP acumulados
+                </div>
+              </div>
             </div>
-            <div className="text-sm text-[#C7A4FF]">{experienceText}</div>
           </div>
 
-          {/* Settings Section */}
+          {/* Settings Section (Unified Sanctuary 2x2 Action Grid) */}
           <div
             ref={settingsRef}
-            className={`p-3.5 rounded-[18px] bg-[#1C1C2A] space-y-2 transition-all ${
+            className={`p-3.5 sm:p-4 rounded-[20px] bg-gradient-to-b from-[#1E1C2E] to-[#171624] space-y-3 relative overflow-hidden shadow-[0_8px_28px_rgba(10,9,20,0.45)] transition-all ${
               highlightedSection === 'settings'
-                ? 'border-[3px] border-[#C7A4FF]'
-                : 'border border-[#29283C]'
+                ? 'border-[2px] border-[#C7A4FF]'
+                : 'border border-[#342D4B]'
             }`}
           >
-            <h3 className="text-[17px] font-bold text-[#F4F1FF]">
-              ⚙ Ajustes del objetivo
-            </h3>
-            <div className="flex flex-col items-start gap-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-[10px] bg-[#252138] border border-[#3E355B] flex items-center justify-center text-sm shrink-0">
+                  ⚙️
+                </div>
+                <div>
+                  <h3 className="text-[15px] sm:text-[16px] font-bold text-[#F4F1FF] leading-tight">
+                    Ajustes del Objetivo
+                  </h3>
+                  <p className="text-[11px] text-[#A8A3B8]">
+                    Personaliza, archiva o administra esta meta
+                  </p>
+                </div>
+              </div>
+
               <button
-                onClick={() => setIsBannerPickerOpen(true)}
-                className="px-3.5 py-2 rounded-[10px] bg-[#302747] text-[#F4F1FF] text-sm hover:bg-[#3e335c] transition"
+                type="button"
+                onClick={toggleSoundAndHaptics}
+                className={`px-3 py-1.5 rounded-[11px] border text-[11px] font-bold flex items-center gap-1.5 transition ${
+                  sensoryPrefs.soundEnabled
+                    ? 'bg-[#1F2D2B] border-[#65DB85]/45 text-[#9AF0AE]'
+                    : 'bg-[#181726] border-[#2E2A42] text-[#9E97B0]'
+                }`}
               >
-                Cambiar banner
+                <span>{sensoryPrefs.soundEnabled ? '🔊' : '🔇'}</span>
+                <span>
+                  {sensoryPrefs.soundEnabled
+                    ? 'Sonido y Haptic: ON'
+                    : 'Sonido y Haptic: OFF'}
+                </span>
               </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <button
-                onClick={() => setIsEditorOpen(true)}
-                className="px-3.5 py-2 rounded-[10px] bg-[#302747] text-[#F4F1FF] text-sm hover:bg-[#3e335c] transition"
+                onClick={() => {
+                  playUiTap(2);
+                  setIsEditorOpen(true);
+                }}
+                className="p-2.5 rounded-[14px] bg-[#141320]/90 border border-[#2B273D] hover:border-[#635091] hover:bg-[#1C1A2E] flex items-center gap-3 text-left transition group"
               >
-                Editar nombre, monto y unidad
+                <div className="w-9 h-9 rounded-[10px] bg-[#26213B] border border-[#413663] flex items-center justify-center text-base shrink-0 group-hover:scale-105 transition">
+                  🎨
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs sm:text-[13px] font-bold text-[#F4F1FF] leading-snug break-words">
+                    Personalizar objetivo
+                  </div>
+                  <div className="text-[10px] text-[#9E97B0] leading-snug break-words">
+                    Nombre, meta, icono, fecha y premio
+                  </div>
+                </div>
               </button>
+
               <button
-                onClick={handleArchiveCurrentObjective}
-                className="px-3.5 py-2 rounded-[10px] bg-[#302747] text-[#F4F1FF] text-sm hover:bg-[#3e335c] transition"
+                onClick={() => {
+                  playUiTap(2);
+                  setIsBannerPickerOpen(true);
+                }}
+                className="p-2.5 rounded-[14px] bg-[#141320]/90 border border-[#2B273D] hover:border-[#635091] hover:bg-[#1C1A2E] flex items-center gap-3 text-left transition group"
               >
-                Archivar objetivo
+                <div className="w-9 h-9 rounded-[10px] bg-[#26213B] border border-[#413663] flex items-center justify-center text-base shrink-0 group-hover:scale-105 transition">
+                  🖼️
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs sm:text-[13px] font-bold text-[#F4F1FF] leading-snug break-words">
+                    Fondo y encuadre
+                  </div>
+                  <div className="text-[10px] text-[#9E97B0] leading-snug break-words">
+                    Cambiar paisaje o subir imagen
+                  </div>
+                </div>
               </button>
+
               <button
-                onClick={() => handleDeleteObjective(currentObjective)}
-                className="px-3.5 py-2 rounded-[10px] bg-[#542A38] text-white text-sm hover:bg-[#6b3547] transition"
+                onClick={() => {
+                  playUiTap(1);
+                  handleArchiveCurrentObjective();
+                }}
+                className="p-2.5 rounded-[14px] bg-[#141320]/90 border border-[#2B273D] hover:border-[#635091] hover:bg-[#1C1A2E] flex items-center gap-3 text-left transition group"
               >
-                Eliminar objetivo
+                <div className="w-9 h-9 rounded-[10px] bg-[#26213B] border border-[#413663] flex items-center justify-center text-base shrink-0 group-hover:scale-105 transition">
+                  📦
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs sm:text-[13px] font-bold text-[#F4F1FF] leading-snug break-words">
+                    Archivar en el baúl
+                  </div>
+                  <div className="text-[10px] text-[#9E97B0] leading-snug break-words">
+                    Guardar sin perder su progreso
+                  </div>
+                </div>
+              </button>
+
+              <button
+                onClick={() => {
+                  playUiTap(0);
+                  handleDeleteObjective(currentObjective);
+                }}
+                className="p-2.5 rounded-[14px] bg-[#1E141C]/90 border border-[#472534] hover:border-[#853B55] hover:bg-[#291823] flex items-center gap-3 text-left transition group"
+              >
+                <div className="w-9 h-9 rounded-[10px] bg-[#331B27] border border-[#5E2D41] flex items-center justify-center text-base shrink-0 group-hover:scale-105 transition">
+                  🗑️
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs sm:text-[13px] font-bold text-[#FFB8C2] leading-snug break-words">
+                    Eliminar objetivo
+                  </div>
+                  <div className="text-[10px] text-[#C48B96] leading-snug break-words">
+                    Borrar permanentemente
+                  </div>
+                </div>
               </button>
             </div>
           </div>
@@ -2392,7 +3110,7 @@ export function App() {
           </div>
 
           {/* Filter Tabs */}
-          <div className="grid grid-cols-3 gap-1.5">
+          <div className="p-1 rounded-[12px] bg-[#12111C] border border-[#2B263D] grid grid-cols-3 gap-1">
             {[
               { id: 'all', label: 'Todas' },
               { id: 'add', label: 'Sumas' },
@@ -2405,11 +3123,10 @@ export function App() {
                   onClick={() =>
                     setHistoryFilter(tab.id as 'all' | 'add' | 'subtract')
                   }
-                  style={{
-                    backgroundColor: isSelected ? '#604094' : '#252437',
-                  }}
-                  className={`h-[40px] rounded-[10px] text-[11px] font-medium transition ${
-                    isSelected ? 'text-white' : 'text-[#C8C2D6]'
+                  className={`h-[34px] rounded-[9px] text-[11px] font-bold transition ${
+                    isSelected
+                      ? 'bg-[#32264D] text-white border border-[#5B4588]/60 shadow-sm'
+                      : 'text-[#9E97B0] hover:text-[#E2D8FF]'
                   }`}
                 >
                   {tab.label}
@@ -2421,8 +3138,8 @@ export function App() {
           {/* History Entries List */}
           <div className="flex-1 overflow-y-auto space-y-2 pr-0.5">
             {filteredEntries.length === 0 ? (
-              <div className="text-center text-xs text-[#A8A3B8] py-8">
-                Aún no hay entradas registradas.
+              <div className="text-center text-xs text-[#A8A3B8] py-10 px-4 rounded-[14px] border border-dashed border-[#2B273D] bg-[#141320]/50">
+                Aún no hay movimientos registrados en esta vista.
               </div>
             ) : (
               filteredEntries.map((entry) => {
@@ -2436,30 +3153,36 @@ export function App() {
                 return (
                   <div
                     key={entry.id}
-                    className="p-2.5 rounded-[12px] border border-[#2E2C40] bg-[#201F2E] flex items-center gap-2"
+                    className="p-2.5 rounded-[13px] border border-[#2B273D] bg-[#141320]/90 hover:border-[#3E3759] flex items-center gap-2.5 transition"
                   >
-                    <span className="text-[17px] shrink-0">
-                      {isPositive ? '🟢' : '🔴'}
-                    </span>
+                    <div
+                      className={`w-8 h-8 rounded-[9px] border flex items-center justify-center text-xs font-extrabold shrink-0 ${
+                        isPositive
+                          ? 'bg-[#162B22] border-[#65DB85]/40 text-[#82E59B]'
+                          : 'bg-[#2D1822] border-[#FF7A8A]/40 text-[#FF9EAB]'
+                      }`}
+                    >
+                      {isPositive ? '＋' : '−'}
+                    </div>
                     <div className="flex-1 min-w-0 space-y-0.5">
-                      <div className="text-[13px] font-bold text-[#F3F0FA] truncate">
+                      <div className="text-[12px] font-bold text-[#F3F0FA] truncate">
                         {entry.description}
                       </div>
-                      <div className="text-[10px] text-[#A8A3B8]">
+                      <div className="text-[10px] text-[#9E97B0]">
                         {formatEntryTime(entry.createdAt)}
                       </div>
                     </div>
                     <div
                       style={{
-                        color: isPositive ? '#65DB85' : '#F27783',
+                        color: isPositive ? '#82E59B' : '#FF8A98',
                       }}
-                      className="text-[13px] font-bold shrink-0"
+                      className="text-[12px] font-mono-tabular font-extrabold shrink-0"
                     >
                       {amountFormatted}
                     </div>
                     <button
                       onClick={() => setEntryActionTarget(entry)}
-                      className="w-[34px] h-[38px] text-white text-lg flex items-center justify-center rounded-lg hover:bg-[#2E2C40] shrink-0"
+                      className="w-[30px] h-[30px] text-[#B8B2C8] hover:text-white text-base flex items-center justify-center rounded-lg hover:bg-[#262238] shrink-0 transition"
                     >
                       ⋯
                     </button>
@@ -2471,10 +3194,11 @@ export function App() {
         </aside>
       </div>
 
-      {/* Modal: ObjectiveEditorPage */}
+      {/* Modal: ObjectiveEditorPage (Forja de Objetivo) */}
       {isEditorOpen && (
         <ObjectiveEditorModal
           objective={currentObjective}
+          isNewDraft={isDraftObjective}
           onCancel={handleCancelObjectiveEditor}
           onSave={handleSaveObjectiveEditor}
           onAlert={(title, message) => setAlertDialog({ title, message })}
@@ -2504,20 +3228,26 @@ export function App() {
 
       {/* Modal: AchievementsPage */}
       {isAllAchievementsOpen && (
-        <div className="fixed inset-0 z-50 bg-[#11121C] flex flex-col p-[18px] overflow-hidden">
-          <div className="max-w-4xl w-full mx-auto flex-1 flex flex-col gap-3 min-h-0">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <h2 className="text-[22px] font-bold text-[#F4F1FF]">
-                  🏆 Todos los logros
-                </h2>
-                <p className="text-[12px] text-[#A8A3B8]">
-                  Toca una tarjeta para ver su pista o recompensa.
-                </p>
+        <div className="fixed inset-0 z-50 bg-[#0D0E17]/95 backdrop-blur-md flex flex-col p-4 sm:p-6 overflow-hidden">
+          <div className="max-w-4xl w-full mx-auto flex-1 flex flex-col gap-4 min-h-0">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-[12px] bg-[#252138] border border-[#3E355B] flex items-center justify-center text-lg">
+                  🏆
+                </div>
+                <div>
+                  <h2 className="text-[18px] sm:text-[21px] font-bold text-[#F4F1FF]">
+                    Todos los Logros ({currentObjective.unlockedAchievementIds.length}/
+                    {ACHIEVEMENT_CATALOG.length})
+                  </h2>
+                  <p className="text-[12px] text-[#A8A3B8]">
+                    Toca cualquier medalla para conocer su historia o pista secreta
+                  </p>
+                </div>
               </div>
               <button
                 onClick={() => setIsAllAchievementsOpen(false)}
-                className="px-4 py-2 rounded-[10px] bg-[#302747] text-[#F4F1FF] text-sm font-medium hover:bg-[#3e335c]"
+                className="px-4 py-2 rounded-[11px] bg-[#252138] border border-[#3E355B] text-[#F4F1FF] text-xs sm:text-sm font-bold hover:bg-[#322C4B] transition"
               >
                 Cerrar
               </button>
@@ -2528,37 +3258,53 @@ export function App() {
                 const isUnlocked =
                   currentObjective.unlockedAchievementIds.includes(ach.id);
                 const title =
-                  ach.isSecret && !isUnlocked ? 'Logro oculto' : ach.title;
+                  ach.isSecret && !isUnlocked ? 'Logro misterioso' : ach.title;
                 const icon = ach.isSecret && !isUnlocked ? '❔' : ach.icon;
-                const statusText = isUnlocked
-                  ? `Desbloqueado · +${ach.rewardXp} XP`
-                  : 'Por desbloquear';
 
                 return (
                   <button
                     key={ach.id}
                     onClick={() => handleAchievementClick(ach)}
-                    style={{
-                      backgroundColor: isUnlocked ? '#202D2A' : '#232231',
-                      borderColor: isUnlocked ? '#82E59B' : '#A8A3B8',
-                    }}
-                    className="h-[110px] p-3 rounded-[12px] border text-left flex flex-col justify-center gap-1 hover:brightness-110 transition"
+                    className={`p-3.5 rounded-[16px] border text-left flex items-center gap-3 transition-all ${
+                      isUnlocked
+                        ? 'bg-gradient-to-br from-[#1B312A] to-[#14221E] border-[#65DB85]/55 shadow-[0_4px_14px_rgba(101,219,133,0.12)] hover:border-[#82E59B]'
+                        : 'bg-[#161522]/90 border-[#2B273D] hover:border-[#463D63]'
+                    }`}
                   >
-                    <div className="flex items-center gap-2">
-                      <span className="text-[22px]">{icon}</span>
-                      <span
-                        style={{
-                          color: isUnlocked ? '#82E59B' : '#A8A3B8',
-                        }}
-                        className="text-[12px] font-bold"
-                      >
-                        {title}
-                      </span>
+                    <div
+                      className={`w-12 h-12 rounded-[13px] border flex items-center justify-center text-[24px] shrink-0 ${
+                        isUnlocked
+                          ? 'bg-[#12221C] border-[#65DB85]/45'
+                          : 'bg-[#1E1C2D] border-[#2E2A42] opacity-75'
+                      }`}
+                    >
+                      {icon}
                     </div>
-                    <div className="text-[10px] text-[#C3C0CC] line-clamp-2">
-                      {ach.description}
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span
+                          className={`text-[13px] font-bold truncate ${
+                            isUnlocked ? 'text-[#9AF0AE]' : 'text-[#E2D8FF]'
+                          }`}
+                        >
+                          {title}
+                        </span>
+                        <span
+                          className={`text-[10px] font-mono-tabular font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                            isUnlocked
+                              ? 'bg-[#1E3B2E] text-[#82E59B]'
+                              : 'bg-[#242036] text-[#B58BFF]'
+                          }`}
+                        >
+                          {isUnlocked
+                            ? `✓ +${ach.rewardXp} XP`
+                            : `+${ach.rewardXp} XP`}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-[#A8A3B8] line-clamp-2">
+                        {ach.description}
+                      </div>
                     </div>
-                    <div className="text-[9px] text-[#D8D1E5]">{statusText}</div>
                   </button>
                 );
               })}
@@ -2835,7 +3581,7 @@ const MascotGridCard = React.memo(function MascotGridCard({
       >
         {isItemLocked ? `🔒 Nv. ${lvl}` : `Nv. ${lvl}`}
       </span>
-      <span className="text-[9px] text-[#A8A3B8] truncate w-full text-center">
+      <span className="text-[9px] text-[#A8A3B8] leading-tight w-full text-center break-words">
         {isItemLocked ? '？？？' : MASCOT_STAGE_NAMES[itemTier]}
       </span>
     </button>
@@ -2866,11 +3612,14 @@ function MascotGalleryModal({
         {/* Header */}
         <div className="flex items-center justify-between gap-2">
           <div className="space-y-0.5 min-w-0">
-            <h2 className="text-[17px] sm:text-[20px] font-bold text-[#F4F1FF] truncate">
+            <div className="text-[10px] font-extrabold uppercase tracking-widest text-[#C7A4FF]">
+              🎯 OBJECTIVE REACHER · SANTUARIO
+            </div>
+            <h2 className="text-[16px] sm:text-[20px] font-bold text-[#F4F1FF] leading-snug break-words">
               🐾 Códice de Mascotas (1–200)
             </h2>
-            <p className="text-[11px] sm:text-[12px] text-[#A8A3B8] truncate">
-              Arrastra la barra libremente del nivel 1 al 200 o toca cualquier tarjeta.
+            <p className="text-[11px] sm:text-[12px] text-[#A8A3B8] leading-snug">
+              Arrastra la barra del 1 al 200 o toca una criatura para escuchar su voz.
             </p>
           </div>
           <button
@@ -2881,9 +3630,24 @@ function MascotGalleryModal({
           </button>
         </div>
 
-        {/* Interactive Slider Preview (Fixed-height rows so slider never shifts while dragging) */}
-        <div className="p-3 sm:p-3.5 rounded-[18px] border border-[#29283C] bg-[#1C1C2A] flex items-center gap-3 sm:gap-4 shrink-0">
-          <div className="shrink-0">
+        {/* Interactive Slider Preview (Portrait-friendly wrapping) */}
+        <div className="p-3 sm:p-3.5 rounded-[18px] border border-[#342D4B] bg-gradient-to-b from-[#1E1C2E] to-[#171624] flex items-center gap-3 sm:gap-4 shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              if (!isPreviewLocked) {
+                playMascotVoice(previewLevel, false);
+              } else {
+                playUiTap(0);
+              }
+            }}
+            title={
+              isPreviewLocked
+                ? 'Criatura aún bloqueada'
+                : 'Toca para escuchar la voz sintetizada de esta especie'
+            }
+            className="shrink-0 relative group focus:outline-none"
+          >
             <div className="animate-mascot-float">
               <MascotAvatarSvg
                 level={previewLevel}
@@ -2891,20 +3655,25 @@ function MascotGalleryModal({
                 isLocked={isPreviewLocked}
               />
             </div>
-          </div>
+            {!isPreviewLocked && (
+              <span className="absolute -bottom-1 -right-1 px-1.5 py-0.5 rounded-full bg-[#262238] border border-[#51436C] text-[9px] font-bold text-[#D8C5FF] group-hover:scale-105 transition">
+                🔊 Voz
+              </span>
+            )}
+          </button>
           <div className="flex-1 min-w-0 space-y-1.5">
-            <div className="flex items-center justify-between gap-2">
-              <div className="text-[14px] sm:text-[16px] font-bold text-[#D8C5FF] truncate">
+            <div className="flex items-center justify-between gap-1.5 flex-wrap">
+              <div className="text-[13px] sm:text-[16px] font-bold text-[#D8C5FF] leading-snug break-words">
                 {isPreviewLocked
                   ? `🔒 Nivel ${previewLevel} · Criatura Misteriosa`
                   : `✨ Nivel ${previewLevel} · ${MASCOT_STAGE_NAMES[tier]}`}
               </div>
-              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-[#302747] text-[#E6D9FF] whitespace-nowrap shrink-0">
+              <span className="text-[10px] sm:text-[11px] px-2 py-0.5 rounded-full bg-[#302747] text-[#E6D9FF] whitespace-nowrap shrink-0">
                 Etapa {tier + 1}/20 · Evol. {subLevel}/10{' '}
                 {isPreviewLocked ? '🔒' : '✓'}
               </span>
             </div>
-            <div className="text-[11px] text-[#C7A4FF] truncate">
+            <div className="text-[11px] text-[#C7A4FF] leading-snug break-words">
               {isPreviewLocked
                 ? `Pista (Nv. ${previewLevel}): ${MASCOT_STAGE_HINTS[tier]}`
                 : MASCOT_STAGE_HINTS[tier]}
@@ -2944,7 +3713,14 @@ function MascotGalleryModal({
                 itemTier={itemTier}
                 isSelected={lvl === previewLevel}
                 isItemLocked={lvl > unlockedLevel}
-                onSelect={setPreviewLevel}
+                onSelect={(selectedLvl) => {
+                  setPreviewLevel(selectedLvl);
+                  if (selectedLvl <= unlockedLevel) {
+                    playMascotVoice(selectedLvl, false);
+                  } else {
+                    playUiTap(0);
+                  }
+                }}
               />
             );
           })}
@@ -4303,11 +5079,13 @@ function MascotAvatarSvg({
 
 function ObjectiveEditorModal({
   objective,
+  isNewDraft = false,
   onCancel,
   onSave,
   onAlert,
 }: {
   objective: Objective;
+  isNewDraft?: boolean;
   onCancel: () => void;
   onSave: (input: {
     title: string;
@@ -4315,6 +5093,12 @@ function ObjectiveEditorModal({
     goalAmount: number;
     unitId: string;
     customUnitLabel: string;
+    icon: string;
+    category: string;
+    accentColor: string;
+    bannerId: string;
+    targetDate: string;
+    pledge: string;
   }) => void;
   onAlert: (title: string, message: string) => void;
 }) {
@@ -4329,10 +5113,94 @@ function ObjectiveEditorModal({
   const [customUnitLabel, setCustomUnitLabel] = useState(
     objective.customUnitLabel
   );
+  const [icon, setIcon] = useState(objective.icon || '🎯');
+  const [category, setCategory] = useState(objective.category || 'Personal');
+  const [accentColor, setAccentColor] = useState(
+    objective.accentColor || '#65DB85'
+  );
+  const [bannerId, setBannerId] = useState(objective.bannerId || 'gradient');
+  const [targetDate, setTargetDate] = useState(objective.targetDate || '');
+  const [pledge, setPledge] = useState(objective.pledge || '');
+  const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
 
   const isGoalNumeric =
     goalAmountText.trim() === '' ||
     !Number.isNaN(Number(goalAmountText.replace(',', '.')));
+
+  const parsedGoal = useMemo(() => {
+    const n = Number(goalAmountText.replace(',', '.'));
+    return !Number.isNaN(n) && n > 0 ? n : 1000;
+  }, [goalAmountText]);
+
+  const previewObjective: Objective = useMemo(
+    () => ({
+      ...objective,
+      title: title.trim() || 'Tu Próxima Gran Meta',
+      description: description.trim(),
+      goalAmount: parsedGoal,
+      unitId,
+      customUnitLabel,
+      icon,
+      category: category.trim() || 'Personal',
+      accentColor,
+      bannerId,
+      targetDate,
+      pledge: pledge.trim(),
+    }),
+    [
+      objective,
+      title,
+      description,
+      parsedGoal,
+      unitId,
+      customUnitLabel,
+      icon,
+      category,
+      accentColor,
+      bannerId,
+      targetDate,
+      pledge,
+    ]
+  );
+
+  const previewPreset =
+    BANNER_PRESETS.find((p) => p.id === bannerId) || BANNER_PRESETS[0];
+  const customBannerUrl = bannerId.startsWith('custom:')
+    ? bannerId.slice('custom:'.length)
+    : null;
+  const previewBannerImg = customBannerUrl || previewPreset.imageUrl;
+
+  const dailyPacePreview = useMemo(() => {
+    if (!targetDate) return null;
+    const [y, m, d] = targetDate.split('-').map(Number);
+    if (!y || !m || !d) return null;
+    const target = new Date(y, m - 1, d, 23, 59, 59);
+    const diffDays = Math.ceil(
+      (target.getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+    );
+    if (diffDays <= 0) return null;
+    const rem = Math.max(0, parsedGoal - objective.currentAmount);
+    return {
+      days: diffDays,
+      perDay: formatObjectiveAmount(rem / diffDays, previewObjective),
+    };
+  }, [targetDate, parsedGoal, objective.currentAmount, previewObjective]);
+
+  const applyTemplate = (tplId: string) => {
+    const tpl = OBJECTIVE_TEMPLATES.find((t) => t.id === tplId);
+    if (!tpl) return;
+    setActiveTemplateId(tplId);
+    if (tpl.title) setTitle(tpl.title);
+    setDescription(tpl.description);
+    setIcon(tpl.icon);
+    setCategory(tpl.category);
+    setGoalAmountText(String(tpl.goalAmount));
+    setUnitId(tpl.unitId);
+    setCustomUnitLabel(tpl.customUnitLabel);
+    setBannerId(tpl.bannerId);
+    setAccentColor(tpl.accentColor);
+    setPledge(tpl.pledge);
+  };
 
   const handleSubmit = () => {
     if (!title.trim() || !unitId) {
@@ -4350,7 +5218,7 @@ function ObjectiveEditorModal({
     if (unitId === CUSTOM_UNIT_ID && !customUnitLabel.trim()) {
       onAlert(
         'Falta la unidad',
-        'Escribe una unidad como kg, libros o pasos.'
+        'Escribe una unidad como $, kg, libros o sesiones.'
       );
       return;
     }
@@ -4360,96 +5228,398 @@ function ObjectiveEditorModal({
       goalAmount: parsed,
       unitId,
       customUnitLabel,
+      icon,
+      category,
+      accentColor,
+      bannerId,
+      targetDate,
+      pledge,
     });
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#11121C] flex items-center justify-center p-6 overflow-y-auto">
-      <div className="w-full max-w-md space-y-4">
-        <h2 className="text-[24px] font-bold text-[#F4F1FF]">
-          Personaliza tu objetivo
-        </h2>
-        <p className="text-[13px] text-[#A8A3B8]">
-          Todo queda junto en un solo formulario.
-        </p>
-
-        <div className="space-y-1.5">
-          <label className="text-sm text-[#F4F1FF]">Nombre</label>
-          <input
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Ej. Viaje a Japón"
-            className="w-full h-11 px-3 rounded-[10px] bg-[#1C1C2A] text-[#F4F1FF] border border-[#29283C] focus:outline-none focus:border-[#7549B8]"
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <label className="text-sm text-[#F4F1FF]">Descripción</label>
-          <input
-            type="text"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="¿Para qué estás ahorrando o avanzando?"
-            className="w-full h-11 px-3 rounded-[10px] bg-[#1C1C2A] text-[#F4F1FF] border border-[#29283C] focus:outline-none focus:border-[#7549B8]"
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <label className="text-sm text-[#F4F1FF]">Monto objetivo</label>
-          <input
-            type="text"
-            inputMode="decimal"
-            value={goalAmountText}
-            onChange={(e) => setGoalAmountText(e.target.value)}
-            placeholder="0"
-            style={{ color: isGoalNumeric ? '#F4F1FF' : '#FF4500' }}
-            className="w-full h-11 px-3 rounded-[10px] bg-[#1C1C2A] border border-[#29283C] focus:outline-none focus:border-[#7549B8]"
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <label className="text-sm text-[#F4F1FF]">Unidad</label>
-          <select
-            value={unitId}
-            onChange={(e) => setUnitId(e.target.value)}
-            className="w-full h-11 px-3 rounded-[10px] bg-[#1C1C2A] text-[#F4F1FF] border border-[#29283C] focus:outline-none focus:border-[#7549B8]"
+    <div className="fixed inset-0 z-50 bg-[#0E0E18]/95 backdrop-blur-md flex items-start sm:items-center justify-center p-3 sm:p-5 overflow-y-auto">
+      <div className="w-full max-w-2xl rounded-[24px] border border-[#362E4F] bg-[#171625] p-4 sm:p-6 space-y-4 my-auto shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <h2 className="text-[20px] sm:text-[24px] font-extrabold text-[#F4F1FF] flex items-center gap-2">
+              <span>{isNewDraft ? '✨ Forjar Nuevo Objetivo' : '🎨 Personalizar Objetivo'}</span>
+            </h2>
+            <p className="text-[12px] text-[#A8A3B8]">
+              {isNewDraft
+                ? 'Elige una plantilla inspiradora o diseña tu meta a medida con vista previa en vivo.'
+                : 'Dale identidad visual, fecha meta y una recompensa personal a tu objetivo.'}
+            </p>
+          </div>
+          <button
+            onClick={onCancel}
+            className="w-9 h-9 rounded-[11px] bg-[#262338] text-[#D8C5FF] hover:text-white flex items-center justify-center text-lg shrink-0"
           >
-            {OBJECTIVE_UNITS.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.displayName}
-              </option>
-            ))}
-          </select>
+            ×
+          </button>
         </div>
 
-        {unitId === CUSTOM_UNIT_ID && (
-          <div className="space-y-1.5">
-            <label className="text-sm text-[#F4F1FF]">
-              Unidad personalizada
+        {/* 1-Tap Inspiration Templates */}
+        <div className="space-y-1.5">
+          <div className="text-[10px] font-extrabold uppercase tracking-wider text-[#C7A4FF]">
+            ⚡ Plantillas de Inicio Rápido (1 toque)
+          </div>
+          <div className="flex gap-2 overflow-x-auto pb-1.5 no-scrollbar">
+            {OBJECTIVE_TEMPLATES.map((tpl) => {
+              const isSelected = activeTemplateId === tpl.id;
+              return (
+                <button
+                  key={tpl.id}
+                  type="button"
+                  onClick={() => applyTemplate(tpl.id)}
+                  style={
+                    isSelected
+                      ? {
+                          borderColor: tpl.accentColor,
+                          backgroundColor: '#2A2240',
+                        }
+                      : undefined
+                  }
+                  className={`px-3 py-2 rounded-[12px] border text-left shrink-0 transition flex items-center gap-2 ${
+                    isSelected
+                      ? 'text-white shadow-md'
+                      : 'bg-[#1F1E2E] border-[#2E2B42] text-[#D8D1E5] hover:bg-[#28253B]'
+                  }`}
+                >
+                  <span className="text-base">{tpl.icon}</span>
+                  <div>
+                    <div className="text-[11px] font-bold leading-tight">
+                      {tpl.label.replace(/^[^\s]+\s/, '')}
+                    </div>
+                    <div className="text-[9px] text-[#9E97B0]">
+                      {tpl.category}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Live Interactive Mini-Hero Card Preview */}
+        <div
+          style={{
+            background: `linear-gradient(135deg, ${previewPreset.startColor}, ${previewPreset.endColor})`,
+            borderColor: `${accentColor}70`,
+            boxShadow: `0 8px 24px -6px ${accentColor}33`,
+          }}
+          className="relative rounded-[18px] border p-3.5 overflow-hidden transition-all"
+        >
+          {previewBannerImg && (
+            <img
+              src={previewBannerImg}
+              alt=""
+              className="absolute inset-0 w-full h-full object-cover opacity-65 pointer-events-none"
+            />
+          )}
+          <div className="absolute inset-0 bg-gradient-to-r from-[#131122]/85 via-[#181528]/65 to-[#131122]/85 pointer-events-none" />
+
+          <div className="relative z-10 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div
+                style={{
+                  borderColor: accentColor,
+                  backgroundColor: 'rgba(18, 16, 30, 0.75)',
+                }}
+                className="w-11 h-11 rounded-[14px] border flex items-center justify-center text-[22px] shrink-0"
+              >
+                {icon}
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span
+                    style={{
+                      color: accentColor,
+                      borderColor: `${accentColor}55`,
+                    }}
+                    className="px-2 py-0.2 rounded-full text-[9px] font-extrabold uppercase border bg-black/40"
+                  >
+                    {previewObjective.category}
+                  </span>
+                  {dailyPacePreview && (
+                    <span className="text-[9px] text-[#FFE082] font-semibold">
+                      ⏳ {dailyPacePreview.days}d · {dailyPacePreview.perDay}/día
+                    </span>
+                  )}
+                </div>
+                <div className="text-[16px] font-extrabold text-white truncate">
+                  {previewObjective.title}
+                </div>
+                <div className="text-[11px] text-[#D8D1E5] truncate">
+                  {previewObjective.pledge
+                    ? `🎁 Premio: ${previewObjective.pledge}`
+                    : previewObjective.description || 'Vista previa en vivo de tu tarjeta'}
+                </div>
+              </div>
+            </div>
+
+            <div className="text-right shrink-0">
+              <div className="text-[9px] font-bold text-[#DEC2FF] uppercase">
+                META
+              </div>
+              <div
+                style={{ color: accentColor }}
+                className="text-[16px] font-extrabold tabular-nums"
+              >
+                {formatObjectiveAmount(parsedGoal, previewObjective)}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Form Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-[#E2D8FF]">
+              Nombre del objetivo
             </label>
             <input
               type="text"
-              value={customUnitLabel}
-              onChange={(e) => setCustomUnitLabel(e.target.value)}
-              placeholder="kg, libros, pasos…"
-              className="w-full h-11 px-3 rounded-[10px] bg-[#1C1C2A] text-[#F4F1FF] border border-[#29283C] focus:outline-none focus:border-[#7549B8]"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Ej. Viaje a Japón, Fondo de Paz…"
+              className="w-full h-10 px-3 rounded-[10px] bg-[#11111C] text-[#F4F1FF] text-sm border border-[#2E2C44] focus:outline-none focus:border-[#9B6BFF]"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-[#E2D8FF]">
+              Categoría / Etiqueta
+            </label>
+            <input
+              type="text"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              placeholder="Finanzas, Aventura, Salud, Hábito…"
+              className="w-full h-10 px-3 rounded-[10px] bg-[#11111C] text-[#F4F1FF] text-sm border border-[#2E2C44] focus:outline-none focus:border-[#9B6BFF]"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-[#E2D8FF]">
+              Monto o cantidad meta
+            </label>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={goalAmountText}
+              onChange={(e) => setGoalAmountText(e.target.value)}
+              placeholder="1000"
+              style={{ color: isGoalNumeric ? '#F4F1FF' : '#FF4500' }}
+              className="w-full h-10 px-3 rounded-[10px] bg-[#11111C] text-sm border border-[#2E2C44] focus:outline-none focus:border-[#9B6BFF]"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-[#E2D8FF]">
+                Unidad
+              </label>
+              <select
+                value={unitId}
+                onChange={(e) => setUnitId(e.target.value)}
+                className="w-full h-10 px-2.5 rounded-[10px] bg-[#11111C] text-[#F4F1FF] text-xs border border-[#2E2C44] focus:outline-none focus:border-[#9B6BFF]"
+              >
+                {OBJECTIVE_UNITS.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.displayName}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {unitId === CUSTOM_UNIT_ID ? (
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-[#E2D8FF]">
+                  Símbolo / Sufijo
+                </label>
+                <input
+                  type="text"
+                  value={customUnitLabel}
+                  onChange={(e) => setCustomUnitLabel(e.target.value)}
+                  placeholder="$, km, libros…"
+                  className="w-full h-10 px-3 rounded-[10px] bg-[#11111C] text-[#F4F1FF] text-sm border border-[#2E2C44] focus:outline-none focus:border-[#9B6BFF]"
+                />
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-[#E2D8FF]">
+                  Fecha límite (opc.)
+                </label>
+                <input
+                  type="date"
+                  value={targetDate}
+                  onChange={(e) => setTargetDate(e.target.value)}
+                  className="w-full h-10 px-2.5 rounded-[10px] bg-[#11111C] text-[#F4F1FF] text-xs border border-[#2E2C44] focus:outline-none focus:border-[#9B6BFF]"
+                />
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Motivation, Pledge & Optional Target Date */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-[#E2D8FF]">
+              Propósito (¿Por qué es importante?)
+            </label>
+            <input
+              type="text"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Ej. Vivir una experiencia inolvidable…"
+              className="w-full h-10 px-3 rounded-[10px] bg-[#11111C] text-[#F4F1FF] text-sm border border-[#2E2C44] focus:outline-none focus:border-[#9B6BFF]"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-[#FFE082]">
+              🎁 Tu premio o promesa al lograrlo
+            </label>
+            <input
+              type="text"
+              value={pledge}
+              onChange={(e) => setPledge(e.target.value)}
+              placeholder="Ej. Cena especial, día libre, festejar…"
+              className="w-full h-10 px-3 rounded-[10px] bg-[#11111C] text-[#F4F1FF] text-sm border border-[#2E2C44] focus:outline-none focus:border-[#FFD54F]"
+            />
+          </div>
+        </div>
+
+        {unitId === CUSTOM_UNIT_ID && (
+          <div className="flex items-center justify-between gap-3 p-2.5 rounded-[12px] bg-[#12111D] border border-[#29263E]">
+            <div className="text-xs text-[#C8C2D6]">
+              ⏳ <strong>Fecha meta (opcional)</strong>: calcula tu ritmo diario sugerido
+            </div>
+            <input
+              type="date"
+              value={targetDate}
+              onChange={(e) => setTargetDate(e.target.value)}
+              className="h-9 px-2.5 rounded-[9px] bg-[#1C1B2B] text-[#F4F1FF] text-xs border border-[#383350]"
             />
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-3 pt-3">
+        {/* Visual Identity: Icon + Accent Color + Atmospheric Banner */}
+        <div className="space-y-3 pt-1 border-t border-[#29263E]">
+          {/* Icon Picker */}
+          <div className="space-y-1.5">
+            <div className="text-[11px] font-bold text-[#C7A4FF]">
+              EMBLEMA DEL OBJETIVO
+            </div>
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+              {OBJECTIVE_ICONS.map((ic) => {
+                const isSelected = icon === ic;
+                return (
+                  <button
+                    key={ic}
+                    type="button"
+                    onClick={() => setIcon(ic)}
+                    style={
+                      isSelected
+                        ? {
+                            borderColor: accentColor,
+                            backgroundColor: '#2E2546',
+                          }
+                        : undefined
+                    }
+                    className={`w-9 h-9 rounded-[10px] border text-lg flex items-center justify-center shrink-0 transition ${
+                      isSelected
+                        ? 'scale-110 shadow'
+                        : 'bg-[#12111D] border-[#28253B] hover:bg-[#1E1C2E]'
+                    }`}
+                  >
+                    {ic}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Accent Color & Banner Preset Row */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <div className="text-[11px] font-bold text-[#C7A4FF]">
+                COLOR DE ENERGÍA
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                {OBJECTIVE_ACCENT_THEMES.map((theme) => {
+                  const isSelected = accentColor === theme.id;
+                  return (
+                    <button
+                      key={theme.id}
+                      type="button"
+                      onClick={() => setAccentColor(theme.id)}
+                      style={{
+                        backgroundColor: theme.primary,
+                        boxShadow: isSelected
+                          ? `0 0 0 3px #171625, 0 0 0 5px ${theme.primary}`
+                          : undefined,
+                      }}
+                      title={theme.name}
+                      className={`w-7 h-7 rounded-full transition ${
+                        isSelected ? 'scale-110' : 'opacity-75 hover:opacity-100'
+                      }`}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="text-[11px] font-bold text-[#C7A4FF]">
+                ATMÓSFERA DE FONDO
+              </div>
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                {BANNER_PRESETS.map((preset) => {
+                  const isSelected = bannerId === preset.id;
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => setBannerId(preset.id)}
+                      style={{
+                        background: `linear-gradient(135deg, ${preset.startColor}, ${preset.endColor})`,
+                        borderColor: isSelected ? accentColor : '#383350',
+                      }}
+                      className={`px-2.5 py-1.5 rounded-[10px] border text-[11px] font-bold text-white shrink-0 flex items-center gap-1 transition ${
+                        isSelected ? 'scale-105 shadow-md' : 'opacity-80 hover:opacity-100'
+                      }`}
+                    >
+                      <span>{preset.emoji}</span>
+                      <span>{preset.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer Buttons */}
+        <div className="grid grid-cols-2 gap-3 pt-2">
           <button
+            type="button"
             onClick={onCancel}
-            className="h-11 rounded-[10px] bg-[#302E42] text-[#F4F1FF] font-medium hover:bg-[#3d3b54] transition"
+            className="h-11 rounded-[12px] bg-[#28253B] text-[#F4F1FF] font-medium hover:bg-[#34304C] transition"
           >
             Cancelar
           </button>
           <button
+            type="button"
             onClick={handleSubmit}
-            className="h-11 rounded-[10px] bg-[#7549B8] text-white font-bold hover:bg-[#8658cc] transition"
+            style={{
+              background: `linear-gradient(90deg, #7549B8, #9B6BFF)`,
+            }}
+            className="h-11 rounded-[12px] text-white font-extrabold hover:brightness-110 active:scale-95 transition shadow-[0_4px_16px_rgba(117,73,184,0.4)]"
           >
-            Guardar
+            {isNewDraft ? '🚀 Crear Objetivo' : '✓ Guardar Cambios'}
           </button>
         </div>
       </div>
