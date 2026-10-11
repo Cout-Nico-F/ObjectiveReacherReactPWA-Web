@@ -152,19 +152,20 @@
                     </VerticalStackLayout>
                 </Border>
 
-                <Border Padding="14" Stroke="{StaticResource DashboardOutline}" StrokeShape="RoundRectangle 18" BackgroundColor="{StaticResource DashboardPanel}">
-                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-                        <Label Text="{Binding MascotEmoji}" FontSize="38" VerticalOptions="Center" />
-                        <VerticalStackLayout Grid.Column="1" Spacing="4" VerticalOptions="Center">
-                            <Label Text="{Binding ExperienceText}" FontSize="15" FontAttributes="Bold" TextColor="#D8C5FF" />
-                            <ProgressBar Progress="{Binding LevelProgress}" ProgressColor="#B58BFF" BackgroundColor="#38324E" HeightRequest="7" />
-                            <Label Text="{Binding LevelProgressText}" FontSize="10" TextColor="{StaticResource DashboardMutedText}" />
-                            <Label Text="{Binding MascotMessage}" FontSize="12" TextColor="{StaticResource DashboardMutedText}" />
-                        </VerticalStackLayout>
-                        <VerticalStackLayout Grid.Column="2" Spacing="4" HorizontalOptions="End" VerticalOptions="Center">
-                            <Label Text="{x:Static helpers:IconFont.Fire}" FontFamily="FAFreeSolid" FontSize="11" TextColor="#FFC45D" />
-                            <Label Text="{Binding StreakText}" FontSize="11" TextColor="{StaticResource DashboardText}" HorizontalTextAlignment="End" />
-                        </VerticalStackLayout>
+                <Border Padding="14" Stroke="{StaticResource DashboardOutline}" StrokeShape="RoundRectangle 18" BackgroundColor="{StaticResource DashboardPanel}" VerticalOptions="Start">
+                    <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="12" RowSpacing="4" VerticalOptions="Center">
+                        <controls:MascotAvatarView Grid.RowSpan="4" Level="{Binding Level}" WidthRequest="56" HeightRequest="56" VerticalOptions="Center" HorizontalOptions="Center" SemanticProperties.Description="{Binding MascotMessage}" />
+                        <Grid Grid.Column="1" Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="8" VerticalOptions="Center">
+                            <Label Text="{Binding ExperienceText}" FontSize="15" FontAttributes="Bold" TextColor="#D8C5FF" VerticalOptions="Center" />
+                            <Label Grid.Column="1" Text="{Binding LevelProgressText}" FontSize="10" TextColor="{StaticResource DashboardMutedText}" HorizontalTextAlignment="End" VerticalOptions="Center" />
+                        </Grid>
+                        <ProgressBar Grid.Column="1" Grid.Row="1" Progress="{Binding LevelProgress}" ProgressColor="#B58BFF" BackgroundColor="#38324E" HeightRequest="7" VerticalOptions="Center" />
+                        <Label Grid.Column="1" Grid.Row="2" Text="{Binding MascotMessage}" FontSize="12" TextColor="{StaticResource DashboardMutedText}" VerticalOptions="Center" />
+                        <HorizontalStackLayout Grid.Column="1" Grid.Row="3" Spacing="6" VerticalOptions="Center">
+                            <Label Text="{x:Static helpers:IconFont.Fire}" FontFamily="FAFreeSolid" FontSize="11" TextColor="#FFC45D" VerticalOptions="Center" />
+                            <Label Text="{Binding StreakText}" FontSize="11" TextColor="{StaticResource DashboardText}" VerticalOptions="Center" />
+                            <Button Text="VER EVOLUCIONES" Clicked="OnMascotGalleryClicked" FontSize="10" FontAttributes="Bold" TextColor="#C7A4FF" BackgroundColor="Transparent" Padding="6,0" VerticalOptions="Center" />
+                        </HorizontalStackLayout>
                     </Grid>
                 </Border>
 

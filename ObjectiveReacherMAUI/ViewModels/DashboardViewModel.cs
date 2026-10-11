@@ -270,21 +270,52 @@ public sealed class DashboardViewModel : INotifyPropertyChanged
         }
     }
 
-    public string MascotEmoji => Level switch
+    public string MascotEmoji => ((Math.Clamp(Level, 1, 200) - 1) / 10) switch
     {
-        >= 10 => "🐉",
-        >= 5 => "🐯",
-        >= 2 => "🐱",
-        _ => "🌱"
+        0 => "🌱",
+        1 => "🐱",
+        2 => "🦊",
+        3 => "🦉",
+        4 => "🐺",
+        5 => "🐯",
+        6 => "🦁",
+        7 => "🦌",
+        8 => "🦅",
+        9 => "🪽",
+        10 => "🔥",
+        11 => "💎",
+        12 => "🐉",
+        13 => "⚡",
+        14 => "🌌",
+        15 => "🔮",
+        16 => "✨",
+        17 => "🌊",
+        18 => "👑",
+        _ => "🪐"
     };
 
-    public string MascotMessage => Level switch
+    public string MascotMessage => ((Math.Clamp(Level, 1, 200) - 1) / 10) switch
     {
-        >= 121 => "¡Leyenda absoluta! Has superado 120 niveles.",
-        >= 10 => "¡Eres imparable!",
-        >= 5 => "¡Tu esfuerzo está creciendo!",
-        >= 2 => "¡Buen comienzo, sigue así!",
-        _ => "Tu viaje acaba de comenzar 💪"
+        0 => "Brote Esmeralda · Tu viaje acaba de comenzar 💪",
+        1 => "Espíritu Neko · ¡Buen comienzo, sigue así!",
+        2 => "Zorro Kitsune · Tu constancia multiplica tu energía",
+        3 => "Búho Sabio · Visión clara hacia tu objetivo",
+        4 => "Lobo Boreal · Paso firme bajo la aurora",
+        5 => "Tigre Guardián · ¡Tu esfuerzo está creciendo!",
+        6 => "León Solar · Tu disciplina brilla con fuerza",
+        7 => "Ciervo del Bosque · Armonía y avance constante",
+        8 => "Fénix Carmesí · Volando alto con alas de fuego",
+        9 => "Gólem de Cristal · Fortaleza rúnica inquebrantable",
+        10 => "Kraken Abisal · ¡Has superado el nivel 100!",
+        11 => "Cronos Autómata · Dominando cada segundo hacia la meta",
+        12 => "Dragón Imperial · ¡Has superado los 120 niveles!",
+        13 => "Polilla Astral · Alas lunares que cruzan el cosmos",
+        14 => "Serafín Ophanim · Seis alas y anillos de fuego sagrado",
+        15 => "Hidra Tricéfala · Tres voluntades unidas por tu objetivo",
+        16 => "Djinn Astral · Poder místico desatado a tu favor",
+        17 => "Valkiria Celestial · Honor y victoria en cada aporte",
+        18 => "Arquitecto Merkaba · Geometría sagrada del progreso",
+        _ => "¡Singularidad Cósmica! Leyenda suprema del universo"
     };
 
     public int StreakDays => CalculateCurrentStreak();
@@ -321,7 +352,6 @@ public sealed class DashboardViewModel : INotifyPropertyChanged
             _ => null
         };
 
-    // Normalized offsets are converted to bounded pixels by the reusable image control.
     public double BannerTranslationX => _objective.BannerOffsetX;
 
     public double BannerTranslationY => _objective.BannerOffsetY;
@@ -979,7 +1009,6 @@ public sealed class DashboardViewModel : INotifyPropertyChanged
         var path = Path.Combine(FileSystem.AppDataDirectory, relativePath);
         return File.Exists(path) ? ImageSource.FromFile(path) : null;
     }
-
 
     private static LinearGradientBrush CreateHeroBrush(string start, string end) => new()
     {

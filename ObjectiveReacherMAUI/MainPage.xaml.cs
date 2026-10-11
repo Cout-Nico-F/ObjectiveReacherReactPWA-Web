@@ -368,6 +368,11 @@ namespace ObjectiveReacherMAUI
             await Navigation.PushModalAsync(new AchievementsPage(_viewModel));
         }
 
+        private async void OnMascotGalleryClicked(object? sender, EventArgs e)
+        {
+            await Navigation.PushModalAsync(new MascotGalleryPage(_viewModel.Level));
+        }
+
         private async void OnAddObjectiveClicked(object? sender, EventArgs e)
         {
             await _viewModel.AddObjectiveAsync();
