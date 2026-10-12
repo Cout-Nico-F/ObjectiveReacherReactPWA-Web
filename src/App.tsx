@@ -68,13 +68,18 @@ import {
   ObjectiveEntry,
 } from './types';
 
-const STORAGE_KEY = 'objectivereacher_dashboard_v5';
+const STORAGE_KEY = 'objectivereacher_dashboard_v6';
+const LEGACY_STORAGE_KEYS = [
+  'objectivereacher_dashboard_v5',
+  'objectivereacher_dashboard_v4',
+  'objectivereacher_dashboard_v3',
+];
 
 function createEmptyState(): DashboardState {
   const id = crypto.randomUUID();
   const nowIso = new Date().toISOString();
   return {
-    version: 5,
+    version: 6,
     objectives: [
       {
         id,
@@ -105,14 +110,14 @@ function createEmptyState(): DashboardState {
       bonusXp: 0,
       lastPetDateKey: '',
       claimedQuestsByDay: {},
-      gems: 80,
+      gems: 0,
       unlockedSkins: ['default'],
       equippedSkinId: 'default',
       unlockedVaultIds: ['frame_default', 'snd_kalimba_zen', 'title_seed'],
       equippedCardFrameId: 'frame_default',
       equippedSoundPackId: 'snd_kalimba_zen',
       equippedTitleId: 'title_seed',
-      streakShields: 1,
+      streakShields: 0,
       xpBoostUntil: '',
       gemMagnetUntil: '',
       isIndieFounder: false,
@@ -181,12 +186,15 @@ function recalculateAllXp(objectives: Objective[], bonusXp = 0): number {
 
 function loadState(): DashboardState {
   try {
+    for (const legacyKey of LEGACY_STORAGE_KEYS) {
+      localStorage.removeItem(legacyKey);
+    }
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return createEmptyState();
     const parsed = JSON.parse(raw) as DashboardState;
     if (
       parsed &&
-      parsed.version === 5 &&
+      parsed.version === 6 &&
       Array.isArray(parsed.objectives) &&
       parsed.objectives.length > 0 &&
       parsed.gamification &&
@@ -236,7 +244,7 @@ function loadState(): DashboardState {
       parsed.gamification.gems =
         typeof parsed.gamification.gems === 'number'
           ? parsed.gamification.gems
-          : 80;
+          : 0;
       parsed.gamification.unlockedSkins = Array.isArray(
         parsed.gamification.unlockedSkins
       )
@@ -258,7 +266,7 @@ function loadState(): DashboardState {
       parsed.gamification.streakShields =
         typeof parsed.gamification.streakShields === 'number'
           ? parsed.gamification.streakShields
-          : 1;
+          : 0;
       parsed.gamification.xpBoostUntil =
         parsed.gamification.xpBoostUntil || '';
       parsed.gamification.gemMagnetUntil =
@@ -587,8 +595,6 @@ export function App() {
   const [asmrFilterCategory, setAsmrFilterCategory] = useState<
     'all' | 'unlocked' | 'taps' | 'skins'
   >('all');
-  const [isAndroidSigningModalOpen, setIsAndroidSigningModalOpen] =
-    useState<boolean>(false);
 
   // Save state to localStorage
   useEffect(() => {
@@ -3000,23 +3006,6 @@ export function App() {
                 Explora Skins, Buffs y cómo apoyar.
               </div>
             </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                playUiTap(2);
-                setIsNavigationOpen(false);
-                setIsAndroidSigningModalOpen(true);
-              }}
-              className="w-full rounded-[12px] border border-[#458B6E] bg-[#192B26] px-3 py-2.5 text-left flex items-center justify-between gap-2 hover:bg-[#213B34] transition"
-            >
-              <span className="text-[11px] font-extrabold text-[#9AF0AE]">
-                🤖 Builds Android (.APK)
-              </span>
-              <span className="text-[10px] font-mono-tabular text-[#D4FBE1]">
-                Release & Debug
-              </span>
-            </button>
           </div>
         </aside>
 
@@ -3024,9 +3013,9 @@ export function App() {
         <main className="px-2.5 sm:px-4 pb-16 lg:pb-8 space-y-3.5 min-w-0">
           {/* Sticky Header Bar: Relative Full-Width Single-Row Layout with Notch Safe-Area Protection */}
           <div className="sticky top-0 z-20 -mx-2.5 sm:-mx-4 pt-[max(clamp(0.42rem,1.8vw,0.6rem),calc(env(safe-area-inset-top,0px)+0.35rem))] pb-[clamp(0.42rem,1.8vw,0.6rem)] pl-[max(clamp(0.5rem,2.4vw,1rem),calc(env(safe-area-inset-left,0px)+0.35rem))] pr-[max(clamp(0.5rem,2.4vw,1rem),calc(env(safe-area-inset-right,0px)+0.35rem))] bg-[#11121C]/95 backdrop-blur-md border-b border-[#29283C]/85 shadow-[0_6px_20px_rgba(7,8,16,0.45)]">
-            <div className="flex flex-nowrap items-center justify-between w-full gap-[clamp(0.2rem,1.1vw,0.45rem)]">
+            <div className="flex flex-nowrap items-center justify-between w-full gap-[clamp(0.35rem,1.6vw,0.65rem)]">
               {/* Left: Menu Drawer Button + Fluid Brand Emblem & Name */}
-              <div className="flex items-center gap-[clamp(0.2rem,1.1vw,0.45rem)] flex-1 sm:flex-initial min-w-0">
+              <div className="flex items-center gap-[clamp(0.28rem,1.3vw,0.5rem)] min-w-0 flex-1 sm:flex-initial">
                 <button
                   onClick={() => {
                     playUiTap(1);
@@ -3034,20 +3023,20 @@ export function App() {
                     setIsNavigationOpen(true);
                   }}
                   aria-label="Abrir navegación"
-                  className="lg:hidden w-[clamp(1.7rem,7.8vw,2.15rem)] h-[clamp(1.7rem,7.8vw,2.15rem)] rounded-[clamp(7px,2.2vw,10px)] bg-[#242238] border border-[#383252] text-[#D9C9FF] text-[clamp(0.75rem,3.4vw,0.9rem)] flex items-center justify-center shrink-0 hover:bg-[#302747] active:scale-95 transition"
+                  className="lg:hidden w-[clamp(1.85rem,8vw,2.2rem)] h-[clamp(1.85rem,8vw,2.2rem)] rounded-[clamp(8px,2.2vw,10px)] bg-[#242238] border border-[#383252] text-[#D9C9FF] text-[clamp(0.8rem,3.5vw,0.95rem)] flex items-center justify-center shrink-0 hover:bg-[#302747] active:scale-95 transition"
                 >
                   ☰
                 </button>
 
-                <div className="flex-1 sm:flex-initial min-w-0 h-[clamp(1.7rem,7.8vw,2.15rem)] inline-flex items-center justify-center sm:justify-start gap-[clamp(0.25rem,1.2vw,0.45rem)] px-[clamp(0.35rem,1.6vw,0.65rem)] rounded-[clamp(7px,2.2vw,10px)] bg-[#1A1829] border border-[#453A6B] shadow-[0_2px_10px_rgba(0,0,0,0.3)]">
-                  <span className="w-[clamp(1.05rem,4.8vw,1.35rem)] h-[clamp(1.05rem,4.8vw,1.35rem)] rounded-[clamp(5px,1.4vw,7px)] bg-gradient-to-br from-[#7549B8] to-[#3B8D61] flex items-center justify-center text-[clamp(0.6rem,2.7vw,0.75rem)] leading-none shrink-0">
+                <div className="h-[clamp(1.85rem,8vw,2.2rem)] inline-flex items-center gap-[clamp(0.3rem,1.4vw,0.5rem)] px-[clamp(0.45rem,2vw,0.75rem)] rounded-[clamp(8px,2.2vw,10px)] bg-[#1A1829] border border-[#453A6B] shadow-[0_2px_10px_rgba(0,0,0,0.3)] min-w-0">
+                  <span className="w-[clamp(1.15rem,5vw,1.4rem)] h-[clamp(1.15rem,5vw,1.4rem)] rounded-[clamp(5px,1.5vw,7px)] bg-gradient-to-br from-[#7549B8] to-[#3B8D61] flex items-center justify-center text-[clamp(0.65rem,2.8vw,0.8rem)] leading-none shrink-0">
                     🎯
                   </span>
-                  <div className="flex flex-col min-[520px]:flex-row min-[520px]:items-center min-[520px]:gap-1 leading-[1.02] min-w-0">
-                    <span className="text-[clamp(0.54rem,2.45vw,0.75rem)] font-black uppercase tracking-[0.04em] sm:tracking-[0.06em] text-[#F4F1FF] truncate">
+                  <div className="flex items-center gap-[clamp(0.2rem,0.9vw,0.35rem)] leading-none min-w-0">
+                    <span className="text-[clamp(0.62rem,2.75vw,0.8rem)] font-black uppercase tracking-[0.04em] sm:tracking-[0.06em] text-[#F4F1FF] truncate">
                       OBJECTIVE
                     </span>
-                    <span className="text-[clamp(0.54rem,2.45vw,0.75rem)] font-black uppercase tracking-[0.05em] sm:tracking-[0.08em] text-[#82E59B] truncate">
+                    <span className="text-[clamp(0.62rem,2.75vw,0.8rem)] font-black uppercase tracking-[0.05em] sm:tracking-[0.08em] text-[#82E59B] truncate">
                       REACHER
                     </span>
                   </div>
@@ -3072,35 +3061,22 @@ export function App() {
                 )}
               </div>
 
-              {/* Right Quick Toolbar: ASMR + Gems + Music + Sound + History */}
-              <div className="flex items-center justify-end gap-[clamp(0.18rem,1vw,0.38rem)] flex-[1.35] sm:flex-initial min-w-0">
-                <button
-                  onClick={openAndScrollToAsmrSanctuary}
-                  title="Ir al Clicker ASMR & Orbes de Calma (16 estilos desbloqueables)"
-                  className="flex-1 sm:flex-initial h-[clamp(1.7rem,7.8vw,2.15rem)] px-[clamp(0.35rem,1.6vw,0.65rem)] rounded-[clamp(7px,2.2vw,10px)] bg-gradient-to-r from-[#1A333D] to-[#262042] border border-[#64D8FF]/70 hover:border-[#82E59B] text-[#E0F7FA] text-[clamp(0.56rem,2.5vw,0.72rem)] font-extrabold flex items-center justify-center gap-[clamp(0.18rem,0.9vw,0.32rem)] transition min-w-0 shadow-[0_2px_10px_rgba(100,216,255,0.2)] active:scale-95"
-                >
-                  <span className="text-[clamp(0.65rem,2.8vw,0.8rem)] leading-none shrink-0">
-                    {activeAsmrTextureObj.emoji}
-                  </span>
-                  <span className="font-extrabold tracking-tight text-[#64D8FF] truncate">
-                    ASMR
-                  </span>
-                </button>
-
+              {/* Right Quick Toolbar: Gems + Music + Sound + History */}
+              <div className="flex items-center justify-end gap-[clamp(0.22rem,1.1vw,0.42rem)] shrink-0">
                 <button
                   onClick={() => openIndieShop('skins')}
                   title={`Abrir Santuario Indie (${gems.toLocaleString()} gemas): Skins, Buffs y Apoyo al Creador`}
-                  className="flex-1 sm:flex-initial h-[clamp(1.7rem,7.8vw,2.15rem)] px-[clamp(0.35rem,1.6vw,0.65rem)] rounded-[clamp(7px,2.2vw,10px)] bg-gradient-to-r from-[#2B2144] to-[#212B38] border border-[#65499C] hover:border-[#B58BFF] text-[#F4F1FF] text-[clamp(0.56rem,2.5vw,0.72rem)] font-extrabold flex items-center justify-center gap-[clamp(0.18rem,0.9vw,0.32rem)] transition min-w-0 shadow-[0_2px_10px_rgba(140,92,224,0.22)] active:scale-95"
+                  className="h-[clamp(1.85rem,8vw,2.2rem)] px-[clamp(0.45rem,1.9vw,0.75rem)] rounded-[clamp(8px,2.2vw,10px)] bg-gradient-to-r from-[#2B2144] to-[#212B38] border border-[#65499C] hover:border-[#B58BFF] text-[#F4F1FF] text-[clamp(0.62rem,2.7vw,0.78rem)] font-extrabold flex items-center justify-center gap-[clamp(0.22rem,1vw,0.35rem)] transition shrink-0 shadow-[0_2px_10px_rgba(140,92,224,0.22)] active:scale-95"
                 >
-                  <span className="text-[clamp(0.62rem,2.7vw,0.78rem)] leading-none shrink-0">
+                  <span className="text-[clamp(0.68rem,2.9vw,0.82rem)] leading-none shrink-0">
                     💎
                   </span>
-                  <span className="font-mono-tabular text-[#9AF0AE] truncate">
+                  <span className="font-mono-tabular text-[#9AF0AE]">
                     {gems >= 10000
                       ? `${(gems / 1000).toFixed(gems >= 100000 ? 0 : 1)}k`
                       : gems}
                   </span>
-                  <span className="hidden md:inline text-[10px] font-bold text-[#D8C5FF]">
+                  <span className="hidden sm:inline text-[10px] font-bold text-[#D8C5FF]">
                     · Tienda
                   </span>
                 </button>
@@ -3121,7 +3097,7 @@ export function App() {
                           currentObjective.accentColor
                         )})`
                   }
-                  className={`w-[clamp(1.7rem,7.8vw,2.15rem)] h-[clamp(1.7rem,7.8vw,2.15rem)] rounded-[clamp(7px,2.2vw,10px)] text-[clamp(0.7rem,3.1vw,0.88rem)] flex items-center justify-center transition shrink-0 border ${
+                  className={`w-[clamp(1.85rem,8vw,2.2rem)] h-[clamp(1.85rem,8vw,2.2rem)] rounded-[clamp(8px,2.2vw,10px)] text-[clamp(0.75rem,3.3vw,0.92rem)] flex items-center justify-center transition shrink-0 border ${
                     sensoryPrefs.musicEnabled
                       ? 'bg-gradient-to-r from-[#2D2149] to-[#1D352E] border-[#82E59B]/60 text-[#9AF0AE] shadow-[0_0_10px_rgba(130,229,155,0.25)]'
                       : 'bg-[#1A1928] border-[#29283C] text-[#7D7894] hover:bg-[#242238] hover:text-[#D9C9FF]'
@@ -3142,7 +3118,7 @@ export function App() {
                       ? 'Efectos de sonido y vibración activos (toca para silenciar)'
                       : 'Sonido y vibración en silencio (toca para activar)'
                   }
-                  className={`w-[clamp(1.7rem,7.8vw,2.15rem)] h-[clamp(1.7rem,7.8vw,2.15rem)] rounded-[clamp(7px,2.2vw,10px)] text-[clamp(0.7rem,3.1vw,0.88rem)] flex items-center justify-center transition shrink-0 border ${
+                  className={`w-[clamp(1.85rem,8vw,2.2rem)] h-[clamp(1.85rem,8vw,2.2rem)] rounded-[clamp(8px,2.2vw,10px)] text-[clamp(0.75rem,3.3vw,0.92rem)] flex items-center justify-center transition shrink-0 border ${
                     sensoryPrefs.soundEnabled
                       ? 'bg-[#242238] border-[#3E355B] text-[#D9C9FF] hover:bg-[#302747]'
                       : 'bg-[#1A1928] border-[#29283C] text-[#7D7894] hover:bg-[#242238]'
@@ -3159,7 +3135,7 @@ export function App() {
                   }}
                   aria-label="Abrir historial de entradas"
                   title="Ver historial de movimientos"
-                  className="lg:hidden w-[clamp(1.7rem,7.8vw,2.15rem)] h-[clamp(1.7rem,7.8vw,2.15rem)] rounded-[clamp(7px,2.2vw,10px)] bg-[#242238] border border-[#383252] text-[#D9C9FF] text-[clamp(0.72rem,3.2vw,0.88rem)] flex items-center justify-center shrink-0 hover:bg-[#302747] active:scale-95 transition"
+                  className="lg:hidden w-[clamp(1.85rem,8vw,2.2rem)] h-[clamp(1.85rem,8vw,2.2rem)] rounded-[clamp(8px,2.2vw,10px)] bg-[#242238] border border-[#383252] text-[#D9C9FF] text-[clamp(0.78rem,3.4vw,0.92rem)] flex items-center justify-center shrink-0 hover:bg-[#302747] active:scale-95 transition"
                 >
                   ☷
                 </button>
@@ -5031,16 +5007,6 @@ export function App() {
                 >
                   💖 Apoyar al Dev
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    playUiTap(2);
-                    setIsAndroidSigningModalOpen(true);
-                  }}
-                  className="px-3 py-2 rounded-[11px] bg-[#192B26] border border-[#458B6E] text-[#9AF0AE] text-[11px] font-extrabold hover:bg-[#213B34] transition"
-                >
-                  🤖 Clave & .APK Signed
-                </button>
               </div>
             </div>
           </div>
@@ -5486,135 +5452,6 @@ export function App() {
               >
                 {confirmDialog.confirmText}
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal: Android Signing Keystore & Separate Release / Debug APKs (com.cnf.objectiveReacher) */}
-      {isAndroidSigningModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
-          <div className="w-full max-w-xl rounded-[22px] border border-[#458B6E] bg-[#151724] p-4 sm:p-6 space-y-4 my-auto shadow-2xl">
-            <div className="flex items-start justify-between gap-2">
-              <div className="space-y-0.5">
-                <div className="text-[10px] font-extrabold uppercase tracking-wider text-[#82E59B]">
-                  🤖 BUILDS ANDROID OFICIALES · RELEASE & DEBUG SEPARADOS
-                </div>
-                <h3 className="text-lg sm:text-xl font-extrabold text-[#F4F1FF]">
-                  com.cnf.objectiveReacher (.apk Release & Debug)
-                </h3>
-              </div>
-              <button
-                onClick={() => setIsAndroidSigningModalOpen(false)}
-                className="px-3 py-1.5 rounded-[10px] bg-[#262338] text-[#D8C5FF] text-xs font-bold hover:text-white"
-              >
-                ← Volver
-              </button>
-            </div>
-
-            <p className="text-xs text-[#C8C2D8] leading-relaxed">
-              Ambos APKs incluyen la última versión compilada con soporte de notch y barra fluida. Elige la variante <strong>Release</strong> (firmada para producción) o <strong>Debug</strong> (con inspector WebView activo):
-            </p>
-
-            {/* Separate APK Download Cards: Release vs Debug */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <a
-                href="/android-signing/com.cnf.objectiveReacher-release-signed.apk"
-                download="com.cnf.objectiveReacher-release-signed.apk"
-                className="p-3 rounded-[14px] bg-gradient-to-r from-[#215E46] to-[#2F7D5D] border border-[#82E59B] text-white font-extrabold text-xs flex flex-col items-center justify-center gap-1 hover:brightness-110 transition shadow"
-              >
-                <div className="flex items-center gap-1.5">
-                  <span>🚀</span>
-                  <span>Descargar APK Release (.apk)</span>
-                </div>
-                <span className="text-[10px] font-normal text-[#D4FBE1]">
-                  Firmado v1/v2/v3 · Clave producción
-                </span>
-              </a>
-
-              <a
-                href="/android-signing/com.cnf.objectiveReacher-debug.apk"
-                download="com.cnf.objectiveReacher-debug.apk"
-                className="p-3 rounded-[14px] bg-gradient-to-r from-[#34265C] to-[#4A3580] border border-[#B58BFF] text-white font-extrabold text-xs flex flex-col items-center justify-center gap-1 hover:brightness-110 transition shadow"
-              >
-                <div className="flex items-center gap-1.5">
-                  <span>🛠️</span>
-                  <span>Descargar APK Debug (.apk)</span>
-                </div>
-                <span className="text-[10px] font-normal text-[#E6D9FF]">
-                  debuggable=true · WebView Inspect
-                </span>
-              </a>
-            </div>
-
-            {/* Keystores & Complete Kit Downloads */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <a
-                href="/android-signing/com.cnf.objectiveReacher-signing-kit.zip"
-                download="com.cnf.objectiveReacher-signing-kit.zip"
-                className="p-2.5 rounded-[12px] bg-[#1E2726] border border-[#458B6E] text-[#9AF0AE] font-bold text-[11px] flex items-center justify-center gap-1.5 hover:bg-[#263533] transition"
-              >
-                <span>📦</span>
-                <span>Kit Completo (.ZIP)</span>
-              </a>
-
-              <a
-                href="/android-signing/com.cnf.objectiveReacher-release.keystore"
-                download="com.cnf.objectiveReacher-release.keystore"
-                className="p-2.5 rounded-[12px] bg-[#232038] border border-[#65499C] text-[#E6D9FF] font-bold text-[11px] flex items-center justify-center gap-1.5 hover:border-[#B58BFF] transition"
-              >
-                <span>🔑</span>
-                <span>Release .keystore</span>
-              </a>
-
-              <a
-                href="/android-signing/com.cnf.objectiveReacher-debug.keystore"
-                download="com.cnf.objectiveReacher-debug.keystore"
-                className="p-2.5 rounded-[12px] bg-[#232038] border border-[#4A3E6D] text-[#C8C2D8] font-bold text-[11px] flex items-center justify-center gap-1.5 hover:border-[#B58BFF] transition"
-              >
-                <span>🧪</span>
-                <span>Debug .keystore</span>
-              </a>
-            </div>
-
-            {/* Copyable Credentials Box: Release & Debug */}
-            <div className="p-3.5 rounded-[14px] bg-[#0F101A] border border-[#2B2840] space-y-2.5 text-xs select-copyable">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[#A8A3B8]">Package Name (ID) & Versión:</span>
-                <code className="font-mono-tabular font-bold text-[#82E59B] select-copyable">
-                  com.cnf.objectiveReacher · v1.0.0 (1)
-                </code>
-              </div>
-
-              <div className="pt-2 border-t border-[#232036] space-y-1">
-                <div className="text-[10px] font-extrabold uppercase tracking-wider text-[#82E59B]">
-                  🚀 Configuración Release (Producción)
-                </div>
-                <div className="flex items-center justify-between gap-2 text-[11px]">
-                  <span className="text-[#A8A3B8]">Alias / Password:</span>
-                  <code className="font-mono-tabular font-bold text-[#FFD54F] select-copyable">
-                    objectivereacher / ObjReacher2026!
-                  </code>
-                </div>
-                <code className="block text-[10px] font-mono-tabular text-[#D8C5FF] break-all select-copyable">
-                  SHA-256: 7E:F7:B4:06:D4:EE:06:C2:5A:0F:9E:36:B2:BD:AC:E6:55:57:35:20:E5:AF:82:66:F9:63:4D:F5:9C:2C:99:6A
-                </code>
-              </div>
-
-              <div className="pt-2 border-t border-[#232036] space-y-1">
-                <div className="text-[10px] font-extrabold uppercase tracking-wider text-[#B58BFF]">
-                  🛠️ Configuración Debug (Pruebas & Inspect)
-                </div>
-                <div className="flex items-center justify-between gap-2 text-[11px]">
-                  <span className="text-[#A8A3B8]">Alias / Password:</span>
-                  <code className="font-mono-tabular font-bold text-[#FFD54F] select-copyable">
-                    androiddebugkey / android
-                  </code>
-                </div>
-                <code className="block text-[10px] font-mono-tabular text-[#A8A3B8] break-all select-copyable">
-                  SHA-256: 2D:BD:B8:FD:DA:8D:7E:B3:B2:80:CA:A5:82:58:9D:08:85:DA:B1:24:DC:DF:97:C9:85:89:F4:C2:E3:66:A1:57
-                </code>
-              </div>
             </div>
           </div>
         </div>

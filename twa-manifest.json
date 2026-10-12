@@ -16,8 +16,8 @@
   "maskableIconUrl": "https://ais-pre-rpnphc7fpio56uf5fi2yhw-503565533295.us-west1.run.app/pwa-maskable-512x512.png",
   "splashScreenFadeOutDuration": 300,
   "signingKey": {
-    "path": "./com.cnf.objectiveReacher-release.keystore",
-    "alias": "objectivereacher"
+    "path": "./upload-keystore.jks",
+    "alias": "upload"
   },
   "appVersionName": "1.0.0",
   "appVersionCode": 1,
@@ -37,12 +37,7 @@
   "isChromeOSOnly": false,
   "isMetaQuest": false,
   "fullScopeUrl": "https://ais-pre-rpnphc7fpio56uf5fi2yhw-503565533295.us-west1.run.app/",
-  "minSdkVersion": 21,
+  "minSdkVersion": 24,
   "orientation": "portrait",
-  "fingerprints": [
-    {
-      "name": "release",
-      "value": "7E:F7:B4:06:D4:EE:06:C2:5A:0F:9E:36:B2:BD:AC:E6:55:57:35:20:E5:AF:82:66:F9:63:4D:F5:9C:2C:99:6A"
-    }
-  ]
+  "fingerprints": []
 }

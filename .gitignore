@@ -361,3 +361,11 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# Android signing keys & private certificates (never commit)
+*.keystore
+*.jks
+*.p12
+*.pem
+*.idsig
+dist/

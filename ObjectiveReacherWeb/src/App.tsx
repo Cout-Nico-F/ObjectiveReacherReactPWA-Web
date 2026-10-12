@@ -5,6 +5,8 @@ import {
   BANNER_PRESETS,
   clampSafeAmount,
   CUSTOM_UNIT_ID,
+  findAccentTheme,
+  findBannerPreset,
   findObjectiveUnit,
   formatObjectiveAmount,
   MAX_SAFE_AMOUNT,
@@ -19,6 +21,7 @@ import {
   CARD_STYLE_VAULT,
   CardStyleVaultItem,
   findCardCosmetic,
+  findCardStyleVaultItem,
   findGuardianTitle,
   findMascotSkin,
   formatRemainingBuffTime,
@@ -38,6 +41,7 @@ import {
 } from './monetization';
 import {
   ASMR_TEXTURES,
+  AsmrTextureOption,
   getAmbientMusicStyleName,
   loadSensoryPreferences,
   playAddEntrySound,
@@ -52,6 +56,7 @@ import {
   SensoryPreferences,
   setActiveSoundPack,
   setAmbientMusicContext,
+  SOUND_PACK_STEP_LABELS,
   syncAmbientMusic,
 } from './soundEffects';
 import {
@@ -63,13 +68,18 @@ import {
   ObjectiveEntry,
 } from './types';
 
-const STORAGE_KEY = 'objectivereacher_dashboard_v5';
+const STORAGE_KEY = 'objectivereacher_dashboard_v6';
+const LEGACY_STORAGE_KEYS = [
+  'objectivereacher_dashboard_v5',
+  'objectivereacher_dashboard_v4',
+  'objectivereacher_dashboard_v3',
+];
 
 function createEmptyState(): DashboardState {
   const id = crypto.randomUUID();
   const nowIso = new Date().toISOString();
   return {
-    version: 5,
+    version: 6,
     objectives: [
       {
         id,
@@ -100,14 +110,14 @@ function createEmptyState(): DashboardState {
       bonusXp: 0,
       lastPetDateKey: '',
       claimedQuestsByDay: {},
-      gems: 80,
+      gems: 0,
       unlockedSkins: ['default'],
       equippedSkinId: 'default',
       unlockedVaultIds: ['frame_default', 'snd_kalimba_zen', 'title_seed'],
       equippedCardFrameId: 'frame_default',
       equippedSoundPackId: 'snd_kalimba_zen',
       equippedTitleId: 'title_seed',
-      streakShields: 1,
+      streakShields: 0,
       xpBoostUntil: '',
       gemMagnetUntil: '',
       isIndieFounder: false,
@@ -176,12 +186,15 @@ function recalculateAllXp(objectives: Objective[], bonusXp = 0): number {
 
 function loadState(): DashboardState {
   try {
+    for (const legacyKey of LEGACY_STORAGE_KEYS) {
+      localStorage.removeItem(legacyKey);
+    }
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return createEmptyState();
     const parsed = JSON.parse(raw) as DashboardState;
     if (
       parsed &&
-      parsed.version === 5 &&
+      parsed.version === 6 &&
       Array.isArray(parsed.objectives) &&
       parsed.objectives.length > 0 &&
       parsed.gamification &&
@@ -231,7 +244,7 @@ function loadState(): DashboardState {
       parsed.gamification.gems =
         typeof parsed.gamification.gems === 'number'
           ? parsed.gamification.gems
-          : 80;
+          : 0;
       parsed.gamification.unlockedSkins = Array.isArray(
         parsed.gamification.unlockedSkins
       )
@@ -253,7 +266,7 @@ function loadState(): DashboardState {
       parsed.gamification.streakShields =
         typeof parsed.gamification.streakShields === 'number'
           ? parsed.gamification.streakShields
-          : 1;
+          : 0;
       parsed.gamification.xpBoostUntil =
         parsed.gamification.xpBoostUntil || '';
       parsed.gamification.gemMagnetUntil =
@@ -577,6 +590,11 @@ export function App() {
   const achievementsRef = useRef<HTMLDivElement>(null);
   const statsRef = useRef<HTMLDivElement>(null);
   const settingsRef = useRef<HTMLDivElement>(null);
+  const asmrSanctuaryRef = useRef<HTMLDivElement>(null);
+  const asmrSkinsScrollRef = useRef<HTMLDivElement>(null);
+  const [asmrFilterCategory, setAsmrFilterCategory] = useState<
+    'all' | 'unlocked' | 'taps' | 'skins'
+  >('all');
 
   // Save state to localStorage
   useEffect(() => {
@@ -751,6 +769,7 @@ export function App() {
     () => findCardCosmetic(equippedCardFrameId),
     [equippedCardFrameId]
   );
+  const equippedCardStyleId = state.gamification.equippedCardStyleId;
   const equippedSoundPackId =
     state.gamification.equippedSoundPackId || 'snd_kalimba_zen';
   const equippedTitleId = state.gamification.equippedTitleId || 'title_seed';
@@ -1153,76 +1172,183 @@ export function App() {
     setIsIndieShopOpen(true);
   };
 
+  const DAILY_ASMR_GEM_CAP = 12;
+  const ASMR_CYCLE_TAPS = 50;
   const asmrTotalTaps = state.gamification.asmrTotalTaps ?? 0;
   const asmrPreferredTexture =
     state.gamification.asmrPreferredTexture || 'bubbles';
-  const asmrCycleProgress = asmrTotalTaps % 25;
+  const asmrCycleProgress = asmrTotalTaps % ASMR_CYCLE_TAPS;
+  const asmrGemsEarnedToday =
+    state.gamification.asmrGemsDateKey === todayDateKey
+      ? state.gamification.asmrGemsEarnedToday ?? 0
+      : 0;
+  const asmrRemainingDailyGems = Math.max(
+    0,
+    DAILY_ASMR_GEM_CAP - asmrGemsEarnedToday
+  );
   const activeAsmrTextureObj =
     ASMR_TEXTURES.find((t) => t.id === asmrPreferredTexture) || ASMR_TEXTURES[0];
 
-  const handleSelectAsmrTexture = (textureId: string) => {
-    playAsmrClickSound(textureId, asmrTotalTaps, false);
-    setState((prev) => ({
-      ...prev,
-      gamification: {
-        ...prev.gamification,
-        asmrPreferredTexture: textureId,
-      },
-    }));
+  const isAsmrStyleUnlocked = (tex: AsmrTextureOption): boolean => {
+    if (tex.unlockKind === 'free') return true;
+    if (isIndieFounder) return true;
+    if (tex.unlockKind === 'taps') {
+      return (
+        asmrTotalTaps >= tex.requiredTaps ||
+        unlockedVaultIds.includes(`asmr_skin_${tex.id}`)
+      );
+    }
+    return unlockedVaultIds.includes(`asmr_skin_${tex.id}`);
+  };
+
+  const openAndScrollToAsmrSanctuary = () => {
+    playUiTap(3);
+    setIsNavigationOpen(false);
+    setIsHistoryOpen(false);
+    setIsAsmrSanctuaryOpen(true);
+    window.setTimeout(() => {
+      asmrSanctuaryRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    }, 90);
+  };
+
+  const scrollAsmrCarousel = (direction: 'left' | 'right') => {
+    playUiTap(1);
+    if (!asmrSkinsScrollRef.current) return;
+    const offset = direction === 'left' ? -240 : 240;
+    asmrSkinsScrollRef.current.scrollBy({ left: offset, behavior: 'smooth' });
+  };
+
+  const handleSelectAsmrTexture = (tex: AsmrTextureOption) => {
+    const unlocked = isAsmrStyleUnlocked(tex);
+    // Always play a binaural preview sample so the user can feel every texture
+    playAsmrClickSound(tex.id, asmrTotalTaps, false);
+
+    if (unlocked) {
+      setState((prev) => ({
+        ...prev,
+        gamification: {
+          ...prev.gamification,
+          asmrPreferredTexture: tex.id,
+        },
+      }));
+      triggerMascotSpeech(
+        `${tex.emoji} ¡Orbe ASMR «${tex.name}» equipado! Toca el orbe para sentir su textura binaural.`
+      );
+      return;
+    }
+
+    if (tex.unlockKind === 'taps') {
+      const remainingTaps = Math.max(1, tex.requiredTaps - asmrTotalTaps);
+      triggerMascotSpeech(
+        `🔒 «${tex.name}» (${tex.emoji}) se desbloquea GRATIS en ${remainingTaps} toques más (${asmrTotalTaps}/${tex.requiredTaps}). ¡Sigue tocando el Orbe!`
+      );
+      return;
+    }
+
+    // Cosmetic Orb Skin unlockable with Gems (light monetization)
+    if (gems < tex.gemCost) {
+      playUiTap(0);
+      setAlertDialog({
+        title: `Skin de Orbe ASMR: ${tex.name}`,
+        message: `Escuchaste una muestra de «${tex.name}» (${tex.emoji}). Necesitas ${tex.gemCost} 💎 para desbloquear esta Skin de Orbe ASMR (tienes ${gems} 💎).`,
+      });
+      return;
+    }
+
+    const vaultSkinKey = `asmr_skin_${tex.id}`;
+    playCelebrationFanfare('levelUp');
+    setState((prev) => {
+      const prevVault = prev.gamification.unlockedVaultIds || [];
+      return {
+        ...prev,
+        gamification: {
+          ...prev.gamification,
+          gems: Math.max(0, (prev.gamification.gems ?? 80) - tex.gemCost),
+          unlockedVaultIds: prevVault.includes(vaultSkinKey)
+            ? prevVault
+            : [...prevVault, vaultSkinKey],
+          asmrPreferredTexture: tex.id,
+        },
+      };
+    });
+    setMascotJoyId(Date.now());
+    triggerCelebration(
+      `¡Skin ASMR: ${tex.name}!`,
+      `Desbloqueaste el orbe y sonido binaural «${tex.name}» ${tex.emoji}`,
+      tex.emoji,
+      tex.accentColor
+    );
   };
 
   const handleAsmrClick = () => {
     const nextTaps = asmrTotalTaps + 1;
     asmrTapCooldownCounterRef.current += 1;
 
-    const isMilestonePrize = nextTaps % 25 === 0;
+    const isMilestonePrize = nextTaps % ASMR_CYCLE_TAPS === 0;
     const isLuckyRandomPrize =
       !isMilestonePrize &&
-      asmrTapCooldownCounterRef.current >= 14 &&
-      Math.random() < 0.06;
+      asmrTapCooldownCounterRef.current >= 30 &&
+      Math.random() < 0.025;
     const dropsPrize = isMilestonePrize || isLuckyRandomPrize;
 
     if (dropsPrize) {
       asmrTapCooldownCounterRef.current = 0;
     }
 
-    playAsmrClickSound(asmrPreferredTexture, nextTaps, dropsPrize);
+    // Check if this tap unlocks a new Tap-Milestone ASMR Style (50, 150, 300, 500)
+    const newlyUnlockedTapStyle = ASMR_TEXTURES.find(
+      (t) => t.unlockKind === 'taps' && t.requiredTaps === nextTaps
+    );
+
+    playAsmrClickSound(
+      newlyUnlockedTapStyle ? newlyUnlockedTapStyle.id : asmrPreferredTexture,
+      nextTaps,
+      dropsPrize || Boolean(newlyUnlockedTapStyle)
+    );
 
     const nowId = Date.now() + Math.floor(Math.random() * 999);
     setMascotJoyId(Date.now());
 
     let awardedGems = 0;
     let awardedXp = 0;
-    let awardedShield = 0;
     let prizeText = '';
 
     if (dropsPrize) {
-      const roll = Math.random();
-      if (isMilestonePrize && roll < 0.12) {
-        awardedShield = 1;
-        awardedGems = 5 * activeGemMultiplier;
-        awardedXp = Math.round(15 * activeXpMultiplier);
-        prizeText = `🎁 ¡Premio Ocasional Épico! +1 🛡️ Escudo, +${awardedGems} 💎 y +${awardedXp} XP`;
+      const baseRawGems =
+        (isMilestonePrize ? 2 : 1) * activeGemMultiplier;
+      awardedGems = Math.min(asmrRemainingDailyGems, baseRawGems);
+      awardedXp = Math.round(
+        (isMilestonePrize ? 10 : 5) * activeXpMultiplier
+      );
+
+      if (newlyUnlockedTapStyle) {
+        prizeText = `🎉 ¡DESBLOQUEASTE «${newlyUnlockedTapStyle.name}» (${newlyUnlockedTapStyle.emoji}) por alcanzar ${nextTaps} toques! ${
+          awardedGems > 0 ? `+${awardedGems} 💎 y ` : ''
+        }+${awardedXp} XP`;
+      } else if (awardedGems > 0) {
+        const nextEarnedToday = asmrGemsEarnedToday + awardedGems;
+        prizeText = `🎁 ¡Armonía ASMR! +${awardedGems} 💎 (${nextEarnedToday}/${DAILY_ASMR_GEM_CAP} hoy) y +${awardedXp} XP`;
       } else {
-        awardedGems =
-          (isMilestonePrize
-            ? 5 + Math.floor(Math.random() * 4)
-            : 3 + Math.floor(Math.random() * 3)) * activeGemMultiplier;
-        awardedXp = Math.round(
-          (isMilestonePrize ? 15 : 8) * activeXpMultiplier
-        );
-        prizeText = `🎁 ¡Premio Ocasional ASMR! +${awardedGems} 💎 Gemas y +${awardedXp} XP`;
+        prizeText = `🧘 ¡Armonía Zen! +${awardedXp} XP de Calma (Tope diario de ${DAILY_ASMR_GEM_CAP} 💎 alcanzado hoy)`;
       }
       setLastAsmrPrizeNotice(prizeText);
       triggerMascotSpeech(prizeText);
     }
 
-    const sparkText = dropsPrize
-      ? `🎁 +${awardedGems} 💎`
+    const sparkText = newlyUnlockedTapStyle
+      ? `🔓 ¡${newlyUnlockedTapStyle.emoji} ${newlyUnlockedTapStyle.name}!`
+      : dropsPrize
+      ? awardedGems > 0
+        ? `🎁 +${awardedGems} 💎 · +${awardedXp} XP`
+        : `🧘 +${awardedXp} XP Zen`
       : `${activeAsmrTextureObj.emoji} +Calma`;
-    const sparkColor = dropsPrize
-      ? '#FFD54F'
-      : activeAsmrTextureObj.accentColor;
+    const sparkColor =
+      dropsPrize || newlyUnlockedTapStyle
+        ? '#FFD54F'
+        : activeAsmrTextureObj.accentColor;
     const xOffset = Math.floor(Math.random() * 90) - 45;
 
     setAsmrFloatingSparks((prev) => [
@@ -1230,17 +1356,35 @@ export function App() {
       { id: nowId, text: sparkText, color: sparkColor, xOffset },
     ]);
 
-    setState((prev) => ({
-      ...prev,
-      gamification: {
-        ...prev.gamification,
-        asmrTotalTaps: (prev.gamification.asmrTotalTaps ?? 0) + 1,
-        gems: (prev.gamification.gems ?? 80) + awardedGems,
-        totalXp: prev.gamification.totalXp + awardedXp,
-        bonusXp: (prev.gamification.bonusXp || 0) + awardedXp,
-        streakShields: (prev.gamification.streakShields ?? 1) + awardedShield,
-      },
-    }));
+    setState((prev) => {
+      const prevEarnedToday =
+        prev.gamification.asmrGemsDateKey === todayDateKey
+          ? prev.gamification.asmrGemsEarnedToday ?? 0
+          : 0;
+      const prevVault = prev.gamification.unlockedVaultIds || [];
+      const unlockedKey = newlyUnlockedTapStyle
+        ? `asmr_skin_${newlyUnlockedTapStyle.id}`
+        : null;
+      return {
+        ...prev,
+        gamification: {
+          ...prev.gamification,
+          asmrTotalTaps: (prev.gamification.asmrTotalTaps ?? 0) + 1,
+          asmrPreferredTexture: newlyUnlockedTapStyle
+            ? newlyUnlockedTapStyle.id
+            : prev.gamification.asmrPreferredTexture || 'bubbles',
+          asmrGemsDateKey: todayDateKey,
+          asmrGemsEarnedToday: prevEarnedToday + awardedGems,
+          gems: (prev.gamification.gems ?? 80) + awardedGems,
+          totalXp: prev.gamification.totalXp + awardedXp,
+          bonusXp: (prev.gamification.bonusXp || 0) + awardedXp,
+          unlockedVaultIds:
+            unlockedKey && !prevVault.includes(unlockedKey)
+              ? [...prevVault, unlockedKey]
+              : prevVault,
+        },
+      };
+    });
   };
 
   const handleSelectCardCosmetic = (cosmetic: CardCosmeticDefinition) => {
@@ -1305,7 +1449,7 @@ export function App() {
 
     if (isOwned) {
       setActiveSoundPack(pack.id);
-      playSoundPackPreview(pack.id);
+      playSoundPackPreview(pack.id, 1);
       setState((prev) => ({
         ...prev,
         gamification: {
@@ -1314,7 +1458,7 @@ export function App() {
         },
       }));
       triggerMascotSpeech(
-        `🎵 ¡Sintetizador "${pack.name}" (${pack.scaleName}) activado!`
+        `🎵 ¡Pack de 5 Sonidos "${pack.name}" (${pack.scaleName}) activado!`
       );
       return;
     }
@@ -1324,13 +1468,13 @@ export function App() {
       setIndieShopInitialTab('support');
       setAlertDialog({
         title: 'Gemas Astrales insuficientes',
-        message: `Necesitas ${pack.gemCost} 💎 para desbloquear el sintetizador "${pack.name}" (tienes ${gems} 💎).`,
+        message: `Necesitas ${pack.gemCost} 💎 para desbloquear el pack de 5 sonidos "${pack.name}" (tienes ${gems} 💎).`,
       });
       return;
     }
 
     setActiveSoundPack(pack.id);
-    playSoundPackPreview(pack.id);
+    playSoundPackPreview(pack.id, 4);
     setState((prev) => {
       const prevVault = prev.gamification.unlockedVaultIds || [];
       return {
@@ -1346,8 +1490,8 @@ export function App() {
       };
     });
     triggerCelebration(
-      `¡Nuevo Pack Acústico: ${pack.name}!`,
-      `Toda la app ahora suena en escala ${pack.scaleName} ${pack.emoji}`,
+      `¡Pack de 5 Sonidos: ${pack.name}!`,
+      `Tus toques, avances, restas, misiones y logros ahora suenan en ${pack.scaleName} ${pack.emoji}`,
       pack.emoji,
       pack.accentColor
     );
@@ -1369,7 +1513,12 @@ export function App() {
       return;
     }
 
-    playUiTap(5);
+    if (isOwned) {
+      playQuestClaimSound(false);
+    } else {
+      playCelebrationFanfare('levelUp');
+    }
+
     setState((prev) => {
       const prevVault = prev.gamification.unlockedVaultIds || [];
       return {
@@ -1392,12 +1541,23 @@ export function App() {
             isOwned || prevVault.includes(styleItem.id)
               ? prevVault
               : [...prevVault, styleItem.id],
+          equippedCardStyleId: styleItem.id,
         },
       };
     });
-    triggerMascotSpeech(
-      `🌈 ¡Estilo "${styleItem.name}" aplicado en sintonía total a "${currentObjective.title}"!`
-    );
+
+    if (!isOwned) {
+      triggerCelebration(
+        `¡Estilo Desbloqueado: ${styleItem.name}!`,
+        `Se aplicó en sintonía total a tu tarjeta «${currentObjective.title}» ${styleItem.emoji}`,
+        styleItem.emoji,
+        styleItem.accentColor
+      );
+    } else {
+      triggerMascotSpeech(
+        `🌈 ¡Estilo "${styleItem.name}" aplicado en sintonía total a "${currentObjective.title}"!`
+      );
+    }
   };
 
   const handleSelectGuardianTitle = (titleItem: GuardianTitleItem) => {
@@ -1480,7 +1640,7 @@ export function App() {
       setIndieShopInitialTab('support');
       setAlertDialog({
         title: 'Gemas Astrales insuficientes',
-        message: `Necesitas ${skin.gemCost} 💎 para desbloquear "${skin.name}" (tienes ${gems} 💎). Puedes ganar más cumpliendo misiones diarias o desbloquear TODAS las skins al instante con el Pase de Mecenas Fundador.`,
+        message: `Necesitas ${skin.gemCost} 💎 para desbloquear "${skin.name}" (tienes ${gems} 💎). Puedes ganar más cumpliendo misiones diarias o desbloquear TODAS las skins al instante con el Pase Fundador Indie.`,
       });
       return;
     }
@@ -1711,7 +1871,7 @@ export function App() {
     setMascotJoyId(Date.now());
     triggerCelebration(
       pack.id === 'pack_founder'
-        ? '¡Gracias, Mecenas Fundador! 👑'
+        ? '¡Gracias, Fundador Indie! 👑'
         : `¡Gracias por apoyar este proyecto Indie! ${pack.emoji}`,
       `Recibiste +${pack.gemsIncluded} 💎 Gemas, +${pack.shieldsIncluded} 🛡️ Escudos${
         pack.unlocksAllSkins
@@ -1775,11 +1935,11 @@ export function App() {
     setMascotJoyId(Date.now());
     triggerCelebration(
       unlocksFounder
-        ? `¡Propina de Mecenas ($${cleanUsd.toFixed(2)} USD)! 👑`
+        ? `¡Propina de Fundador ($${cleanUsd.toFixed(2)} USD)! 👑`
         : `¡Gracias por tu Propina ($${cleanUsd.toFixed(2)} USD)! 💖`,
       `Como agradecimiento recibiste +${rewardedGems} 💎 Gemas Astrales y +${rewardedShields} 🛡️ Escudos${
         unlocksFounder
-          ? ' + Desbloqueo Total de Mecenas Fundador'
+          ? ' + Desbloqueo Total del Pase Fundador Indie'
           : ''
       }.`,
       unlocksFounder ? '👑' : '💖',
@@ -2515,20 +2675,17 @@ export function App() {
   };
 
   // Hero background & customization style
-  const heroPreset =
-    BANNER_PRESETS.find((p) => p.id === currentObjective.bannerId) ||
-    BANNER_PRESETS[0];
+  const heroPreset = useMemo(
+    () => findBannerPreset(currentObjective.bannerId),
+    [currentObjective.bannerId]
+  );
   const customBannerDataUrl = currentObjective.bannerId.startsWith('custom:')
     ? currentObjective.bannerId.slice('custom:'.length)
     : null;
   const bannerImageSrc = customBannerDataUrl || heroPreset.imageUrl;
 
   const currentAccentTheme = useMemo(() => {
-    return (
-      OBJECTIVE_ACCENT_THEMES.find(
-        (t) => t.id === currentObjective.accentColor
-      ) || OBJECTIVE_ACCENT_THEMES[0]
-    );
+    return findAccentTheme(currentObjective.accentColor);
   }, [currentObjective.accentColor]);
 
   const currentIcon = currentObjective.icon || '🎯';
@@ -2654,9 +2811,9 @@ export function App() {
       }}
       className="min-h-screen bg-[#11121C] text-[#F4F1FF] relative overflow-x-clip"
     >
-      {/* Celebration Overlay */}
+      {/* Celebration Overlay (z-[70] so it always shines above modals & shop) */}
       {celebration && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-auto bg-black/40 backdrop-blur-[3px] p-4">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center pointer-events-auto bg-black/45 backdrop-blur-[3px] p-4">
           <div className="w-full max-w-[300px] rounded-[24px] border-2 border-[#806F62] bg-[#1C1C2B]/95 px-5 py-5 shadow-2xl flex flex-col items-center text-center space-y-2.5 animate-in fade-in zoom-in-95 duration-200">
             <div className="px-2.5 py-0.5 rounded-full bg-[#29233E] border border-[#5B4588]/60 text-[9px] font-extrabold tracking-widest uppercase text-[#C7A4FF] inline-flex items-center gap-1">
               <span className="leading-none">🎯</span>
@@ -2715,7 +2872,7 @@ export function App() {
       <div className="max-w-[1440px] mx-auto grid grid-cols-1 lg:grid-cols-[240px_1fr_320px] min-h-screen items-start">
         {/* Left Navigation Panel: Sticky on 16:9 Desktop, Scrollable Drawer on Portrait & Landscape Mobile */}
         <aside
-          className={`fixed inset-y-0 left-0 z-40 w-[268px] max-w-[82vw] lg:sticky lg:top-0 lg:h-screen lg:w-auto lg:max-w-none bg-[#171723] border-r border-[#29283C] p-3.5 sm:p-4 flex flex-col justify-between overflow-y-auto overscroll-contain transition-transform duration-200 ${
+          className={`fixed inset-y-0 left-0 z-40 w-[268px] max-w-[82vw] lg:sticky lg:top-0 lg:h-screen lg:w-auto lg:max-w-none bg-[#171723] border-r border-[#29283C] pt-[max(0.875rem,calc(env(safe-area-inset-top,0px)+0.5rem))] pb-[max(0.875rem,calc(env(safe-area-inset-bottom,0px)+0.5rem))] pl-[max(0.875rem,calc(env(safe-area-inset-left,0px)+0.5rem))] pr-3.5 sm:p-4 flex flex-col justify-between overflow-y-auto overscroll-contain transition-transform duration-200 ${
             isNavigationOpen
               ? 'translate-x-0'
               : '-translate-x-full lg:translate-x-0'
@@ -2728,8 +2885,9 @@ export function App() {
                   🎯
                 </div>
                 <div className="min-w-0">
-                  <div className="text-[16px] sm:text-[17px] font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-[#FFFFFF] via-[#F0E6FF] to-[#C7A4FF] leading-tight">
-                    Objective Reacher
+                  <div className="text-[16px] sm:text-[17px] font-extrabold tracking-tight leading-tight">
+                    <span className="text-[#F4F1FF]">Objective</span>{' '}
+                    <span className="text-[#82E59B]">Reacher</span>
                   </div>
                   <div className="text-[11px] text-[#AAA5BB] leading-tight">
                     Tu progreso, a tu ritmo
@@ -2781,6 +2939,11 @@ export function App() {
                   action: () => highlightSection('achievements', achievementsRef),
                 },
                 {
+                  key: 'asmr_clicker',
+                  label: `🫧   Clicker ASMR & Orbes (${ASMR_TEXTURES.length})`,
+                  action: () => openAndScrollToAsmrSanctuary(),
+                },
+                {
                   key: 'indie_shop',
                   label: `💎   Skins, Buffs & Indie (${gems})`,
                   action: () => openIndieShop('skins'),
@@ -2829,7 +2992,7 @@ export function App() {
               <div className="flex items-center justify-between gap-1">
                 <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#FFD54F]">
                   {isIndieFounder
-                    ? '👑 MECENAS FUNDADOR'
+                    ? '👑 FUNDADOR INDIE'
                     : supporterTier === 'coffee'
                     ? '☕ SUPPORTER INDIE'
                     : '💖 PROYECTO 100% INDIE'}
@@ -2848,150 +3011,135 @@ export function App() {
 
         {/* Center Dashboard ScrollView */}
         <main className="px-2.5 sm:px-4 pb-16 lg:pb-8 space-y-3.5 min-w-0">
-          {/* Sticky Header Row: Brand Identity + Active Objective (Portrait-First, zero cutoff) */}
-          <div className="sticky top-0 z-20 -mx-2.5 sm:-mx-4 px-2.5 sm:px-4 py-2 bg-[#11121C]/92 backdrop-blur-md border-b border-[#29283C]/80 flex items-center justify-between gap-1.5 sm:gap-2">
-            <div className="flex items-center gap-2 min-w-0 flex-1">
-              <button
-                onClick={() => {
-                  playUiTap(1);
-                  setIsHistoryOpen(false);
-                  setIsNavigationOpen(true);
-                }}
-                aria-label="Abrir navegación"
-                className="lg:hidden w-[38px] h-[38px] sm:w-[42px] sm:h-[42px] rounded-[11px] bg-[#242238] border border-[#383252] text-[#D9C9FF] text-[18px] flex items-center justify-center shrink-0 hover:bg-[#302747] active:scale-95 transition"
-              >
-                ☰
-              </button>
+          {/* Sticky Header Bar: Relative Full-Width Single-Row Layout with Notch Safe-Area Protection */}
+          <div className="sticky top-0 z-20 -mx-2.5 sm:-mx-4 pt-[max(clamp(0.42rem,1.8vw,0.6rem),calc(env(safe-area-inset-top,0px)+0.35rem))] pb-[clamp(0.42rem,1.8vw,0.6rem)] pl-[max(clamp(0.5rem,2.4vw,1rem),calc(env(safe-area-inset-left,0px)+0.35rem))] pr-[max(clamp(0.5rem,2.4vw,1rem),calc(env(safe-area-inset-right,0px)+0.35rem))] bg-[#11121C]/95 backdrop-blur-md border-b border-[#29283C]/85 shadow-[0_6px_20px_rgba(7,8,16,0.45)]">
+            <div className="flex flex-nowrap items-center justify-between w-full gap-[clamp(0.35rem,1.6vw,0.65rem)]">
+              {/* Left: Menu Drawer Button + Fluid Brand Emblem & Name */}
+              <div className="flex items-center gap-[clamp(0.28rem,1.3vw,0.5rem)] min-w-0 flex-1 sm:flex-initial">
+                <button
+                  onClick={() => {
+                    playUiTap(1);
+                    setIsHistoryOpen(false);
+                    setIsNavigationOpen(true);
+                  }}
+                  aria-label="Abrir navegación"
+                  className="lg:hidden w-[clamp(1.85rem,8vw,2.2rem)] h-[clamp(1.85rem,8vw,2.2rem)] rounded-[clamp(8px,2.2vw,10px)] bg-[#242238] border border-[#383252] text-[#D9C9FF] text-[clamp(0.8rem,3.5vw,0.95rem)] flex items-center justify-center shrink-0 hover:bg-[#302747] active:scale-95 transition"
+                >
+                  ☰
+                </button>
 
-              <div className="min-w-0 flex-1">
-                {/* Flagship Brand Crest — Emoji separated from bg-clip-text so it always renders its real vibrant colors */}
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-extrabold uppercase tracking-[0.12em]">
-                    <span className="text-[12px] sm:text-[13px] leading-none drop-shadow-[0_0_6px_rgba(255,100,120,0.45)]">
-                      🎯
-                    </span>
-                    <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#D8C5FF] via-[#B58BFF] to-[#82E59B]">
-                      OBJECTIVE REACHER
-                    </span>
+                <div className="h-[clamp(1.85rem,8vw,2.2rem)] inline-flex items-center gap-[clamp(0.3rem,1.4vw,0.5rem)] px-[clamp(0.45rem,2vw,0.75rem)] rounded-[clamp(8px,2.2vw,10px)] bg-[#1A1829] border border-[#453A6B] shadow-[0_2px_10px_rgba(0,0,0,0.3)] min-w-0">
+                  <span className="w-[clamp(1.15rem,5vw,1.4rem)] h-[clamp(1.15rem,5vw,1.4rem)] rounded-[clamp(5px,1.5vw,7px)] bg-gradient-to-br from-[#7549B8] to-[#3B8D61] flex items-center justify-center text-[clamp(0.65rem,2.8vw,0.8rem)] leading-none shrink-0">
+                    🎯
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => openIndieShop('cards_audio')}
-                    style={{
-                      color: equippedGuardianTitle.color,
-                      borderColor: `${equippedGuardianTitle.color}55`,
-                    }}
-                    className="px-1.5 py-0.2 rounded-full bg-[#1C192B] border text-[9px] font-extrabold hover:brightness-110 transition"
-                    title="Cambiar Título de Guardián en el Banco del Santuario"
-                  >
-                    {equippedGuardianTitle.emoji} {equippedGuardianTitle.title}
-                  </button>
-                  {isIndieFounder && (
-                    <span className="px-1.5 py-0.2 rounded-full bg-[#3A2E14] border border-[#FFD54F]/60 text-[9px] font-extrabold text-[#FFD54F]">
-                      👑 MECENAS
+                  <div className="flex items-center gap-[clamp(0.2rem,0.9vw,0.35rem)] leading-none min-w-0">
+                    <span className="text-[clamp(0.62rem,2.75vw,0.8rem)] font-black uppercase tracking-[0.04em] sm:tracking-[0.06em] text-[#F4F1FF] truncate">
+                      OBJECTIVE
                     </span>
-                  )}
+                    <span className="text-[clamp(0.62rem,2.75vw,0.8rem)] font-black uppercase tracking-[0.05em] sm:tracking-[0.08em] text-[#82E59B] truncate">
+                      REACHER
+                    </span>
+                  </div>
                 </div>
 
-                {/* Active Objective Title — Full wrap on Portrait so it never cuts with (...) + Copyable */}
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <span className="text-[16px] sm:text-[19px] shrink-0 leading-none">
-                    {currentIcon}
+                <button
+                  type="button"
+                  onClick={() => openIndieShop('cards_audio')}
+                  style={{
+                    color: equippedGuardianTitle.color,
+                    borderColor: `${equippedGuardianTitle.color}55`,
+                  }}
+                  className="hidden md:inline-flex px-2 py-0.5 rounded-full bg-[#1C192B] border text-[9px] font-extrabold hover:brightness-110 transition whitespace-nowrap shrink-0"
+                  title="Cambiar Título de Guardián en el Banco del Santuario"
+                >
+                  {equippedGuardianTitle.emoji} {equippedGuardianTitle.title}
+                </button>
+                {isIndieFounder && (
+                  <span className="hidden sm:inline-flex px-1.5 py-0.5 rounded-full bg-[#3A2E14] border border-[#FFD54F]/60 text-[9px] font-extrabold text-[#FFD54F] whitespace-nowrap shrink-0">
+                    👑 FUNDADOR
                   </span>
-                  <h1 className="text-[14px] sm:text-[17px] font-bold text-[#F4F1FF] leading-snug break-words select-copyable">
-                    {currentObjective.title || 'Objetivo Actual'}
-                  </h1>
-                </div>
+                )}
               </div>
-            </div>
 
-            <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-              {/* Indie Sanctuary Gems & Skins/Buffs Store Button */}
-              <button
-                onClick={() => openIndieShop('skins')}
-                title="Abrir Santuario Indie: Skins, Buffs y Apoyo al Creador (0% anuncios)"
-                className="h-[36px] sm:h-[42px] px-2.5 sm:px-3 rounded-[11px] bg-gradient-to-r from-[#2B2144] to-[#212B38] border border-[#65499C] hover:border-[#B58BFF] text-[#F4F1FF] text-[11px] sm:text-[12px] font-extrabold flex items-center gap-1.5 transition shrink-0 shadow-[0_2px_10px_rgba(140,92,224,0.25)] active:scale-95"
-              >
-                <span>💎</span>
-                <span className="font-mono-tabular text-[#9AF0AE]">{gems}</span>
-                <span className="hidden md:inline text-[10px] font-bold text-[#D8C5FF]">
-                  · Skins & Buffs
-                </span>
-              </button>
+              {/* Right Quick Toolbar: Gems + Music + Sound + History */}
+              <div className="flex items-center justify-end gap-[clamp(0.22rem,1.1vw,0.42rem)] shrink-0">
+                <button
+                  onClick={() => openIndieShop('skins')}
+                  title={`Abrir Santuario Indie (${gems.toLocaleString()} gemas): Skins, Buffs y Apoyo al Creador`}
+                  className="h-[clamp(1.85rem,8vw,2.2rem)] px-[clamp(0.45rem,1.9vw,0.75rem)] rounded-[clamp(8px,2.2vw,10px)] bg-gradient-to-r from-[#2B2144] to-[#212B38] border border-[#65499C] hover:border-[#B58BFF] text-[#F4F1FF] text-[clamp(0.62rem,2.7vw,0.78rem)] font-extrabold flex items-center justify-center gap-[clamp(0.22rem,1vw,0.35rem)] transition shrink-0 shadow-[0_2px_10px_rgba(140,92,224,0.22)] active:scale-95"
+                >
+                  <span className="text-[clamp(0.68rem,2.9vw,0.82rem)] leading-none shrink-0">
+                    💎
+                  </span>
+                  <span className="font-mono-tabular text-[#9AF0AE]">
+                    {gems >= 10000
+                      ? `${(gems / 1000).toFixed(gems >= 100000 ? 0 : 1)}k`
+                      : gems}
+                  </span>
+                  <span className="hidden sm:inline text-[10px] font-bold text-[#D8C5FF]">
+                    · Tienda
+                  </span>
+                </button>
 
-              {/* Procedural Background Music Toggle Button */}
-              <button
-                onClick={toggleAmbientMusic}
-                aria-label={
-                  sensoryPrefs.musicEnabled
-                    ? 'Desactivar música ambiental procedural'
-                    : 'Activar música ambiental procedural'
-                }
-                title={
-                  sensoryPrefs.musicEnabled
-                    ? `Música ambiental activa (${getAmbientMusicStyleName(
-                        currentObjective.accentColor
-                      )}) · Toca para apagar`
-                    : `Activar música ambiental procedural adaptada a tu objetivo (${getAmbientMusicStyleName(
-                        currentObjective.accentColor
-                      )})`
-                }
-                className={`h-[36px] sm:h-[42px] px-2 sm:px-2.5 rounded-[11px] text-[14px] sm:text-[15px] flex items-center justify-center gap-1 transition shrink-0 border ${
-                  sensoryPrefs.musicEnabled
-                    ? 'bg-gradient-to-r from-[#2D2149] to-[#1D352E] border-[#82E59B]/60 text-[#9AF0AE] shadow-[0_0_12px_rgba(130,229,155,0.25)]'
-                    : 'bg-[#1A1928] border-[#29283C] text-[#7D7894] hover:bg-[#242238] hover:text-[#D9C9FF]'
-                }`}
-              >
-                <span>🎵</span>
-                <span className="hidden xl:inline text-[10px] font-bold">
-                  {sensoryPrefs.musicEnabled ? 'Ambient ON' : 'Música'}
-                </span>
-              </button>
+                <button
+                  onClick={toggleAmbientMusic}
+                  aria-label={
+                    sensoryPrefs.musicEnabled
+                      ? 'Desactivar música ambiental procedural'
+                      : 'Activar música ambiental procedural'
+                  }
+                  title={
+                    sensoryPrefs.musicEnabled
+                      ? `Música ambiental activa (${getAmbientMusicStyleName(
+                          currentObjective.accentColor
+                        )}) · Toca para apagar`
+                      : `Activar música ambiental procedural (${getAmbientMusicStyleName(
+                          currentObjective.accentColor
+                        )})`
+                  }
+                  className={`w-[clamp(1.85rem,8vw,2.2rem)] h-[clamp(1.85rem,8vw,2.2rem)] rounded-[clamp(8px,2.2vw,10px)] text-[clamp(0.75rem,3.3vw,0.92rem)] flex items-center justify-center transition shrink-0 border ${
+                    sensoryPrefs.musicEnabled
+                      ? 'bg-gradient-to-r from-[#2D2149] to-[#1D352E] border-[#82E59B]/60 text-[#9AF0AE] shadow-[0_0_10px_rgba(130,229,155,0.25)]'
+                      : 'bg-[#1A1928] border-[#29283C] text-[#7D7894] hover:bg-[#242238] hover:text-[#D9C9FF]'
+                  }`}
+                >
+                  🎵
+                </button>
 
-              <button
-                onClick={toggleSoundAndHaptics}
-                aria-label={
-                  sensoryPrefs.soundEnabled
-                    ? 'Silenciar sonidos y vibración'
-                    : 'Activar sonidos y vibración'
-                }
-                title={
-                  sensoryPrefs.soundEnabled
-                    ? 'Efectos de sonido y vibración activos (toca para silenciar)'
-                    : 'Sonido y vibración en silencio (toca para activar)'
-                }
-                className={`w-[36px] h-[36px] sm:w-[42px] sm:h-[42px] rounded-[11px] text-[15px] sm:text-[17px] flex items-center justify-center transition shrink-0 border ${
-                  sensoryPrefs.soundEnabled
-                    ? 'bg-[#242238] border-[#3E355B] text-[#D9C9FF] hover:bg-[#302747]'
-                    : 'bg-[#1A1928] border-[#29283C] text-[#7D7894] hover:bg-[#242238]'
-                }`}
-              >
-                {sensoryPrefs.soundEnabled ? '🔊' : '🔇'}
-              </button>
+                <button
+                  onClick={toggleSoundAndHaptics}
+                  aria-label={
+                    sensoryPrefs.soundEnabled
+                      ? 'Silenciar sonidos y vibración'
+                      : 'Activar sonidos y vibración'
+                  }
+                  title={
+                    sensoryPrefs.soundEnabled
+                      ? 'Efectos de sonido y vibración activos (toca para silenciar)'
+                      : 'Sonido y vibración en silencio (toca para activar)'
+                  }
+                  className={`w-[clamp(1.85rem,8vw,2.2rem)] h-[clamp(1.85rem,8vw,2.2rem)] rounded-[clamp(8px,2.2vw,10px)] text-[clamp(0.75rem,3.3vw,0.92rem)] flex items-center justify-center transition shrink-0 border ${
+                    sensoryPrefs.soundEnabled
+                      ? 'bg-[#242238] border-[#3E355B] text-[#D9C9FF] hover:bg-[#302747]'
+                      : 'bg-[#1A1928] border-[#29283C] text-[#7D7894] hover:bg-[#242238]'
+                  }`}
+                >
+                  {sensoryPrefs.soundEnabled ? '🔊' : '🔇'}
+                </button>
 
-              <button
-                onClick={() => {
-                  playUiTap(2);
-                  setIsEditorOpen(true);
-                }}
-                aria-label="Personalizar objetivo"
-                title="Personalizar objetivo"
-                className="w-[36px] h-[36px] sm:w-[42px] sm:h-[42px] rounded-[11px] bg-[#242238] border border-[#383252] text-[#D9C9FF] text-[16px] sm:text-[18px] flex items-center justify-center hover:bg-[#302747] transition shrink-0"
-              >
-                ✎
-              </button>
-
-              <button
-                onClick={() => {
-                  playUiTap(1);
-                  setIsNavigationOpen(false);
-                  setIsHistoryOpen(true);
-                }}
-                aria-label="Abrir historial de entradas"
-                className="lg:hidden w-[36px] h-[36px] sm:w-[42px] sm:h-[42px] rounded-[11px] bg-[#242238] border border-[#383252] text-[#D9C9FF] text-[17px] sm:text-[19px] flex items-center justify-center shrink-0 hover:bg-[#302747] active:scale-95 transition"
-              >
-                ☷
-              </button>
+                <button
+                  onClick={() => {
+                    playUiTap(1);
+                    setIsNavigationOpen(false);
+                    setIsHistoryOpen(true);
+                  }}
+                  aria-label="Abrir historial de entradas"
+                  title="Ver historial de movimientos"
+                  className="lg:hidden w-[clamp(1.85rem,8vw,2.2rem)] h-[clamp(1.85rem,8vw,2.2rem)] rounded-[clamp(8px,2.2vw,10px)] bg-[#242238] border border-[#383252] text-[#D9C9FF] text-[clamp(0.78rem,3.4vw,0.92rem)] flex items-center justify-center shrink-0 hover:bg-[#302747] active:scale-95 transition"
+                >
+                  ☷
+                </button>
+              </div>
             </div>
           </div>
 
@@ -3000,9 +3148,7 @@ export function App() {
             {activeObjectives.map((obj) => {
               const isSelected = obj.id === currentObjective.id;
               const tabIcon = obj.icon || '🎯';
-              const tabTheme =
-                OBJECTIVE_ACCENT_THEMES.find((t) => t.id === obj.accentColor) ||
-                OBJECTIVE_ACCENT_THEMES[0];
+              const tabTheme = findAccentTheme(obj.accentColor);
               const tabAccent = tabTheme.primary;
               const objProg =
                 obj.goalAmount > 0
@@ -3136,10 +3282,98 @@ export function App() {
             />
 
             <div className="relative z-10 h-full p-4 sm:p-[20px] flex flex-col justify-between gap-3.5">
-              {/* Top Row: Emblem + Category/Deadline Badges + Title + Quick Customize Actions */}
-              <div className="flex items-start justify-between gap-2.5">
+              {/* Top Section: Utility Strip (Category/Deadline + Customize Actions) separated from Full-Width Objective Title */}
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span
+                      style={{
+                        color: currentAccentTheme.primary,
+                        backgroundColor: currentAccentTheme.softBg,
+                        borderColor: `${currentAccentTheme.primary}55`,
+                      }}
+                      className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider border backdrop-blur-sm"
+                    >
+                      {currentCategory}
+                    </span>
+
+                    {objectiveInsights.daysLeft !== null && (
+                      <span
+                        style={
+                          objectiveInsights.daysLeft > 7
+                            ? {
+                                backgroundColor: currentAccentTheme.surfaceDark,
+                                borderColor: `${currentAccentTheme.primary}38`,
+                                color: currentAccentTheme.textSoft,
+                              }
+                            : undefined
+                        }
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold border backdrop-blur-sm ${
+                          objectiveInsights.daysLeft < 0
+                            ? 'bg-[#4A202A]/80 border-[#F27783]/50 text-[#FFD1D7]'
+                            : objectiveInsights.daysLeft <= 7
+                            ? 'bg-[#443318]/80 border-[#FFD54F]/60 text-[#FFE082]'
+                            : ''
+                        }`}
+                      >
+                        {objectiveInsights.daysLeft < 0
+                          ? '⌛ Fecha cumplida'
+                          : objectiveInsights.daysLeft === 0
+                          ? '⏳ ¡Hoy es la fecha meta!'
+                          : `⏳ ${objectiveInsights.daysLeft}d restantes`}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Floating Glass Customization Buttons */}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      onClick={() => openIndieShop('cards_audio')}
+                      title={`Marco activo: ${equippedCardCosmetic.name} (toca para explorar 48 marcos y 30 sonidos)`}
+                      style={{
+                        backgroundColor: currentAccentTheme.surfaceDark,
+                        borderColor:
+                          equippedCardCosmetic.id !== 'frame_default'
+                            ? equippedCardCosmetic.borderColor
+                            : `${currentAccentTheme.primary}40`,
+                        color: currentAccentTheme.textSoft,
+                      }}
+                      className="px-2.5 py-1.5 rounded-[11px] hover:brightness-110 border backdrop-blur-md text-[11px] font-semibold transition flex items-center gap-1"
+                    >
+                      <span>{equippedCardCosmetic.cornerCrest || '✨'}</span>
+                      <span className="hidden sm:inline">Marcos & FX</span>
+                    </button>
+                    <button
+                      onClick={() => setIsEditorOpen(true)}
+                      title="Personalizar objetivo"
+                      style={{
+                        backgroundColor: currentAccentTheme.surfaceDark,
+                        borderColor: `${currentAccentTheme.primary}40`,
+                        color: currentAccentTheme.textSoft,
+                      }}
+                      className="px-2.5 py-1.5 rounded-[11px] hover:brightness-110 border backdrop-blur-md text-[11px] font-semibold transition flex items-center gap-1"
+                    >
+                      <span>🎨</span>
+                      <span className="hidden sm:inline">Personalizar</span>
+                    </button>
+                    <button
+                      onClick={() => setIsBannerPickerOpen(true)}
+                      title="Cambiar arte o foto de fondo"
+                      style={{
+                        backgroundColor: currentAccentTheme.surfaceDark,
+                        borderColor: `${currentAccentTheme.primary}40`,
+                        color: currentAccentTheme.textSoft,
+                      }}
+                      className="px-2.5 py-1.5 rounded-[11px] hover:brightness-110 border backdrop-blur-md text-[11px] font-semibold transition flex items-center gap-1"
+                    >
+                      <span>▧</span>
+                      <span className="hidden sm:inline">Fondo</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Full-Width Objective Identity Row (Emblem + Title + Description) */}
                 <div className="flex items-start gap-3 min-w-0">
-                  {/* Custom Emblem Medallion */}
                   <button
                     onClick={() => setIsEditorOpen(true)}
                     title="Cambiar icono y estilo del objetivo"
@@ -3153,47 +3387,7 @@ export function App() {
                     {currentIcon}
                   </button>
 
-                  <div className="space-y-1 min-w-0">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span
-                        style={{
-                          color: currentAccentTheme.primary,
-                          backgroundColor: currentAccentTheme.softBg,
-                          borderColor: `${currentAccentTheme.primary}55`,
-                        }}
-                        className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider border backdrop-blur-sm"
-                      >
-                        {currentCategory}
-                      </span>
-
-                      {objectiveInsights.daysLeft !== null && (
-                        <span
-                          style={
-                            objectiveInsights.daysLeft > 7
-                              ? {
-                                  backgroundColor: currentAccentTheme.surfaceDark,
-                                  borderColor: `${currentAccentTheme.primary}38`,
-                                  color: currentAccentTheme.textSoft,
-                                }
-                              : undefined
-                          }
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold border backdrop-blur-sm ${
-                            objectiveInsights.daysLeft < 0
-                              ? 'bg-[#4A202A]/80 border-[#F27783]/50 text-[#FFD1D7]'
-                              : objectiveInsights.daysLeft <= 7
-                              ? 'bg-[#443318]/80 border-[#FFD54F]/60 text-[#FFE082]'
-                              : ''
-                          }`}
-                        >
-                          {objectiveInsights.daysLeft < 0
-                            ? '⌛ Fecha cumplida'
-                            : objectiveInsights.daysLeft === 0
-                            ? '⏳ ¡Hoy es la fecha meta!'
-                            : `⏳ ${objectiveInsights.daysLeft}d restantes`}
-                        </span>
-                      )}
-                    </div>
-
+                  <div className="space-y-0.5 min-w-0 flex-1">
                     <h2 className="text-[19px] sm:text-[23px] font-extrabold text-white leading-snug break-words drop-shadow-sm select-copyable">
                       {currentObjective.title}
                     </h2>
@@ -3214,54 +3408,6 @@ export function App() {
                       </button>
                     )}
                   </div>
-                </div>
-
-                {/* Floating Glass Customization Buttons */}
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    onClick={() => openIndieShop('cards_audio')}
-                    title={`Marco activo: ${equippedCardCosmetic.name} (toca para explorar 48 marcos y 30 sonidos)`}
-                    style={{
-                      backgroundColor: currentAccentTheme.surfaceDark,
-                      borderColor:
-                        equippedCardCosmetic.id !== 'frame_default'
-                          ? equippedCardCosmetic.borderColor
-                          : `${currentAccentTheme.primary}40`,
-                      color: currentAccentTheme.textSoft,
-                    }}
-                    className="px-2.5 py-2 rounded-[12px] hover:brightness-110 border backdrop-blur-md text-[11px] font-semibold transition flex items-center gap-1"
-                  >
-                    <span>
-                      {equippedCardCosmetic.cornerCrest || '✨'}
-                    </span>
-                    <span className="hidden sm:inline">Marcos & FX</span>
-                  </button>
-                  <button
-                    onClick={() => setIsEditorOpen(true)}
-                    title="Personalizar objetivo"
-                    style={{
-                      backgroundColor: currentAccentTheme.surfaceDark,
-                      borderColor: `${currentAccentTheme.primary}40`,
-                      color: currentAccentTheme.textSoft,
-                    }}
-                    className="px-2.5 py-2 rounded-[12px] hover:brightness-110 border backdrop-blur-md text-[11px] font-semibold transition flex items-center gap-1"
-                  >
-                    <span>🎨</span>
-                    <span className="hidden sm:inline">Personalizar</span>
-                  </button>
-                  <button
-                    onClick={() => setIsBannerPickerOpen(true)}
-                    title="Cambiar arte o foto de fondo"
-                    style={{
-                      backgroundColor: currentAccentTheme.surfaceDark,
-                      borderColor: `${currentAccentTheme.primary}40`,
-                      color: currentAccentTheme.textSoft,
-                    }}
-                    className="px-2.5 py-2 rounded-[12px] hover:brightness-110 border backdrop-blur-md text-[11px] font-semibold transition flex items-center gap-1"
-                  >
-                    <span>▧</span>
-                    <span className="hidden sm:inline">Fondo</span>
-                  </button>
                 </div>
               </div>
 
@@ -3953,17 +4099,19 @@ export function App() {
                   </div>
                 </div>
 
-                {/* Mascot Status Message + Códice & Skins Links (Portrait-First: full message without ellipsis) */}
+                {/* Mascot Status Message + Direct ASMR Clicker CTA & Códice Link */}
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5">
                   <div className="text-[11px] text-[#C6C0D6] leading-snug break-words">
                     {mascotMessage}
                   </div>
                   <div className="flex items-center gap-2 flex-wrap shrink-0">
                     <button
-                      onClick={() => openIndieShop('skins')}
-                      className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-[#2A2142] border border-[#64499B] text-[#E6D9FF] hover:border-[#FFD54F] hover:text-white transition"
+                      type="button"
+                      onClick={openAndScrollToAsmrSanctuary}
+                      className="text-[10px] font-extrabold px-2.5 py-1 rounded-full bg-gradient-to-r from-[#17363E] via-[#1E2E4A] to-[#2B2046] border border-[#64D8FF] text-[#E0F7FA] hover:border-[#FFD54F] hover:scale-105 active:scale-95 transition shadow-[0_0_12px_rgba(100,216,255,0.3)] flex items-center gap-1"
                     >
-                      {equippedSkin.emoji} SKIN & BUFFS →
+                      <span>{activeAsmrTextureObj.emoji}</span>
+                      <span>JUGAR CLICKER ASMR ✨</span>
                     </button>
                     <button
                       onClick={() => {
@@ -4006,7 +4154,7 @@ export function App() {
                   )}
                   {isIndieFounder && (
                     <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full bg-[#362B14] border border-[#FFD54F]/60 text-[#FFD54F]">
-                      👑 +20% XP Mecenas
+                      👑 +20% XP Fundador
                     </span>
                   )}
                 </div>
@@ -4119,7 +4267,7 @@ export function App() {
                   </div>
                 </div>
 
-                {/* Action Buttons: ASMR Clicker + Daily Quests */}
+                {/* Action Buttons: Prominent ASMR Clicker + Daily Quests */}
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <button
                     type="button"
@@ -4127,17 +4275,23 @@ export function App() {
                       playUiTap(2);
                       setIsAsmrSanctuaryOpen((prev) => !prev);
                     }}
-                    className={`px-2.5 py-1 rounded-[9px] text-[10px] font-bold border flex items-center gap-1.5 transition ${
+                    className={`px-3 py-1.5 rounded-[10px] text-[10px] sm:text-[11px] font-extrabold border flex items-center gap-1.5 transition ${
                       isAsmrSanctuaryOpen
-                        ? 'bg-gradient-to-r from-[#1F3538] to-[#292142] border-[#64D8FF] text-[#E0F7FA] shadow-[0_0_12px_rgba(100,216,255,0.25)]'
-                        : 'bg-[#1E1C30] border-[#3E355B] text-[#90E0FF] hover:border-[#64D8FF]'
+                        ? 'bg-gradient-to-r from-[#1F3A42] to-[#2B2248] border-[#64D8FF] text-[#E0F7FA] shadow-[0_0_14px_rgba(100,216,255,0.35)]'
+                        : 'bg-gradient-to-r from-[#1A2D38] to-[#231D3A] border-[#64D8FF]/75 text-[#E0F7FA] hover:border-[#FFD54F] shadow-[0_0_10px_rgba(100,216,255,0.2)]'
                     }`}
                   >
-                    <span>🫧 Rincón ASMR & Clicker</span>
-                    <span className="px-1.5 py-0.2 rounded-full bg-[#13252C] text-[#64D8FF] text-[9px] font-mono-tabular font-extrabold">
-                      {asmrCycleProgress}/25
-                    </span>
-                    <span className="text-[9px] opacity-80">
+                    <span>{activeAsmrTextureObj.emoji} Clicker ASMR & Orbes (16)</span>
+                    {asmrTotalTaps === 0 ? (
+                      <span className="px-1.5 py-0.2 rounded-full bg-[#FFD54F] text-[#1A1305] text-[9px] font-extrabold animate-pulse">
+                        ¡PRUÉBALO! 🎧
+                      </span>
+                    ) : (
+                      <span className="px-1.5 py-0.2 rounded-full bg-[#13252C] text-[#64D8FF] text-[9px] font-mono-tabular font-extrabold">
+                        {asmrCycleProgress}/{ASMR_CYCLE_TAPS}
+                      </span>
+                    )}
+                    <span className="text-[9px] opacity-85">
                       {isAsmrSanctuaryOpen ? '▲' : '▼'}
                     </span>
                   </button>
@@ -4145,7 +4299,7 @@ export function App() {
                   {/* Toggle Daily Quests Button */}
                   <button
                     onClick={() => setIsDailyRitualOpen((prev) => !prev)}
-                    className={`px-2.5 py-1 rounded-[9px] text-[10px] font-bold border flex items-center gap-1.5 transition ${
+                    className={`px-2.5 py-1.5 rounded-[10px] text-[10px] sm:text-[11px] font-bold border flex items-center gap-1.5 transition ${
                       unclaimedReadyQuestsCount > 0 || canClaimAllDailyBonus
                         ? 'bg-[#35294F] border-[#FFD54F] text-[#FFE082] shadow-[0_0_10px_rgba(255,213,79,0.25)]'
                         : 'bg-[#252136] border-[#3D3559] text-[#D8C5FF] hover:bg-[#2F2A44]'
@@ -4166,21 +4320,34 @@ export function App() {
                 </div>
               </div>
 
-              {/* Expandable ASMR Clicker Mini-Game Sanctuary */}
+              {/* Expandable ASMR Clicker Mini-Game Sanctuary (16 Scrollable & Unlockable Styles + Anti-Exploit Cap) */}
               {isAsmrSanctuaryOpen && (
-                <div className="p-3 sm:p-3.5 rounded-[16px] bg-gradient-to-b from-[#16192B] to-[#12111D] border border-[#3B4B6E] space-y-3 relative overflow-hidden animate-in fade-in duration-150">
+                <div
+                  ref={asmrSanctuaryRef}
+                  className="p-3 sm:p-4 rounded-[18px] bg-gradient-to-b from-[#161B2E] via-[#141526] to-[#11101C] border border-[#446088] space-y-3 relative overflow-hidden shadow-[0_8px_26px_rgba(8,12,26,0.65)] animate-in fade-in duration-150"
+                >
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <div>
+                    <div className="space-y-0.5">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#64D8FF]">
-                          🫧 RINCÓN ASMR & CLICKER DEL GUARDIÁN
+                        <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#64D8FF]">
+                          🫧 SANTUARIO ASMR & CLICKER DEL GUARDIÁN
                         </span>
-                        <span className="px-2 py-0.2 rounded-full bg-[#1C2A38] border border-[#64D8FF]/40 text-[9px] font-mono-tabular font-bold text-[#9AF0AE]">
+                        <span className="px-2 py-0.5 rounded-full bg-[#1C2A38] border border-[#64D8FF]/40 text-[9px] font-mono-tabular font-bold text-[#9AF0AE]">
                           Toques totales: {asmrTotalTaps}
                         </span>
+                        <span
+                          title="Tope diario anti-exploit de Gemas en el Clicker. Al llegar a 12/12 sigues ganando XP Zen y desbloqueando orbes por toques."
+                          className={`px-2 py-0.5 rounded-full border text-[9px] font-mono-tabular font-extrabold ${
+                            asmrRemainingDailyGems > 0
+                              ? 'bg-[#231F38] border-[#FFD54F]/50 text-[#FFE082]'
+                              : 'bg-[#1D3028] border-[#82E59B]/50 text-[#9AF0AE]'
+                          }`}
+                        >
+                          💎 Hoy: {asmrGemsEarnedToday}/{DAILY_ASMR_GEM_CAP}
+                        </span>
                       </div>
-                      <p className="text-[11px] text-[#B8B2C8] leading-snug mt-0.5">
-                        Toca el Orbe de Calma para escuchar texturas binaurales en vivo. Cada 25 toques (o por suerte ocasional) tu guardián descubre un tesoro.
+                      <p className="text-[11px] text-[#C8C2D8] leading-snug">
+                        Explora <strong>16 Orbes ASMR</strong> (4 iniciales como Burbuja y Bambú, 4 desbloqueables gratis por toques y 8 Skins de Orbe).
                       </p>
                     </div>
 
@@ -4197,55 +4364,199 @@ export function App() {
                       <span>🎵</span>
                       <span>
                         {sensoryPrefs.musicEnabled
-                          ? `Música: ${getAmbientMusicStyleName(
+                          ? `Ambiental: ${getAmbientMusicStyleName(
                               currentObjective.accentColor
                             )} (ON)`
-                          : 'Activar Música Procedural'}
+                          : 'Música Ambiental'}
                       </span>
                     </button>
                   </div>
 
-                  {/* 5 ASMR Sound Texture Selector Pills */}
-                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-                    {ASMR_TEXTURES.map((tex) => {
+                  {/* Filter Tabs + Horizontal Scroll Controls for the 16 ASMR Styles */}
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-1 flex-wrap">
+                      {[
+                        { id: 'all', label: `Todos (${ASMR_TEXTURES.length})` },
+                        {
+                          id: 'unlocked',
+                          label: `✓ Mis Orbes (${
+                            ASMR_TEXTURES.filter((t) => isAsmrStyleUnlocked(t))
+                              .length
+                          })`,
+                        },
+                        { id: 'taps', label: '🎯 Por Toques (4)' },
+                        { id: 'skins', label: '💎 Skins Orbe (8)' },
+                      ].map((tab) => {
+                        const active = asmrFilterCategory === tab.id;
+                        return (
+                          <button
+                            key={tab.id}
+                            type="button"
+                            onClick={() => {
+                              playUiTap(1);
+                              setAsmrFilterCategory(
+                                tab.id as 'all' | 'unlocked' | 'taps' | 'skins'
+                              );
+                            }}
+                            className={`px-2 py-1 rounded-[8px] text-[10px] font-bold border transition ${
+                              active
+                                ? 'bg-[#24344D] border-[#64D8FF] text-white'
+                                : 'bg-[#171625] border-[#2C2840] text-[#A8A3B8] hover:text-white'
+                            }`}
+                          >
+                            {tab.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      <span className="text-[9px] text-[#9E97B0] hidden sm:inline mr-1">
+                        Desliza estilos →
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => scrollAsmrCarousel('left')}
+                        aria-label="Desplazar estilos ASMR a la izquierda"
+                        className="w-7 h-7 rounded-[8px] bg-[#1D1B2E] border border-[#383252] text-[#D8C5FF] hover:bg-[#2A2642] text-xs flex items-center justify-center transition"
+                      >
+                        ◀
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => scrollAsmrCarousel('right')}
+                        aria-label="Desplazar estilos ASMR a la derecha"
+                        className="w-7 h-7 rounded-[8px] bg-[#1D1B2E] border border-[#383252] text-[#D8C5FF] hover:bg-[#2A2642] text-xs flex items-center justify-center transition"
+                      >
+                        ▶
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Scrollable 16 ASMR Orb Style Cards */}
+                  <div
+                    ref={asmrSkinsScrollRef}
+                    className="flex items-stretch gap-2 overflow-x-auto pb-1.5 pt-0.5 scroll-smooth"
+                  >
+                    {ASMR_TEXTURES.filter((tex) => {
+                      if (asmrFilterCategory === 'unlocked')
+                        return isAsmrStyleUnlocked(tex);
+                      if (asmrFilterCategory === 'taps')
+                        return tex.unlockKind === 'taps';
+                      if (asmrFilterCategory === 'skins')
+                        return tex.unlockKind === 'gems';
+                      return true;
+                    }).map((tex) => {
+                      const unlocked = isAsmrStyleUnlocked(tex);
                       const isSelected = asmrPreferredTexture === tex.id;
+                      const tapProgPct =
+                        tex.unlockKind === 'taps' && tex.requiredTaps > 0
+                          ? Math.min(
+                              100,
+                              Math.floor((asmrTotalTaps / tex.requiredTaps) * 100)
+                            )
+                          : 100;
+
                       return (
                         <button
                           key={tex.id}
                           type="button"
-                          onClick={() => handleSelectAsmrTexture(tex.id)}
+                          onClick={() => handleSelectAsmrTexture(tex)}
                           style={
                             isSelected
                               ? {
                                   borderColor: tex.accentColor,
-                                  backgroundColor: 'rgba(28, 34, 52, 0.95)',
-                                  color: '#FFFFFF',
+                                  boxShadow: `0 0 16px -3px ${tex.secondaryColor}`,
                                 }
                               : undefined
                           }
-                          className={`px-2.5 py-1.5 rounded-[10px] border text-left shrink-0 transition flex items-center gap-1.5 ${
+                          className={`min-w-[148px] max-w-[164px] p-2.5 rounded-[13px] border text-left shrink-0 transition flex flex-col justify-between gap-1.5 ${
                             isSelected
-                              ? 'shadow-sm scale-[1.02]'
-                              : 'bg-[#171625] border-[#2C2840] text-[#A8A3B8] hover:text-white'
+                              ? 'bg-[#1D253A] text-white scale-[1.02]'
+                              : unlocked
+                              ? 'bg-[#171625] border-[#2F2B46] text-[#E6E0F2] hover:border-[#64D8FF]/60'
+                              : 'bg-[#13121E]/90 border-[#28243C] text-[#A8A3B8] hover:border-[#FFD54F]/60'
                           }`}
                         >
-                          <span className="text-sm">{tex.emoji}</span>
+                          <div className="flex items-center justify-between gap-1.5">
+                            {/* Mini Orb Skin Preview */}
+                            <div
+                              style={{
+                                background: tex.orbGradient,
+                                borderColor: tex.accentColor,
+                                boxShadow: `0 0 10px ${tex.secondaryColor}`,
+                              }}
+                              className={`w-8 h-8 rounded-full border flex items-center justify-center text-sm shrink-0 ${
+                                tex.ringStyle === 'dashed'
+                                  ? 'border-dashed'
+                                  : tex.ringStyle === 'double'
+                                  ? 'border-2'
+                                  : ''
+                              }`}
+                            >
+                              {tex.emoji}
+                            </div>
+
+                            {isSelected ? (
+                              <span
+                                style={{
+                                  color: tex.accentColor,
+                                  borderColor: `${tex.accentColor}66`,
+                                }}
+                                className="px-1.5 py-0.5 rounded-full bg-black/40 border text-[8px] font-extrabold uppercase"
+                              >
+                                ✓ EN USO
+                              </span>
+                            ) : unlocked ? (
+                              <span className="px-1.5 py-0.5 rounded-full bg-[#1C3329] text-[#82E59B] text-[8px] font-extrabold">
+                                ✓ LISTO
+                              </span>
+                            ) : tex.unlockKind === 'taps' ? (
+                              <span className="px-1.5 py-0.5 rounded-full bg-[#242038] border border-[#64D8FF]/40 text-[#90E0FF] text-[8px] font-mono-tabular font-extrabold">
+                                🎯 {asmrTotalTaps}/{tex.requiredTaps}
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.5 rounded-full bg-[#2B223C] border border-[#FFD54F]/50 text-[#FFD54F] text-[8px] font-mono-tabular font-extrabold">
+                                💎 {tex.gemCost}
+                              </span>
+                            )}
+                          </div>
+
                           <div>
-                            <div className="text-[10px] font-bold leading-tight">
+                            <div className="text-[11px] font-extrabold leading-tight break-words">
                               {tex.name}
                             </div>
-                            <div className="text-[8px] opacity-75 leading-tight">
+                            <div className="text-[9px] text-[#9E97B0] leading-tight mt-0.5 break-words">
                               {tex.subtitle}
                             </div>
                           </div>
+
+                          {!unlocked && tex.unlockKind === 'taps' && (
+                            <div className="w-full h-1.5 rounded-full bg-[#221F33] overflow-hidden">
+                              <div
+                                style={{
+                                  width: `${tapProgPct}%`,
+                                  backgroundColor: tex.accentColor,
+                                }}
+                                className="h-full rounded-full transition-all"
+                              />
+                            </div>
+                          )}
+
+                          {!unlocked && tex.unlockKind === 'gems' && (
+                            <div className="text-[8px] font-bold text-[#FFD54F] flex items-center justify-between pt-0.5 border-t border-white/5">
+                              <span>🔊 Toca para probar</span>
+                              <span>Desbloquear →</span>
+                            </div>
+                          )}
                         </button>
                       );
                     })}
                   </div>
 
-                  {/* Interactive ASMR Clicker Pad + Resonance Progress */}
-                  <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] items-center gap-3 p-2.5 rounded-[14px] bg-[#11101B]/90 border border-[#29263E]">
-                    <div className="relative flex justify-center">
+                  {/* Interactive ASMR Clicker Stage + Harmony Progress */}
+                  <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] items-center gap-3.5 p-3 rounded-[16px] bg-[#100F1A]/95 border border-[#2B2842]">
+                    <div className="relative flex justify-center py-1">
                       {/* Floating ASMR Sparks */}
                       {asmrFloatingSparks.map((sp) => (
                         <span
@@ -4264,45 +4575,75 @@ export function App() {
                         type="button"
                         onClick={handleAsmrClick}
                         style={{
+                          background: activeAsmrTextureObj.orbGradient,
                           borderColor: activeAsmrTextureObj.accentColor,
-                          boxShadow: `0 0 22px -4px ${activeAsmrTextureObj.accentColor}55`,
+                          boxShadow: `0 0 28px -2px ${activeAsmrTextureObj.secondaryColor}`,
                         }}
-                        className="w-24 h-24 sm:w-20 sm:h-20 rounded-full bg-gradient-to-br from-[#25213D] via-[#1B2838] to-[#141A29] border-2 flex flex-col items-center justify-center gap-0.5 active:scale-90 hover:scale-105 transition select-none cursor-pointer relative"
+                        className={`w-28 h-28 sm:w-24 sm:h-24 rounded-full border-2 flex flex-col items-center justify-center gap-0.5 active:scale-90 hover:scale-105 transition select-none cursor-pointer relative ${
+                          activeAsmrTextureObj.ringStyle === 'dashed'
+                            ? 'border-dashed'
+                            : activeAsmrTextureObj.ringStyle === 'double'
+                            ? 'ring-2 ring-white/25'
+                            : ''
+                        }`}
                       >
-                        <span className="text-2xl leading-none">
+                        <span className="text-3xl leading-none drop-shadow">
                           {activeAsmrTextureObj.emoji}
                         </span>
-                        <span className="text-[10px] font-extrabold text-white tracking-wide">
-                          TOCAR ASMR
+                        <span className="text-[10px] font-extrabold text-white tracking-wide drop-shadow">
+                          TOCAR ORBE
                         </span>
-                        <span className="text-[8px] text-[#90E0FF] font-mono-tabular">
-                          +Resonancia
+                        <span
+                          style={{ color: activeAsmrTextureObj.accentColor }}
+                          className="text-[8px] font-extrabold uppercase tracking-wider bg-black/45 px-1.5 py-0.2 rounded-full"
+                        >
+                          {activeAsmrTextureObj.name}
                         </span>
                       </button>
                     </div>
 
                     <div className="space-y-2 min-w-0">
-                      <div className="flex items-center justify-between gap-2 text-[11px]">
+                      <div className="flex items-center justify-between gap-2 text-[11px] flex-wrap">
                         <span className="font-bold text-[#E6E0F2]">
-                          ✨ Armonía del Cofre Ocasional ({asmrCycleProgress}/25)
+                          ✨ Cofre de Armonía ({asmrCycleProgress}/{ASMR_CYCLE_TAPS})
                         </span>
                         <span className="text-[10px] font-mono-tabular text-[#FFD54F]">
-                          Faltan {25 - asmrCycleProgress} toques
+                          Faltan {ASMR_CYCLE_TAPS - asmrCycleProgress} toques
                         </span>
                       </div>
 
                       <div className="w-full h-2.5 rounded-full bg-[#232036] overflow-hidden border border-white/5">
                         <div
                           style={{
-                            width: `${(asmrCycleProgress / 25) * 100}%`,
+                            width: `${(asmrCycleProgress / ASMR_CYCLE_TAPS) * 100}%`,
                             background: `linear-gradient(90deg, ${activeAsmrTextureObj.accentColor}, #FFD54F)`,
                           }}
                           className="h-full transition-all duration-150 rounded-full"
                         />
                       </div>
 
+                      {/* Next Tap-Milestone Skin Progress Indicator */}
+                      {(() => {
+                        const nextTapSkin = ASMR_TEXTURES.find(
+                          (t) =>
+                            t.unlockKind === 'taps' &&
+                            t.requiredTaps > asmrTotalTaps
+                        );
+                        if (!nextTapSkin) return null;
+                        return (
+                          <div className="flex items-center justify-between text-[10px] text-[#90E0FF] bg-[#161F30] px-2.5 py-1 rounded-[8px] border border-[#64D8FF]/25">
+                            <span>
+                              🎯 Próximo Orbe gratis: <strong>{nextTapSkin.emoji} {nextTapSkin.name}</strong>
+                            </span>
+                            <span className="font-mono-tabular font-bold">
+                              {asmrTotalTaps}/{nextTapSkin.requiredTaps} toques
+                            </span>
+                          </div>
+                        );
+                      })()}
+
                       {lastAsmrPrizeNotice ? (
-                        <div className="px-2.5 py-1 rounded-[9px] bg-[#242038] border border-[#FFD54F]/50 text-[10px] font-bold text-[#FFE082] flex items-center justify-between gap-2">
+                        <div className="px-2.5 py-1.5 rounded-[9px] bg-[#242038] border border-[#FFD54F]/50 text-[10px] font-bold text-[#FFE082] flex items-center justify-between gap-2">
                           <span>{lastAsmrPrizeNotice}</span>
                           <button
                             type="button"
@@ -4314,7 +4655,7 @@ export function App() {
                         </div>
                       ) : (
                         <div className="text-[10px] text-[#9E97B0] leading-snug">
-                          💡 Cada toque genera sonido sintetizado ASMR + micro-vibración y puede soltar Gemas Astrales 💎, XP ✨ o Escudos 🛡️.
+                          💡 Cada 50 toques recibes +2 💎 y +10 XP (hasta {DAILY_ASMR_GEM_CAP} 💎/día para cuidar el equilibrio del juego; luego modo Zen +XP infinito).
                         </div>
                       )}
                     </div>
@@ -4641,7 +4982,7 @@ export function App() {
               </button>
             </div>
 
-            {/* Indie Sanctuary Banner inside Ajustes */}
+            {/* Indie Sanctuary Banner + Android Release Keystore Access inside Ajustes */}
             <div className="p-3 rounded-[15px] bg-gradient-to-r from-[#241D38] via-[#1E2235] to-[#1A2926] border border-[#4A3B6E] flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
               <div className="space-y-0.5 min-w-0">
                 <div className="text-xs font-extrabold text-[#F4F1FF] flex items-center gap-1.5 flex-wrap">
@@ -4651,7 +4992,7 @@ export function App() {
                   Personaliza las 200 mascotas con Skins, equipa Marcos y Sonidos o activa Buffs con tus Gemas (💎 {gems}).
                 </p>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-2 flex-wrap shrink-0">
                 <button
                   type="button"
                   onClick={() => openIndieShop('skins')}
@@ -4673,7 +5014,7 @@ export function App() {
 
         {/* Right History Panel */}
         <aside
-          className={`fixed inset-y-0 right-0 z-40 w-[320px] lg:static lg:w-auto lg:block bg-[#171723] border-l border-[#29283C] p-4 flex flex-col gap-3.5 transition-transform duration-200 ${
+          className={`fixed inset-y-0 right-0 z-40 w-[320px] max-w-[86vw] lg:static lg:w-auto lg:max-w-none lg:block bg-[#171723] border-l border-[#29283C] pt-[max(1rem,calc(env(safe-area-inset-top,0px)+0.5rem))] pb-[max(1rem,calc(env(safe-area-inset-bottom,0px)+0.5rem))] pr-[max(1rem,calc(env(safe-area-inset-right,0px)+0.5rem))] pl-4 sm:p-4 flex flex-col gap-3.5 transition-transform duration-200 ${
             isHistoryOpen
               ? 'translate-x-0'
               : 'translate-x-full lg:translate-x-0'
@@ -4823,19 +5164,21 @@ export function App() {
         />
       )}
 
-      {/* Modal: Indie Sanctuary Emporium (216-Item Vault: Skins, Card FX, Sound Packs, Buffs, PedidosYa Tip & Publishing Guide) */}
+      {/* Modal: Indie Sanctuary Emporium (216-Item Vault: Skins, Card FX, Sound Packs, Buffs & Indie Support) */}
       {isIndieShopOpen && (
         <IndieEmporiumModal
           initialTab={indieShopInitialTab}
+          currentObjective={currentObjective}
           level={level}
           gems={gems}
           unlockedSkins={unlockedSkins}
           equippedSkinId={equippedSkinId}
           unlockedVaultIds={unlockedVaultIds}
           equippedCardFrameId={equippedCardFrameId}
+          equippedCardStyleId={equippedCardStyleId}
           equippedSoundPackId={equippedSoundPackId}
           equippedTitleId={equippedTitleId}
-          activeAccentColor={currentObjective.accentColor || '#9B6BFF'}
+          activeAccentColor={currentObjective.accentColor || '#65DB85'}
           activeBannerId={currentObjective.bannerId}
           streakShields={streakShields}
           isXpBoostActive={isXpBoostActive}
@@ -4852,6 +5195,10 @@ export function App() {
           onActivateBuff={handleActivateBuff}
           onPurchasePack={handlePurchaseSupportPack}
           onCustomTipSupport={handleCustomTipSupport}
+          onJumpToBoard={() => {
+            setIsIndieShopOpen(false);
+            highlightSection('objective', objectiveRef);
+          }}
           onClose={() => setIsIndieShopOpen(false)}
         />
       )}
@@ -6893,12 +7240,12 @@ function ObjectiveEditorModal({
     ]
   );
 
-  const previewPreset =
-    BANNER_PRESETS.find((p) => p.id === bannerId) || BANNER_PRESETS[0];
+  const previewPreset = useMemo(
+    () => findBannerPreset(bannerId),
+    [bannerId]
+  );
   const previewAccentTheme = useMemo(
-    () =>
-      OBJECTIVE_ACCENT_THEMES.find((t) => t.id === accentColor) ||
-      OBJECTIVE_ACCENT_THEMES[0],
+    () => findAccentTheme(accentColor),
     [accentColor]
   );
   const customBannerUrl = bannerId.startsWith('custom:')
@@ -7095,9 +7442,7 @@ function ObjectiveEditorModal({
           <div className="flex gap-2 overflow-x-auto pb-1.5 no-scrollbar">
             {OBJECTIVE_TEMPLATES.map((tpl) => {
               const isSelected = activeTemplateId === tpl.id;
-              const tplTheme =
-                OBJECTIVE_ACCENT_THEMES.find((t) => t.id === tpl.accentColor) ||
-                OBJECTIVE_ACCENT_THEMES[0];
+              const tplTheme = findAccentTheme(tpl.accentColor);
               return (
                 <button
                   key={tpl.id}
@@ -7307,10 +7652,10 @@ function ObjectiveEditorModal({
 
         {/* Form Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="space-y-1">
+          <div className="space-y-1 min-w-0">
             <label
               style={{ color: previewAccentTheme.textSoft }}
-              className="text-xs font-semibold"
+              className="block w-full text-xs font-semibold leading-snug"
             >
               Nombre del objetivo
             </label>
@@ -7323,10 +7668,10 @@ function ObjectiveEditorModal({
             />
           </div>
 
-          <div className="space-y-1">
+          <div className="space-y-1 min-w-0">
             <label
               style={{ color: previewAccentTheme.textSoft }}
-              className="text-xs font-semibold"
+              className="block w-full text-xs font-semibold leading-snug"
             >
               Categoría / Etiqueta
             </label>
@@ -7947,12 +8292,14 @@ function EditEntryModal({
 
 function IndieEmporiumModal({
   initialTab,
+  currentObjective,
   level,
   gems,
   unlockedSkins,
   equippedSkinId,
   unlockedVaultIds,
   equippedCardFrameId,
+  equippedCardStyleId,
   equippedSoundPackId,
   equippedTitleId,
   activeAccentColor,
@@ -7972,15 +8319,18 @@ function IndieEmporiumModal({
   onActivateBuff,
   onPurchasePack,
   onCustomTipSupport,
+  onJumpToBoard,
   onClose,
 }: {
   initialTab: 'skins' | 'cards_audio' | 'buffs' | 'support';
+  currentObjective: Objective;
   level: number;
   gems: number;
   unlockedSkins: string[];
   equippedSkinId: string;
   unlockedVaultIds: string[];
   equippedCardFrameId: string;
+  equippedCardStyleId?: string;
   equippedSoundPackId: string;
   equippedTitleId: string;
   activeAccentColor: string;
@@ -8000,6 +8350,7 @@ function IndieEmporiumModal({
   onActivateBuff: (buff: SanctuaryBuffDefinition) => void;
   onPurchasePack: (pack: IndieSupportPack) => void;
   onCustomTipSupport: (usdAmount: number) => void;
+  onJumpToBoard: () => void;
   onClose: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<
@@ -8012,6 +8363,20 @@ function IndieEmporiumModal({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [previewSkinId, setPreviewSkinId] = useState<string>(equippedSkinId);
   const [previewMascotLevel, setPreviewMascotLevel] = useState<number>(level);
+
+  // Track which sound step (0..4) was most recently auditioned for each Sound Pack
+  const [auditionedPackSteps, setAuditionedPackSteps] = useState<
+    Record<string, { stepIndex: number; stepLabel: string }>
+  >({});
+
+  // Live feedback banner when user equips/buys a Card Style, Frame, Sound Pack, or Title
+  const [liveEquippedNotice, setLiveEquippedNotice] = useState<{
+    id: number;
+    emoji: string;
+    title: string;
+    subtitle: string;
+    color: string;
+  } | null>(null);
 
   // PedidosYa-style Editable Donation / Tip state
   const [tipAmountText, setTipAmountText] = useState<string>('2.00');
@@ -8026,6 +8391,59 @@ function IndieEmporiumModal({
   const previewTier = Math.floor(
     (Math.min(200, Math.max(1, previewMascotLevel)) - 1) / 10
   );
+
+  // Live Card & Audio Stage derived state
+  const liveAccentTheme = useMemo(
+    () => findAccentTheme(activeAccentColor),
+    [activeAccentColor]
+  );
+  const liveBannerPreset = useMemo(
+    () => findBannerPreset(activeBannerId),
+    [activeBannerId]
+  );
+  const liveCustomBannerUrl = activeBannerId.startsWith('custom:')
+    ? activeBannerId.slice('custom:'.length)
+    : null;
+  const liveBannerImg = liveCustomBannerUrl || liveBannerPreset.imageUrl;
+  const liveFrameCosmetic = useMemo(
+    () => findCardCosmetic(equippedCardFrameId),
+    [equippedCardFrameId]
+  );
+  const liveStyleItem = useMemo(
+    () =>
+      findCardStyleVaultItem(
+        equippedCardStyleId,
+        activeAccentColor,
+        activeBannerId
+      ),
+    [equippedCardStyleId, activeAccentColor, activeBannerId]
+  );
+  const liveSoundPackItem = useMemo(
+    () =>
+      SOUND_PACKS.find((s) => s.id === equippedSoundPackId) || SOUND_PACKS[0],
+    [equippedSoundPackId]
+  );
+  const liveGuardianTitleItem = useMemo(
+    () => findGuardianTitle(equippedTitleId),
+    [equippedTitleId]
+  );
+  const liveObjProgressPct =
+    currentObjective.goalAmount > 0
+      ? Math.min(
+          100,
+          Math.floor(
+            (currentObjective.currentAmount / currentObjective.goalAmount) * 100
+          )
+        )
+      : 0;
+
+  const handleAuditionSoundPack = (packId: string, forcedStep?: number) => {
+    const res = playSoundPackPreview(packId, forcedStep);
+    setAuditionedPackSteps((prev) => ({
+      ...prev,
+      [packId]: { stepIndex: res.stepIndex, stepLabel: res.stepLabel },
+    }));
+  };
 
   const normalizedSearch = searchQuery.trim().toLowerCase();
   const matchesFilterAndSearch = (
@@ -8120,9 +8538,9 @@ function IndieEmporiumModal({
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="inline-flex items-center gap-1 text-[10px] font-extrabold uppercase tracking-widest">
                   <span className="text-xs leading-none">🎯</span>
-                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#D8C5FF] via-[#FFD54F] to-[#82E59B]">
-                    OBJECTIVE REACHER · BANCO DEL SANTUARIO
-                  </span>
+                  <span className="text-[#F4F1FF]">OBJECTIVE</span>{' '}
+                  <span className="text-[#82E59B]">REACHER</span>{' '}
+                  <span className="text-[#FFD54F]">· BANCO DEL SANTUARIO</span>
                 </span>
                 <span className="px-2 py-0.5 rounded-full bg-[#1E1A32] border border-[#65499C]/60 text-[9px] font-extrabold text-[#E2D4FF]">
                   ✨ {VAULT_STATS.totalItems} COLECCIONABLES EN EL SANTUARIO
@@ -8438,6 +8856,213 @@ function IndieEmporiumModal({
           {/* TAB 2: TARJETAS, SONIDOS, ESTILOS & TÍTULOS (156 ITEMS) */}
           {activeTab === 'cards_audio' && (
             <div className="space-y-3.5">
+              {/* LIVE INTERACTIVE HERO CARD & AUDIO STAGE (Shows immediate visual/audio transformation right inside the shop!) */}
+              <div
+                key={liveEquippedNotice?.id || 'live-stage'}
+                style={{
+                  background: `linear-gradient(135deg, ${liveBannerPreset.startColor}, ${liveBannerPreset.endColor})`,
+                  borderColor:
+                    liveFrameCosmetic.id !== 'frame_default'
+                      ? liveFrameCosmetic.borderColor
+                      : `${liveAccentTheme.primary}99`,
+                  boxShadow:
+                    liveFrameCosmetic.id !== 'frame_default'
+                      ? `0 10px 30px -6px rgba(8, 7, 16, 0.8), 0 0 24px -2px ${liveFrameCosmetic.glowColor}`
+                      : `0 10px 28px -6px ${liveAccentTheme.glow}`,
+                }}
+                className="relative rounded-[20px] border-2 p-3.5 sm:p-4 overflow-hidden transition-all duration-300"
+              >
+                {liveBannerImg && (
+                  <img
+                    src={liveBannerImg}
+                    alt=""
+                    className="absolute inset-0 w-full h-full object-cover opacity-65 pointer-events-none select-none transition-all duration-500"
+                  />
+                )}
+                <div
+                  style={{ background: liveAccentTheme.vignetteGradient }}
+                  className="absolute inset-0 pointer-events-none transition-all duration-500"
+                />
+                {liveFrameCosmetic.id !== 'frame_default' && (
+                  <div
+                    style={{ background: liveFrameCosmetic.overlayGradient }}
+                    className="absolute inset-0 pointer-events-none transition-all duration-500"
+                  />
+                )}
+
+                <div className="relative z-10 space-y-2.5">
+                  {/* Live Transformation Banner when an item is equipped/unlocked */}
+                  {liveEquippedNotice && (
+                    <div
+                      style={{
+                        borderColor: `${liveEquippedNotice.color}88`,
+                        backgroundColor: 'rgba(16, 15, 28, 0.9)',
+                      }}
+                      className="px-3 py-2 rounded-[12px] border flex flex-col sm:flex-row sm:items-center justify-between gap-2 animate-in fade-in zoom-in-95 duration-200"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-lg shrink-0">
+                          {liveEquippedNotice.emoji}
+                        </span>
+                        <div className="min-w-0">
+                          <div
+                            style={{ color: liveEquippedNotice.color }}
+                            className="text-xs font-extrabold leading-tight break-words"
+                          >
+                            {liveEquippedNotice.title}
+                          </div>
+                          <div className="text-[10px] text-[#E6E0F2] leading-tight break-words">
+                            {liveEquippedNotice.subtitle}
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={onJumpToBoard}
+                        style={{
+                          backgroundColor: liveAccentTheme.primary,
+                          color: liveAccentTheme.buttonText,
+                        }}
+                        className="px-3 py-1.5 rounded-[9px] text-[11px] font-extrabold shrink-0 hover:brightness-110 active:scale-95 transition shadow"
+                      >
+                        👁️ Ver en mi Tablero Principal →
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1">
+                      <div
+                        style={{
+                          borderColor: liveAccentTheme.primary,
+                          backgroundColor: liveAccentTheme.surfaceDark,
+                          boxShadow: `0 0 14px ${liveAccentTheme.softBg}`,
+                        }}
+                        className="w-12 h-12 rounded-[15px] border flex items-center justify-center text-2xl shrink-0"
+                      >
+                        {currentObjective.icon || '🎯'}
+                      </div>
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span
+                            style={{
+                              color: liveAccentTheme.primary,
+                              backgroundColor: liveAccentTheme.softBg,
+                              borderColor: `${liveAccentTheme.primary}66`,
+                            }}
+                            className="px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase border"
+                          >
+                            VISTA EN VIVO DE TU TARJETA
+                          </span>
+                          <span
+                            style={{
+                              color: liveGuardianTitleItem.color,
+                              borderColor: `${liveGuardianTitleItem.color}55`,
+                            }}
+                            className="px-2 py-0.5 rounded-full bg-black/45 border text-[9px] font-extrabold"
+                          >
+                            {liveGuardianTitleItem.emoji}{' '}
+                            {liveGuardianTitleItem.title}
+                          </span>
+                        </div>
+
+                        <div className="text-[16px] sm:text-[18px] font-extrabold text-white leading-snug break-words">
+                          {currentObjective.title}
+                        </div>
+
+                        {/* Equipped Cosmetics Pills */}
+                        <div className="flex items-center gap-1.5 flex-wrap text-[10px]">
+                          <span
+                            style={{
+                              backgroundColor: liveAccentTheme.surfaceDark,
+                              borderColor: `${liveAccentTheme.primary}55`,
+                              color: liveAccentTheme.textSoft,
+                            }}
+                            className="px-2 py-0.5 rounded-md border font-bold"
+                          >
+                            🌈 Estilo:{' '}
+                            {liveStyleItem
+                              ? `${liveStyleItem.emoji} ${liveStyleItem.name}`
+                              : `${liveAccentTheme.name} + ${liveBannerPreset.name}`}
+                          </span>
+                          <span
+                            style={{
+                              backgroundColor: liveAccentTheme.surfaceDark,
+                              borderColor: `${liveFrameCosmetic.borderColor}66`,
+                              color: liveFrameCosmetic.shimmerColor,
+                            }}
+                            className="px-2 py-0.5 rounded-md border font-bold"
+                          >
+                            🖼️ Marco: {liveFrameCosmetic.emoji}{' '}
+                            {liveFrameCosmetic.name}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleAuditionSoundPack(liveSoundPackItem.id)
+                            }
+                            style={{
+                              backgroundColor: liveAccentTheme.surfaceDark,
+                              borderColor: `${liveSoundPackItem.accentColor}66`,
+                              color: liveSoundPackItem.accentColor,
+                            }}
+                            className="px-2 py-0.5 rounded-md border font-bold hover:brightness-125 transition"
+                            title="Toca para escuchar el Pack de Sonido activo"
+                          >
+                            🎵 Audio: {liveSoundPackItem.emoji}{' '}
+                            {liveSoundPackItem.name} 🔊
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Mini Live Progress Bar & Board Jump */}
+                    <div
+                      style={{
+                        backgroundColor: liveAccentTheme.surfaceDark,
+                        borderColor: `${liveAccentTheme.primary}45`,
+                      }}
+                      className="w-full sm:w-[215px] shrink-0 p-2.5 rounded-[13px] border space-y-1.5"
+                    >
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span
+                          style={{ color: liveAccentTheme.textSoft }}
+                          className="font-bold"
+                        >
+                          {formatObjectiveAmount(
+                            currentObjective.currentAmount,
+                            currentObjective
+                          )}{' '}
+                          /{' '}
+                          {formatObjectiveAmount(
+                            currentObjective.goalAmount,
+                            currentObjective
+                          )}
+                        </span>
+                        <span
+                          style={{ color: liveAccentTheme.primary }}
+                          className="font-mono-tabular font-extrabold"
+                        >
+                          {liveObjProgressPct}%
+                        </span>
+                      </div>
+                      <div className="h-2.5 w-full rounded-full bg-black/45 overflow-hidden border border-white/10">
+                        <div
+                          style={{
+                            width: `${Math.max(12, liveObjProgressPct)}%`,
+                            background:
+                              liveFrameCosmetic.id !== 'frame_default'
+                                ? `linear-gradient(90deg, ${liveFrameCosmetic.borderColor}, ${liveFrameCosmetic.shimmerColor})`
+                                : `linear-gradient(90deg, ${liveAccentTheme.secondary}, ${liveAccentTheme.primary})`,
+                          }}
+                          className="h-full rounded-full transition-all duration-300"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Sub-Category Selector */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 p-1.5 rounded-[14px] bg-[#151423] border border-[#2E2946]">
                 {[
@@ -8448,8 +9073,8 @@ function IndieEmporiumModal({
                   },
                   {
                     id: 'sounds',
-                    label: `🎵 Packs Sonido (${SOUND_PACKS.length})`,
-                    desc: 'Sintetizador Web Audio',
+                    label: `🎵 Packs de 5 Sonidos (${SOUND_PACKS.length})`,
+                    desc: '11 motores acústicos',
                   },
                   {
                     id: 'styles',
@@ -8550,7 +9175,21 @@ function IndieEmporiumModal({
 
                         <button
                           type="button"
-                          onClick={() => onSelectCardCosmetic(frame)}
+                          onClick={() => {
+                            onSelectCardCosmetic(frame);
+                            if (
+                              isOwned ||
+                              gems >= frame.gemCost
+                            ) {
+                              setLiveEquippedNotice({
+                                id: Date.now(),
+                                emoji: frame.emoji,
+                                title: `¡Marco "${frame.name}" equipado en vivo!`,
+                                subtitle: `Míralo aplicado arriba en tu tarjeta «${currentObjective.title}»`,
+                                color: frame.borderColor,
+                              });
+                            }
+                          }}
                           className={`w-full h-[35px] rounded-[10px] text-[11px] font-extrabold transition ${
                             isEquipped
                               ? 'bg-[#1E3B2E] text-[#82E59B] border border-[#65DB85]/40'
@@ -8571,69 +9210,146 @@ function IndieEmporiumModal({
                 </div>
               )}
 
-              {/* SUB-TAB B: 30 REAL-TIME WEB AUDIO SOUND PACKS */}
+              {/* SUB-TAB B: 30 REAL-TIME WEB AUDIO 5-SOUND PACKS */}
               {vaultSubTab === 'sounds' && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                  {filteredSounds.map((snd) => {
-                    const isOwned =
-                      isIndieFounder ||
-                      snd.gemCost === 0 ||
-                      unlockedVaultIds.includes(snd.id);
-                    const isEquipped = equippedSoundPackId === snd.id;
+                <div className="space-y-2.5">
+                  <div className="p-2.5 rounded-[13px] bg-[#161525] border border-[#342C50] flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-[#D8D1E5]">
+                    <div>
+                      🎹 <strong>Cada Pack incluye 5 sonidos distintos</strong>{' '}
+                      (Toque UI, +Sumar Avance, −Restar, 🎯 Misión y 🏆 Fanfarria).
+                      Toca <strong>«🔊 Probar Pack»</strong> varias veces o toca cada botón 1–5 para escucharlos todos.
+                    </div>
+                  </div>
 
-                    return (
-                      <div
-                        key={snd.id}
-                        className={`p-3 rounded-[16px] border flex flex-col justify-between gap-2.5 transition ${
-                          isEquipped
-                            ? 'bg-gradient-to-br from-[#262140] to-[#19172B] border-[#82E59B]/70'
-                            : 'bg-[#171625] border-[#2C2840]'
-                        }`}
-                      >
-                        <div className="space-y-1">
-                          <div className="flex items-center justify-between gap-1">
-                            <span
-                              style={{ color: snd.accentColor }}
-                              className="text-[9px] font-extrabold uppercase tracking-wider"
-                            >
-                              {snd.badge} · {snd.scaleName}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => playSoundPackPreview(snd.id)}
-                              className="px-2 py-0.5 rounded-md bg-[#2A2442] hover:bg-[#3A315A] text-[#FFE082] text-[10px] font-extrabold border border-[#5B4B8A] transition"
-                            >
-                              🔊 Probar
-                            </button>
-                          </div>
-                          <div className="text-[13px] font-extrabold text-white leading-snug">
-                            {snd.emoji} {snd.name}
-                          </div>
-                          <p className="text-[10px] text-[#A8A3B8] leading-snug">
-                            {snd.subtitle}
-                          </p>
-                        </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                    {filteredSounds.map((snd) => {
+                      const isOwned =
+                        isIndieFounder ||
+                        snd.gemCost === 0 ||
+                        unlockedVaultIds.includes(snd.id);
+                      const isEquipped = equippedSoundPackId === snd.id;
+                      const auditionState = auditionedPackSteps[snd.id];
 
-                        <button
-                          type="button"
-                          onClick={() => onSelectSoundPack(snd)}
-                          className={`w-full h-[35px] rounded-[10px] text-[11px] font-extrabold transition ${
+                      return (
+                        <div
+                          key={snd.id}
+                          className={`p-3 rounded-[16px] border flex flex-col justify-between gap-2.5 transition ${
                             isEquipped
-                              ? 'bg-[#1E3B2E] text-[#82E59B] border border-[#65DB85]/40'
-                              : isOwned
-                              ? 'bg-[#32284E] text-white hover:bg-[#413465]'
-                              : 'bg-gradient-to-r from-[#653CA6] to-[#8C5CE0] text-white hover:brightness-110'
+                              ? 'bg-gradient-to-br from-[#262140] to-[#19172B] border-[#82E59B]/70 shadow-[0_4px_16px_rgba(130,229,155,0.12)]'
+                              : 'bg-[#171625] border-[#2C2840]'
                           }`}
                         >
-                          {isEquipped
-                            ? '✓ Sintetizador Activo'
-                            : isOwned
-                            ? '🎵 Equipar Sonido'
-                            : `Desbloquear · 💎 ${snd.gemCost}`}
-                        </button>
-                      </div>
-                    );
-                  })}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between gap-1 flex-wrap">
+                              <span
+                                style={{ color: snd.accentColor }}
+                                className="text-[9px] font-extrabold uppercase tracking-wider"
+                              >
+                                {snd.badge} · {snd.scaleName}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleAuditionSoundPack(snd.id)}
+                                className="px-2.5 py-1 rounded-md bg-[#2A2442] hover:bg-[#3A315A] text-[#FFE082] text-[10px] font-extrabold border border-[#6E5AA6] active:scale-95 transition flex items-center gap-1"
+                                title="Toca varias veces para recorrer los 5 sonidos del pack"
+                              >
+                                <span>🔊</span>
+                                <span>
+                                  {auditionState
+                                    ? `Sonando ${auditionState.stepLabel}`
+                                    : 'Probar Pack (5 sonidos)'}
+                                </span>
+                              </button>
+                            </div>
+
+                            <div className="text-[13px] font-extrabold text-white leading-snug flex items-center justify-between gap-1">
+                              <span>
+                                {snd.emoji} {snd.name}
+                              </span>
+                            </div>
+
+                            {snd.synthEngineLabel && (
+                              <div className="text-[9px] font-bold text-[#C7A4FF]">
+                                🎛️ Motor: {snd.synthEngineLabel}
+                              </div>
+                            )}
+
+                            <p className="text-[10px] text-[#A8A3B8] leading-snug">
+                              {snd.subtitle}
+                            </p>
+
+                            {/* 5 Direct Sound Audition Pads inside every Sound Pack Card */}
+                            <div className="pt-1 grid grid-cols-5 gap-1">
+                              {[
+                                { idx: 0, short: '1·Toque' },
+                                { idx: 1, short: '2·+Suma' },
+                                { idx: 2, short: '3·−Resta' },
+                                { idx: 3, short: '4·Misión' },
+                                { idx: 4, short: '5·Logro' },
+                              ].map((pad) => {
+                                const isPadActive =
+                                  auditionState?.stepIndex === pad.idx;
+                                return (
+                                  <button
+                                    key={pad.idx}
+                                    type="button"
+                                    onClick={() =>
+                                      handleAuditionSoundPack(snd.id, pad.idx)
+                                    }
+                                    title={`Escuchar ${SOUND_PACK_STEP_LABELS[pad.idx]} de ${snd.name}`}
+                                    style={
+                                      isPadActive
+                                        ? {
+                                            borderColor: snd.accentColor,
+                                            color: snd.accentColor,
+                                          }
+                                        : undefined
+                                    }
+                                    className={`py-1 px-1 rounded-[7px] text-[9px] font-extrabold border text-center transition active:scale-95 ${
+                                      isPadActive
+                                        ? 'bg-[#292240] shadow-sm'
+                                        : 'bg-[#12111D] border-[#29253C] text-[#9E97B0] hover:text-white hover:border-[#4A416A]'
+                                    }`}
+                                  >
+                                    {pad.short}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onSelectSoundPack(snd);
+                              if (isOwned || gems >= snd.gemCost) {
+                                setLiveEquippedNotice({
+                                  id: Date.now(),
+                                  emoji: snd.emoji,
+                                  title: `¡Pack de 5 Sonidos "${snd.name}" activado!`,
+                                  subtitle: `Motor ${snd.synthEngineLabel || snd.scaleName} activo en toda la app`,
+                                  color: snd.accentColor,
+                                });
+                              }
+                            }}
+                            className={`w-full h-[35px] rounded-[10px] text-[11px] font-extrabold transition ${
+                              isEquipped
+                                ? 'bg-[#1E3B2E] text-[#82E59B] border border-[#65DB85]/40'
+                                : isOwned
+                                ? 'bg-[#32284E] text-white hover:bg-[#413465]'
+                                : 'bg-gradient-to-r from-[#653CA6] to-[#8C5CE0] text-white hover:brightness-110'
+                            }`}
+                          >
+                            {isEquipped
+                              ? '✓ Pack de 5 Sonidos Activo'
+                              : isOwned
+                              ? '🎵 Equipar Pack de 5 Sonidos'
+                              : `Desbloquear Pack (5 Sonidos) · 💎 ${snd.gemCost}`}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
 
@@ -8645,9 +9361,13 @@ function IndieEmporiumModal({
                       isIndieFounder ||
                       st.gemCost === 0 ||
                       unlockedVaultIds.includes(st.id);
+                    const stTheme = findAccentTheme(st.accentColor);
+                    const stPreset = findBannerPreset(st.bannerId);
                     const isCurrentStyle =
-                      activeAccentColor === st.accentColor &&
-                      activeBannerId === st.bannerId;
+                      equippedCardStyleId === st.id ||
+                      (liveAccentTheme.id === stTheme.id &&
+                        activeBannerId.toLowerCase() ===
+                          st.bannerId.toLowerCase());
 
                     return (
                       <div
@@ -8655,11 +9375,41 @@ function IndieEmporiumModal({
                         style={{
                           borderColor: isCurrentStyle
                             ? '#82E59B'
-                            : `${st.accentColor}66`,
+                            : `${st.accentColor}77`,
                         }}
-                        className="p-3 rounded-[16px] bg-[#171625] border flex flex-col justify-between gap-2.5"
+                        className={`p-3 rounded-[16px] bg-[#171625] border flex flex-col justify-between gap-2.5 transition ${
+                          isCurrentStyle
+                            ? 'shadow-[0_4px_18px_rgba(130,229,155,0.18)]'
+                            : ''
+                        }`}
                       >
-                        <div className="space-y-1.5">
+                        <div className="space-y-2">
+                          {/* Mini Atmospheric Banner + Color Harmony Preview Strip */}
+                          <div
+                            style={{
+                              background: `linear-gradient(135deg, ${stPreset.startColor}, ${stPreset.endColor})`,
+                              borderColor: `${st.accentColor}66`,
+                            }}
+                            className="h-10 rounded-[11px] border px-2.5 flex items-center justify-between relative overflow-hidden"
+                          >
+                            <span className="relative z-10 text-[10px] font-extrabold text-white drop-shadow flex items-center gap-1">
+                              <span>{stPreset.emoji}</span>
+                              <span>{stPreset.name}</span>
+                            </span>
+                            <div className="relative z-10 flex items-center gap-1">
+                              <span
+                                style={{ backgroundColor: st.accentColor }}
+                                className="w-3.5 h-3.5 rounded-full inline-block border border-white/40 shadow"
+                              />
+                              <span
+                                style={{
+                                  backgroundColor: st.previewColorSecondary,
+                                }}
+                                className="w-3.5 h-3.5 rounded-full inline-block border border-white/40 shadow"
+                              />
+                            </div>
+                          </div>
+
                           <div className="flex items-center justify-between gap-2">
                             <span
                               style={{ color: st.accentColor }}
@@ -8667,18 +9417,11 @@ function IndieEmporiumModal({
                             >
                               {st.badge}
                             </span>
-                            <div className="flex items-center gap-1">
-                              <span
-                                style={{ backgroundColor: st.accentColor }}
-                                className="w-3 h-3 rounded-full inline-block border border-white/30"
-                              />
-                              <span
-                                style={{
-                                  backgroundColor: st.previewColorSecondary,
-                                }}
-                                className="w-3 h-3 rounded-full inline-block border border-white/30"
-                              />
-                            </div>
+                            {isCurrentStyle && (
+                              <span className="px-1.5 py-0.2 rounded bg-[#1E3B2E] text-[#82E59B] text-[9px] font-extrabold">
+                                ACTIVO EN TU TARJETA
+                              </span>
+                            )}
                           </div>
                           <div className="text-[13px] font-extrabold text-white leading-snug">
                             {st.emoji} {st.name}
@@ -8690,7 +9433,18 @@ function IndieEmporiumModal({
 
                         <button
                           type="button"
-                          onClick={() => onApplyVaultCardStyle(st)}
+                          onClick={() => {
+                            onApplyVaultCardStyle(st);
+                            if (isOwned || gems >= st.gemCost) {
+                              setLiveEquippedNotice({
+                                id: Date.now(),
+                                emoji: st.emoji,
+                                title: `¡Estilo "${st.name}" aplicado en vivo!`,
+                                subtitle: `Tu tarjeta «${currentObjective.title}» ya luce esta sintonía arriba y en el tablero`,
+                                color: st.accentColor,
+                              });
+                            }
+                          }}
                           className={`w-full h-[35px] rounded-[10px] text-[11px] font-extrabold transition ${
                             isCurrentStyle
                               ? 'bg-[#1E3B2E] text-[#82E59B] border border-[#65DB85]/40'
@@ -8700,9 +9454,9 @@ function IndieEmporiumModal({
                           }`}
                         >
                           {isCurrentStyle
-                            ? '✓ Estilo Aplicado'
+                            ? '✓ Estilo Aplicado en Tarjeta'
                             : isOwned
-                            ? '🌈 Aplicar Sintonía'
+                            ? '🌈 Aplicar Sintonía Ahora'
                             : `Desbloquear · 💎 ${st.gemCost}`}
                         </button>
                       </div>
@@ -8757,7 +9511,18 @@ function IndieEmporiumModal({
 
                         <button
                           type="button"
-                          onClick={() => onSelectGuardianTitle(t)}
+                          onClick={() => {
+                            onSelectGuardianTitle(t);
+                            if (isOwned || gems >= t.gemCost) {
+                              setLiveEquippedNotice({
+                                id: Date.now(),
+                                emoji: t.emoji,
+                                title: `¡Título "${t.title}" equipado en vivo!`,
+                                subtitle: `Ya luce junto a tu nombre arriba y en la cabecera principal`,
+                                color: t.color,
+                              });
+                            }
+                          }}
                           className={`w-full h-[35px] rounded-[10px] text-[11px] font-extrabold transition ${
                             isEquipped
                               ? 'bg-[#1E3B2E] text-[#82E59B] border border-[#65DB85]/40'
@@ -8931,7 +9696,7 @@ function IndieEmporiumModal({
                     </div>
                     {tipUnlocksFounder && (
                       <div className="text-[10px] font-extrabold text-[#FFD54F]">
-                        👑 ¡Incluye Pase Mecenas Fundador!
+                        👑 ¡Incluye Pase Fundador Indie!
                       </div>
                     )}
                   </div>
@@ -8942,7 +9707,7 @@ function IndieEmporiumModal({
                   {[
                     { amount: '1.00', label: '$1 USD', tag: '🧉 Un Mate' },
                     { amount: '2.00', label: '$2 USD', tag: '☕ Café Indie' },
-                    { amount: '5.00', label: '$5 USD', tag: '👑 Mecenas' },
+                    { amount: '5.00', label: '$5 USD', tag: '👑 Pase Fundador' },
                     { amount: '10.00', label: '$10 USD', tag: '🚀 Impulso Épico' },
                   ].map((preset) => {
                     const isSelected =
@@ -9130,7 +9895,7 @@ function IndieEmporiumModal({
                         className="w-full h-[42px] rounded-[12px] text-xs font-extrabold hover:brightness-110 active:scale-95 disabled:opacity-70 transition shadow"
                       >
                         {alreadyFounder
-                          ? '👑 Pase de Mecenas Activo'
+                          ? '👑 Pase Fundador Activo'
                           : `Elegir Pack (${pack.usdPrice})`}
                       </button>
                     </div>

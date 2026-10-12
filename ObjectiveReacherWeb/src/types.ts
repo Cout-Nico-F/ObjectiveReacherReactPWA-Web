@@ -67,6 +67,7 @@ export interface GamificationState {
   equippedSkinId?: string;
   unlockedVaultIds?: string[];
   equippedCardFrameId?: string;
+  equippedCardStyleId?: string;
   equippedSoundPackId?: string;
   equippedTitleId?: string;
   streakShields?: number;
@@ -76,6 +77,8 @@ export interface GamificationState {
   supporterTier?: 'none' | 'coffee' | 'founder';
   asmrTotalTaps?: number;
   asmrPreferredTexture?: string;
+  asmrGemsDateKey?: string;
+  asmrGemsEarnedToday?: number;
 }
 
 export interface DashboardState {

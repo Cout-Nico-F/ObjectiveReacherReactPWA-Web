@@ -48,6 +48,7 @@ export interface SoundPackCatalogItem {
   gemCost: number;
   accentColor: string;
   scaleName: string;
+  synthEngineLabel?: string;
 }
 
 export interface CardStyleVaultItem {
@@ -339,8 +340,8 @@ export const MASCOT_SKINS: MascotSkinDefinition[] = [
   {
     id: 'skin_prismatic_founder',
     name: 'Singularidad Prismática',
-    subtitle: 'Aura celestial de Mecenas Indie con doble halo estelar sobre las 200 formas.',
-    badge: 'MECENAS INDIE',
+    subtitle: 'Aura celestial de Fundador Indie con doble halo estelar sobre las 200 formas.',
+    badge: 'FUNDADOR INDIE',
     emoji: '🪐',
     gemCost: 320,
     usdPrice: 'En Pase Fundador',
@@ -679,7 +680,7 @@ const PREMIUM_CARD_FRAMES_DATA: Array<[string, string, string, string, string, s
   ['frame_sakura_petals', 'Santuario de Pétalos Sakura', 'Marco rosa místico con emblema de flor de cerezo imperial.', '🌸', '#FF80AB', '#FFEBF2', '🌸', 120],
   ['frame_phoenix_fire', 'Coraza de Fuego Fénix', 'Resplandor incandescente carmesí y oro para metas intensas.', '🔥', '#FF5252', '#FFD54F', '🔥', 150],
   ['frame_abyssal_prism', 'Prisma Bioluminiscente', 'Cristal abisal turquesa que ilumina toda la tarjeta.', '💎', '#00E676', '#64FFDA', '💎', 135],
-  ['frame_founder_quasar', 'Relicario Mecenas del Quásar', 'El marco supremo del Santuario con aura prismática multicolor.', '🪐', '#E040FB', '#FFD740', '🪐', 220],
+  ['frame_founder_quasar', 'Relicario Fundador del Quásar', 'El marco supremo del Santuario con aura prismática multicolor.', '🪐', '#E040FB', '#FFD740', '🪐', 220],
   ['frame_dragon_jade', 'Altar del Dragón de Jade', 'Borde tallado en jade imperial y oro oriental.', '🐉', '#26A69A', '#FFD54F', '🐉', 145],
   ['frame_valkyrie_wings', 'Marco Alado del Valhalla', 'Platino celeste con sello de pluma celestial.', '🪽', '#80D8FF', '#FFFFFF', '🪽', 140],
   ['frame_matrix_code', 'Circuito Cuántico Verde', 'Pulso digital de alta frecuencia para metas tecnológicas.', '💻', '#76FF03', '#B9F6CA', '💻', 115],
@@ -748,38 +749,38 @@ export function findCardCosmetic(id?: string): CardCosmeticDefinition {
 // ============================================================================
 export const SOUND_PACKS: SoundPackCatalogItem[] = [
   // --- 9 FREE SOUND PACKS (30%) ---
-  { id: 'snd_kalimba_zen', name: 'Kalimba del Santuario', subtitle: 'Láminas cálidas de madera y metal en escala pentatónica lidia.', badge: 'GRATIS · BASE', emoji: '🎵', gemCost: 0, accentColor: '#82E59B', scaleName: 'Pentatónica Lidia' },
-  { id: 'snd_marimba_wood', name: 'Marimba de Bosque', subtitle: 'Percusión orgánica de madera noble con resonancia profunda.', badge: 'GRATIS', emoji: '🪵', gemCost: 0, accentColor: '#FFB74D', scaleName: 'Madera Natural' },
-  { id: 'snd_rain_drops', name: 'Gotas de Lluvia Zen', subtitle: 'Cristales líquidos suaves con reverberación de jardín húmedo.', badge: 'GRATIS', emoji: '🌧️', gemCost: 0, accentColor: '#64B5F6', scaleName: 'Acuática Suave' },
-  { id: 'snd_wind_chimes', name: 'Campanas de Viento', subtitle: 'Tubos de aluminio afinados mecidos por la brisa de montaña.', badge: 'GRATIS', emoji: '🎐', gemCost: 0, accentColor: '#80DEEA', scaleName: 'Brisa Suspendida' },
-  { id: 'snd_night_piano', name: 'Piano Nocturno de Fieltro', subtitle: 'Notas íntimas y aterciopeladas de piano acústico a medianoche.', badge: 'GRATIS', emoji: '🎹', gemCost: 0, accentColor: '#9FA8DA', scaleName: 'Nocturno Menor' },
-  { id: 'snd_bamboo_forest', name: 'Bambú de Arashiyama', subtitle: 'Toques secos y huecos de caña japonesa tradicional.', badge: 'GRATIS', emoji: '🎍', gemCost: 0, accentColor: '#A5D6A7', scaleName: 'Zen Orgánico' },
-  { id: 'snd_lofi_velvet', name: 'Estudio Lo-Fi Chill', subtitle: 'Acordes cálidos con ligero chorus analógico de cinta.', badge: 'GRATIS', emoji: '🎧', gemCost: 0, accentColor: '#CE93D8', scaleName: 'Dórica Lo-Fi' },
-  { id: 'snd_morning_harp', name: 'Arpa del Amanecer', subtitle: 'Cuerdas pulsadas luminosas para despertar la motivación.', badge: 'GRATIS', emoji: '🪕', gemCost: 0, accentColor: '#FFE082', scaleName: 'Mayor Luminosa' },
-  { id: 'snd_celesta_dream', name: 'Celesta de Ensueño', subtitle: 'Martillos sobre placas metálicas con timbre de cuento de hadas.', badge: 'GRATIS', emoji: '✨', gemCost: 0, accentColor: '#F48FB1', scaleName: 'Cristal Dulce' },
+  { id: 'snd_kalimba_zen', name: 'Kalimba del Santuario', subtitle: 'Pack de 5 sonidos: láminas cálidas de madera y metal con percusión táctil.', badge: 'GRATIS · BASE', emoji: '🎵', gemCost: 0, accentColor: '#82E59B', scaleName: 'Pentatónica Lidia', synthEngineLabel: 'Percusión de Láminas & Madera' },
+  { id: 'snd_marimba_wood', name: 'Marimba de Bosque', subtitle: 'Pack de 5 sonidos: maderas nobles resonantes con golpe de baqueta suave.', badge: 'GRATIS', emoji: '🪵', gemCost: 0, accentColor: '#FFB74D', scaleName: 'Madera Natural', synthEngineLabel: 'Resonador de Madera Profunda' },
+  { id: 'snd_rain_drops', name: 'Gotas de Lluvia Zen', subtitle: 'Pack de 5 sonidos: burbujas hidro-acústicas y gotas en estanque de piedra.', badge: 'GRATIS', emoji: '🌧️', gemCost: 0, accentColor: '#64B5F6', scaleName: 'Acuática Suave', synthEngineLabel: 'Síntesis Líquida & Burbujas' },
+  { id: 'snd_wind_chimes', name: 'Campanas de Viento', subtitle: 'Pack de 5 sonidos: tubos metálicos suspendidos con brisa estelar.', badge: 'GRATIS', emoji: '🎐', gemCost: 0, accentColor: '#80DEEA', scaleName: 'Brisa Suspendida', synthEngineLabel: 'Armónicos Metálicos Inarmónicos' },
+  { id: 'snd_night_piano', name: 'Piano Nocturno de Fieltro', subtitle: 'Pack de 5 sonidos: acordes de piano acústico íntimo con martillo suave.', badge: 'GRATIS', emoji: '🎹', gemCost: 0, accentColor: '#9FA8DA', scaleName: 'Nocturno Menor', synthEngineLabel: 'Cuerdas Golpeadas & Fieltro' },
+  { id: 'snd_bamboo_forest', name: 'Bambú de Arashiyama', subtitle: 'Pack de 5 sonidos: golpe hueco de caña japonesa Shishi-odoshi y brisa.', badge: 'GRATIS', emoji: '🎍', gemCost: 0, accentColor: '#A5D6A7', scaleName: 'Zen Orgánico', synthEngineLabel: 'Tubo Hueco & Percusión Zen' },
+  { id: 'snd_lofi_velvet', name: 'Estudio Lo-Fi Chill', subtitle: 'Pack de 5 sonidos: acordes 7ma/9na con vibrato de cinta analógica.', badge: 'GRATIS', emoji: '🎧', gemCost: 0, accentColor: '#CE93D8', scaleName: 'Dórica Lo-Fi', synthEngineLabel: 'Teclado Vintage & Cinta' },
+  { id: 'snd_morning_harp', name: 'Arpa del Amanecer', subtitle: 'Pack de 5 sonidos: glissandos de cuerdas pulsadas llenas de luz.', badge: 'GRATIS', emoji: '🪕', gemCost: 0, accentColor: '#FFE082', scaleName: 'Mayor Luminosa', synthEngineLabel: 'Cuerdas Pulsadas en Cascada' },
+  { id: 'snd_celesta_dream', name: 'Celesta de Ensueño', subtitle: 'Pack de 5 sonidos: placas cristalinas de orquesta mágica.', badge: 'GRATIS', emoji: '✨', gemCost: 0, accentColor: '#F48FB1', scaleName: 'Cristal Dulce', synthEngineLabel: 'Campanillas de Placa Orquestal' },
 
   // --- 21 PREMIUM SOUND PACKS (70%) ---
-  { id: 'snd_tibetan_432', name: 'Cuenco Tibetano 432Hz', subtitle: 'Armónicos largos de meditación profunda y paz interior.', badge: 'PREMIUM', emoji: '🥣', gemCost: 95, accentColor: '#FFD54F', scaleName: 'Afinación 432Hz' },
-  { id: 'snd_crystal_quartz', name: 'Copas de Cuarzo Puro', subtitle: 'Síntesis FM cristalina de altísima pureza y brillo espacial.', badge: 'PREMIUM', emoji: '💎', gemCost: 110, accentColor: '#00E5FF', scaleName: 'Cuarzo Armónico' },
-  { id: 'snd_sakura_koto', name: 'Koto Imperial Sakura', subtitle: 'Escala tradicional japonesa Hirajoshi de 13 cuerdas de seda.', badge: 'ÉPICO', emoji: '🌸', gemCost: 125, accentColor: '#FF80AB', scaleName: 'Escala Hirajoshi' },
-  { id: 'snd_8bit_arcade', name: 'Consola 8-Bit Chiptune', subtitle: 'Ondas cuadradas retro de videojuego clásico al sumar avances.', badge: 'PREMIUM', emoji: '🕹️', gemCost: 115, accentColor: '#76FF03', scaleName: 'Chiptune Arcade' },
-  { id: 'snd_synthwave_84', name: 'Synthwave Analógico 1984', subtitle: 'Sintetizador polifónico sawtooth con chorus ochentero.', badge: 'ÉPICO', emoji: '🌆', gemCost: 130, accentColor: '#EA80FC', scaleName: 'Analógico Retro' },
-  { id: 'snd_hang_drum', name: 'Hang Drum Suizo Etéreo', subtitle: 'Tambor melódico de acero con sobretonos hipnóticos.', badge: 'ÉPICO', emoji: '🛸', gemCost: 120, accentColor: '#4DB6AC', scaleName: 'Celta Etéreo' },
-  { id: 'snd_music_box', name: 'Caja de Música Victoriana', subtitle: 'Peine de plata antigua con nostalgia y delicadeza.', badge: 'PREMIUM', emoji: '🎠', gemCost: 95, accentColor: '#FFCC80', scaleName: 'Cuerda de Plata' },
-  { id: 'snd_cyber_glitch', name: 'Pulso Hiperespacial Neón', subtitle: 'Modulación FM futurista para objetivos tecnológicos.', badge: 'PREMIUM', emoji: '⚡', gemCost: 110, accentColor: '#18FFFF', scaleName: 'Cyber FM' },
-  { id: 'snd_seraph_choir', name: 'Coro Celestial Ophanim', subtitle: 'Voces sintetizadas con reverberación de catedral infinita.', badge: 'LEGENDARIO', emoji: '🪽', gemCost: 155, accentColor: '#FFF59D', scaleName: 'Quintas Sagradas' },
-  { id: 'snd_imperial_bells', name: 'Campanas del Palacio Real', subtitle: 'Bronce imperial con impacto majestuoso en cada logro.', badge: 'ÉPICO', emoji: '🔔', gemCost: 125, accentColor: '#FFD740', scaleName: 'Bronce Real' },
-  { id: 'snd_solfeggio_528', name: 'Frecuencia Solfeggio 528Hz', subtitle: 'Armonía bio-acústica de renovación y enfoque positivo.', badge: 'ÉPICO', emoji: '🧬', gemCost: 135, accentColor: '#69F0AE', scaleName: 'Solfeggio 528Hz' },
-  { id: 'snd_cosmic_organ', name: 'Órgano Interestelar', subtitle: 'Graves profundos del cosmos inspirados en viajes espaciales.', badge: 'LEGENDARIO', emoji: '🪐', gemCost: 160, accentColor: '#B388FF', scaleName: 'Cosmos Profundo' },
-  { id: 'snd_obsidian_gong', name: 'Gong de Obsidiana Zen', subtitle: 'Resonancia grave y solemne que sella cada avance con poder.', badge: 'PREMIUM', emoji: '🌑', gemCost: 105, accentColor: '#FF6E40', scaleName: 'Sub-Armónico' },
-  { id: 'snd_arctic_glass', name: 'Marimba de Hielo Ártico', subtitle: 'Notas agudas y transparentes como estalactitas de cristal.', badge: 'PREMIUM', emoji: '❄️', gemCost: 100, accentColor: '#80D8FF', scaleName: 'Cristal Polar' },
-  { id: 'snd_tropical_steel', name: 'Steel Drum del Caribe', subtitle: 'Alegría luminosa y cálida para celebrar cada pequeño paso.', badge: 'PREMIUM', emoji: '🏝️', gemCost: 95, accentColor: '#FF8A65', scaleName: 'Tropical Mayor' },
-  { id: 'snd_steampunk_clock', name: 'Relojería de Cronos', subtitle: 'Mecanismo de precisión con timbre de reloj de bolsillo áureo.', badge: 'PREMIUM', emoji: '⚙️', gemCost: 115, accentColor: '#FFB74D', scaleName: 'Escape Mecánico' },
-  { id: 'snd_astral_flute', name: 'Flauta de Pan Estelar', subtitle: 'Soplo suave con vibrato expresivo de los Andes cósmicos.', badge: 'PREMIUM', emoji: '🪈', gemCost: 105, accentColor: '#81D4FA', scaleName: 'Aire Andino' },
-  { id: 'snd_emerald_lute', name: 'Laúd de Bardos Élficos', subtitle: 'Cuerdas medievales mágicas para tu aventura de hábitos.', badge: 'PREMIUM', emoji: '🎻', gemCost: 110, accentColor: '#00E676', scaleName: 'Balada Élfica' },
-  { id: 'snd_phoenix_ember', name: 'Canto de Brasas Fénix', subtitle: 'Armónicos cálidos ascendentes que encienden tu racha.', badge: 'ÉPICO', emoji: '🔥', gemCost: 130, accentColor: '#FF5252', scaleName: 'Llama Ascendente' },
-  { id: 'snd_abyssal_sonar', name: 'Sonar de la Fosa Abisal', subtitle: 'Eco oceánico hipnótico con atmósfera submarina.', badge: 'PREMIUM', emoji: '🫧', gemCost: 110, accentColor: '#00B0FF', scaleName: 'Eco Profundo' },
-  { id: 'snd_quasar_symphony', name: 'Sinfonía del Quásar (Mecenas)', subtitle: 'El sintetizador maestro con doble armónico estelar y brillo total.', badge: 'MECENAS INDIE', emoji: '👑', gemCost: 190, accentColor: '#FFD740', scaleName: 'Sinfonía Astral' },
+  { id: 'snd_tibetan_432', name: 'Cuenco Tibetano 432Hz', subtitle: 'Pack de 5 sonidos: batimiento binaural y campanas de bronce del Himalaya.', badge: 'PREMIUM', emoji: '🥣', gemCost: 95, accentColor: '#FFD54F', scaleName: 'Afinación 432Hz', synthEngineLabel: 'Cuenco Cantante & Binaural' },
+  { id: 'snd_crystal_quartz', name: 'Copas de Cuarzo Puro', subtitle: 'Pack de 5 sonidos: cristales frotados de alta pureza y destello prismático.', badge: 'PREMIUM', emoji: '💎', gemCost: 110, accentColor: '#00E5FF', scaleName: 'Cuarzo Armónico', synthEngineLabel: 'Cristal FM de Alta Frecuencia' },
+  { id: 'snd_sakura_koto', name: 'Koto Imperial Sakura', subtitle: 'Pack de 5 sonidos: rasgueo de 13 cuerdas de seda en escala japonesa Hirajoshi.', badge: 'ÉPICO', emoji: '🌸', gemCost: 125, accentColor: '#FF80AB', scaleName: 'Escala Hirajoshi', synthEngineLabel: 'Cítara Oriental & Plectro' },
+  { id: 'snd_8bit_arcade', name: 'Consola 8-Bit Chiptune', subtitle: 'Pack de 5 sonidos: monedas retro, saltos de 1-UP y fanfarria de arcade.', badge: 'PREMIUM', emoji: '🕹️', gemCost: 115, accentColor: '#76FF03', scaleName: 'Chiptune Arcade', synthEngineLabel: 'Chip Retro Onda Cuadrada' },
+  { id: 'snd_synthwave_84', name: 'Synthwave Analógico 1984', subtitle: 'Pack de 5 sonidos: barrido de filtro resonante ochentero y bajo synth.', badge: 'ÉPICO', emoji: '🌆', gemCost: 130, accentColor: '#EA80FC', scaleName: 'Analógico Retro', synthEngineLabel: 'Doble Sawtooth & Filtro Analógico' },
+  { id: 'snd_hang_drum', name: 'Hang Drum Suizo Etéreo', subtitle: 'Pack de 5 sonidos: tambor melódico de acero tocado con las manos.', badge: 'ÉPICO', emoji: '🛸', gemCost: 120, accentColor: '#4DB6AC', scaleName: 'Celta Etéreo', synthEngineLabel: 'Handpan de Acero & Sobretonos' },
+  { id: 'snd_music_box', name: 'Caja de Música Victoriana', subtitle: 'Pack de 5 sonidos: mecanismo de cuerda antigua y peine de plata.', badge: 'PREMIUM', emoji: '🎠', gemCost: 95, accentColor: '#FFCC80', scaleName: 'Cuerda de Plata', synthEngineLabel: 'Peine Metálico & Cuerda' },
+  { id: 'snd_cyber_glitch', name: 'Pulso Hiperespacial Neón', subtitle: 'Pack de 5 sonidos: telemetría sci-fi, láser holográfico y salto warp.', badge: 'PREMIUM', emoji: '⚡', gemCost: 110, accentColor: '#18FFFF', scaleName: 'Cyber FM', synthEngineLabel: 'Modulador Sci-Fi & Warp' },
+  { id: 'snd_seraph_choir', name: 'Coro Celestial Ophanim', subtitle: 'Pack de 5 sonidos: voces angélicas sintetizadas con eco de catedral.', badge: 'LEGENDARIO', emoji: '🪽', gemCost: 155, accentColor: '#FFF59D', scaleName: 'Quintas Sagradas', synthEngineLabel: 'Formantes Vocales & Catedral' },
+  { id: 'snd_imperial_bells', name: 'Campanas del Palacio Real', subtitle: 'Pack de 5 sonidos: carillón de bronce imperial y fanfarria de coronación.', badge: 'ÉPICO', emoji: '🔔', gemCost: 125, accentColor: '#FFD740', scaleName: 'Bronce Real', synthEngineLabel: 'Carillón de Bronce & Sub-Bajo' },
+  { id: 'snd_solfeggio_528', name: 'Frecuencia Solfeggio 528Hz', subtitle: 'Pack de 5 sonidos: diapasones de bio-resonancia armónica y calma.', badge: 'ÉPICO', emoji: '🧬', gemCost: 135, accentColor: '#69F0AE', scaleName: 'Solfeggio 528Hz', synthEngineLabel: 'Diapasón Puro & Armónicos' },
+  { id: 'snd_cosmic_organ', name: 'Órgano Interestelar', subtitle: 'Pack de 5 sonidos: tubos de catedral espacial con pedales sub-graves.', badge: 'LEGENDARIO', emoji: '🪐', gemCost: 160, accentColor: '#B388FF', scaleName: 'Cosmos Profundo', synthEngineLabel: 'Órgano Polifónico Espacial' },
+  { id: 'snd_obsidian_gong', name: 'Gong de Obsidiana Zen', subtitle: 'Pack de 5 sonidos: golpe de mazo profundo con estallido metálico.', badge: 'PREMIUM', emoji: '🌑', gemCost: 105, accentColor: '#FF6E40', scaleName: 'Sub-Armónico', synthEngineLabel: 'Gong Ceremonial & Mazo' },
+  { id: 'snd_arctic_glass', name: 'Marimba de Hielo Ártico', subtitle: 'Pack de 5 sonidos: cristales de escarcha y carámbanos afinados.', badge: 'PREMIUM', emoji: '❄️', gemCost: 100, accentColor: '#80D8FF', scaleName: 'Cristal Polar', synthEngineLabel: 'Percusión de Cristal Helado' },
+  { id: 'snd_tropical_steel', name: 'Steel Drum del Caribe', subtitle: 'Pack de 5 sonidos: percusión caribeña brillante con ritmo festivo.', badge: 'PREMIUM', emoji: '🏝️', gemCost: 95, accentColor: '#FF8A65', scaleName: 'Tropical Mayor', synthEngineLabel: 'Tambor Metálico Tropical' },
+  { id: 'snd_steampunk_clock', name: 'Relojería de Cronos', subtitle: 'Pack de 5 sonidos: engranajes de precisión, escape mecánico y campana.', badge: 'PREMIUM', emoji: '⚙️', gemCost: 115, accentColor: '#FFB74D', scaleName: 'Escape Mecánico', synthEngineLabel: 'Mecanismo de Engranajes & Bronce' },
+  { id: 'snd_astral_flute', name: 'Flauta de Pan Estelar', subtitle: 'Pack de 5 sonidos: soplo de aire cálido con vibrato expresivo andino.', badge: 'PREMIUM', emoji: '🪈', gemCost: 105, accentColor: '#81D4FA', scaleName: 'Aire Andino', synthEngineLabel: 'Viento Orgánico & Soplo' },
+  { id: 'snd_emerald_lute', name: 'Laúd de Bardos Élficos', subtitle: 'Pack de 5 sonidos: cuerdas medievales punteadas en taberna mágica.', badge: 'PREMIUM', emoji: '🎻', gemCost: 110, accentColor: '#00E676', scaleName: 'Balada Élfica', synthEngineLabel: 'Laúd Acústico Punteado' },
+  { id: 'snd_phoenix_ember', name: 'Canto de Brasas Fénix', subtitle: 'Pack de 5 sonidos: crepitar de fuego solar y ascenso triunfal.', badge: 'ÉPICO', emoji: '🔥', gemCost: 130, accentColor: '#FF5252', scaleName: 'Llama Ascendente', synthEngineLabel: 'Fuego Crepitante & Acorde Solar' },
+  { id: 'snd_abyssal_sonar', name: 'Sonar de la Fosa Abisal', subtitle: 'Pack de 5 sonidos: pulso submarino con eco hidrofónico profundo.', badge: 'PREMIUM', emoji: '🫧', gemCost: 110, accentColor: '#00B0FF', scaleName: 'Eco Profundo', synthEngineLabel: 'Sonar Submarino & Eco' },
+  { id: 'snd_quasar_symphony', name: 'Sinfonía del Quásar (Fundador)', subtitle: 'Pack maestro de 5 sonidos: orquesta astral completa con doble armónico.', badge: 'FUNDADOR INDIE', emoji: '👑', gemCost: 190, accentColor: '#FFD740', scaleName: 'Sinfonía Astral', synthEngineLabel: 'Orquesta Sintética Maestra' },
 ];
 
 // ============================================================================
@@ -807,8 +808,8 @@ const CARD_STYLE_VAULT_DATA: Array<[string, string, string, string, number, stri
   ['style_valhalla_ice', 'Salón de Hielo del Valhalla', 'Menta glaciar y cian ártico nórdico.', '🪽', 85, '#26E6A6', 'Arctic', '#8FF7D4'],
   ['style_volcano_heart', 'Corazón del Volcán', 'Carmesí imperial sobre fuego de forja.', '🌋', 95, '#FF5268', 'copper', '#FFA3B0'],
   ['style_atlantis_pearl', 'Perla de la Atlántida', 'Cian bioluminiscente en el abismo oceánico.', '🐚', 90, '#4DD0E1', 'abyss', '#99F2FF'],
-  ['style_alchemist_sanctum', 'Laboratorio del Alquimista', 'Esmeralda mística y oro antiguo.', '⚗️', 100, '#65DB85', 'gold', '#A8F5BE'],
-  ['style_samurai_blood', 'Honor del Samurái', 'Carmesí intenso bajo los cerezos de Kioto.', '⚔️', 95, '#FF5268', 'japan', '#FFA3B0'],
+  ['style_alchemist_sanctum', 'Samurái de Jade Imperial', 'Disciplina marcial en jade esmeralda, bambú y katana dorada.', '⚔️', 95, '#1DE9B6', 'samurai', '#FFD54F'],
+  ['style_samurai_blood', 'Honor del Samurái Carmesí', 'Carmesí intenso bajo los cerezos de Kioto.', '⛩️', 95, '#FF5266', 'japan', '#FFA3B0'],
   ['style_astral_observatory', 'Observatorio de Andrómeda', 'Índigo estelar y violeta profundo.', '🔭', 85, '#6E8BFF', 'gradient', '#AFC0FF'],
   ['style_solarpunk_eden', 'Edén Solarpunk', 'Verde esmeralda bañado en sol dorado.', '🌻', 90, '#65DB85', 'gold', '#A8F5BE'],
   ['style_outrun_drive', 'Autopista Outrun 1984', 'Coral neón y púrpura sintético.', '🏎️', 95, '#FF7A66', 'cyber', '#FFB2A6'],
@@ -829,8 +830,8 @@ const CARD_STYLE_VAULT_DATA: Array<[string, string, string, string, number, stri
   ['style_hyperion_gold', 'Templo Solar de Hiperión', 'Ámbar radiante sobre aurora boreal.', '☀️', 105, '#FFB84D', 'aurora', '#FFE082'],
   ['style_siren_cove', 'Cala de las Sirenas', 'Rosa perlado en el mar abisal.', '🧜‍♀️', 95, '#F48FB1', 'abyss', '#FFBFD4'],
   ['style_titan_obsidian', 'Forja del Titán', 'Coral volcánico sobre fuego carmesí.', '🔨', 100, '#FF7A66', 'crimson', '#FFB2A6'],
-  ['style_diamond_zenith', 'Cenit de Diamante', 'Cian puro sobre cumbre dorada.', '💎', 110, '#4DD0E1', 'gold', '#99F2FF'],
-  ['style_founder_symphony', 'Gala de Mecenas Fundador', 'Sintonía suprema en oro y púrpura imperial.', '🌟', 140, '#FFB84D', 'gradient', '#FFE082'],
+  ['style_diamond_zenith', 'Cenit de Diamante', 'Cian puro sobre cumbre dorada.', '💎', 110, '#64D8FF', 'gold', '#99F2FF'],
+  ['style_founder_symphony', 'Gala de Fundador Indie', 'Sintonía suprema en oro y púrpura imperial.', '🌟', 140, '#FFD54F', 'gradient', '#FFE082'],
 ];
 
 export const CARD_STYLE_VAULT: CardStyleVaultItem[] = CARD_STYLE_VAULT_DATA.map(
@@ -846,6 +847,25 @@ export const CARD_STYLE_VAULT: CardStyleVaultItem[] = CARD_STYLE_VAULT_DATA.map(
     previewColorSecondary,
   })
 );
+
+export function findCardStyleVaultItem(
+  styleId?: string,
+  accentColor?: string,
+  bannerId?: string
+): CardStyleVaultItem | undefined {
+  if (styleId) {
+    const byId = CARD_STYLE_VAULT.find((s) => s.id === styleId);
+    if (byId) return byId;
+  }
+  if (accentColor && bannerId) {
+    return CARD_STYLE_VAULT.find(
+      (s) =>
+        s.accentColor.toUpperCase() === accentColor.toUpperCase() &&
+        s.bannerId.toLowerCase() === bannerId.toLowerCase()
+    );
+  }
+  return undefined;
+}
 
 // ============================================================================
 // 5. GUARDIAN PROFILE TITLES & EMBLEMS (36 ITEMS: 11 FREE / 25 PREMIUM)
@@ -865,7 +885,7 @@ const GUARDIAN_TITLES_DATA: Array<[string, string, string, string, number, strin
   ['title_friend', 'Amigo de los Guardianes', 'Cuida a su compañero evolutivo.', '🐾', 0, '#F48FB1'],
 
   // 25 PREMIUM (70%)
-  ['title_founder', 'Mecenas del Santuario', 'Apoyo noble al desarrollo independiente.', '👑', 150, '#FFD54F'],
+  ['title_founder', 'Fundador del Santuario', 'Apoyo noble al desarrollo independiente.', '👑', 150, '#FFD54F'],
   ['title_alchemist', 'Alquimista del Tiempo', 'Convierte pequeños minutos en oro puro.', '⚗️', 75, '#FFD740'],
   ['title_dragon_lord', 'Señor de los Dragones', 'Domina las metas más exigentes.', '🐉', 95, '#26A69A'],
   ['title_cyber_runner', 'Viajero del Hiperespacio', 'Velocidad y precisión futurista.', '⚡', 80, '#00E5FF'],
@@ -1264,8 +1284,8 @@ export const INDIE_SUPPORT_PACKS: IndieSupportPack[] = [
   },
   {
     id: 'pack_founder',
-    title: 'Pase de Mecenas Fundador',
-    subtitle: 'Desbloquea toda la colección cosmética con un único apoyo al creador indie.',
+    title: 'Pase Fundador Indie',
+    subtitle: 'Desbloquea toda la colección cosmética con un único apoyo al creador independiente.',
     badge: 'MEJOR VALOR · PAGO ÚNICO',
     emoji: '👑',
     usdPrice: '$4.99 USD',
@@ -1277,11 +1297,11 @@ export const INDIE_SUPPORT_PACKS: IndieSupportPack[] = [
     permanentXpBonusPct: 20,
     highlightColor: '#FFD54F',
     perks: [
-      '🎨 Desbloquea TODAS las 36 Skins, 48 Marcos, 30 Sonidos y 36 Títulos',
-      '⚡ Bono Permanente +20% XP de Mecenas en todos tus avances',
+      '🎨 Desbloquea TODAS las 36 Skins, 48 Marcos, 30 Packs de Sonido y 36 Títulos',
+      '⚡ Bono Permanente +20% XP de Fundador en todos tus avances',
       '💎 +750 Gemas Astrales para gastar en Elixires, Néctar y Reliquias',
       '🛡️ +3 Escudos de Racha Eterna en tu inventario',
-      '👑 Emblema Dorado "Mecenas Fundador" junto a la marca',
+      '👑 Emblema Dorado "Fundador Indie" junto a tu nombre',
     ],
   },
   {

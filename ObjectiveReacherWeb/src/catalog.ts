@@ -400,6 +400,14 @@ export const BANNER_PRESETS: BannerPreset[] = [
     imageUrl: '/banners/banner_forest.svg',
   },
   {
+    id: 'samurai',
+    name: 'Dojo Samurái de Jade',
+    startColor: '#0A2E26',
+    endColor: '#1B5E4B',
+    emoji: '⚔️',
+    imageUrl: '/banners/banner_forest.svg',
+  },
+  {
     id: 'aurora',
     name: 'Aurora Boreal',
     startColor: '#0F2942',
@@ -455,7 +463,66 @@ export const BANNER_PRESETS: BannerPreset[] = [
     emoji: '🏛️',
     imageUrl: null,
   },
+  {
+    id: 'Arctic',
+    name: 'Glaciar Boreal',
+    startColor: '#0B2838',
+    endColor: '#1F6E8C',
+    emoji: '❄️',
+    imageUrl: null,
+  },
+  {
+    id: 'mint',
+    name: 'Cumbre Menta',
+    startColor: '#0B302C',
+    endColor: '#1A7A6C',
+    emoji: '🏔️',
+    imageUrl: null,
+  },
+  {
+    id: 'copper',
+    name: 'Forja de Bronce',
+    startColor: '#361E10',
+    endColor: '#8C4A27',
+    emoji: '🛡️',
+    imageUrl: null,
+  },
+  {
+    id: 'abyss',
+    name: 'Fosa Abisal',
+    startColor: '#091936',
+    endColor: '#1D3E7A',
+    emoji: '🌊',
+    imageUrl: null,
+  },
+  {
+    id: 'crimson',
+    name: 'Fortaleza Rubí',
+    startColor: '#3D0E1E',
+    endColor: '#961E3C',
+    emoji: '🍷',
+    imageUrl: null,
+  },
+  {
+    id: 'cyber',
+    name: 'Horizonte Cyberpunk',
+    startColor: '#160F38',
+    endColor: '#0F5475',
+    emoji: '🌆',
+    imageUrl: null,
+  },
 ];
+
+export function findBannerPreset(bannerId?: string): BannerPreset {
+  if (!bannerId) return BANNER_PRESETS[0];
+  const exact = BANNER_PRESETS.find((b) => b.id === bannerId);
+  if (exact) return exact;
+  const lower = bannerId.toLowerCase();
+  return (
+    BANNER_PRESETS.find((b) => b.id.toLowerCase() === lower) ||
+    BANNER_PRESETS[0]
+  );
+}
 
 export interface AccentTheme {
   id: string;
@@ -485,6 +552,20 @@ export const OBJECTIVE_ACCENT_THEMES: AccentTheme[] = [
     vignetteGradient:
       'linear-gradient(180deg, rgba(12, 26, 20, 0.65) 0%, rgba(14, 28, 22, 0.48) 50%, rgba(10, 22, 17, 0.86) 100%)',
     buttonText: '#092112',
+  },
+  {
+    id: '#1DE9B6',
+    name: 'Jade Samurái',
+    primary: '#1DE9B6',
+    secondary: '#00897B',
+    softBg: 'rgba(29, 233, 182, 0.18)',
+    glow: 'rgba(29, 233, 182, 0.42)',
+    textSoft: '#C4FFF0',
+    textMuted: '#8CE0CC',
+    surfaceDark: 'rgba(9, 33, 28, 0.76)',
+    vignetteGradient:
+      'linear-gradient(180deg, rgba(8, 28, 24, 0.66) 0%, rgba(11, 32, 26, 0.48) 50%, rgba(6, 20, 17, 0.88) 100%)',
+    buttonText: '#04221B',
   },
   {
     id: '#FFD54F',
@@ -613,6 +694,31 @@ export const OBJECTIVE_ACCENT_THEMES: AccentTheme[] = [
     buttonText: '#FFFFFF',
   },
 ];
+
+const ACCENT_COLOR_ALIASES: Record<string, string> = {
+  '#9B6BFF': '#B58BFF',
+  '#FFB84D': '#FFD54F',
+  '#4DD0E1': '#64D8FF',
+  '#FF7A66': '#FF8A65',
+  '#F48FB1': '#FF80AB',
+  '#26E6A6': '#26E6C6',
+  '#FF9E5E': '#FFA726',
+  '#6E8BFF': '#6C8CFF',
+  '#FF5268': '#FF5266',
+  '#00E676': '#1DE9B6',
+  '#26A69A': '#1DE9B6',
+};
+
+export function findAccentTheme(accentColor?: string): AccentTheme {
+  if (!accentColor) return OBJECTIVE_ACCENT_THEMES[0];
+  const upper = accentColor.toUpperCase();
+  const canonical = ACCENT_COLOR_ALIASES[upper] || upper;
+  return (
+    OBJECTIVE_ACCENT_THEMES.find((t) => t.id.toUpperCase() === canonical) ||
+    OBJECTIVE_ACCENT_THEMES.find((t) => t.id.toUpperCase() === upper) ||
+    OBJECTIVE_ACCENT_THEMES[0]
+  );
+}
 
 export const OBJECTIVE_ICONS = [
   '🎯',
