@@ -37,8 +37,8 @@
                     <Button x:Name="HistoryButton" Grid.Column="3" Text="☷" Clicked="OnHistoryClicked" WidthRequest="44" HeightRequest="44" Padding="0" FontSize="20" BackgroundColor="#242238" TextColor="#D9C9FF" CornerRadius="12" SemanticProperties.Description="Abrir historial de entradas" />
                 </Grid>
 
-                <ScrollView Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
-                    <HorizontalStackLayout x:Name="ObjectiveTabsLayout" BindableLayout.ItemsSource="{Binding ObjectiveTabs}" Spacing="8">
+                <ScrollView Orientation="Horizontal" HorizontalScrollBarVisibility="Default">
+                    <HorizontalStackLayout x:Name="ObjectiveTabsLayout" BindableLayout.ItemsSource="{Binding ObjectiveTabs}" Spacing="8" Padding="0,0,0,4">
                         <BindableLayout.ItemTemplate>
                             <DataTemplate>
                                 <Button Text="{Binding Title}" CommandParameter="{Binding Id}" Clicked="OnObjectiveTabClicked" BackgroundColor="{Binding BackgroundColor}" TextColor="{Binding TextColor}" CornerRadius="12" Padding="16,8" />

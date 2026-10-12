@@ -34,8 +34,8 @@
 		<ApplicationId>com.cnf.objectiveReacher</ApplicationId>
 
 		<!-- Versions -->
-		<ApplicationDisplayVersion>1.0.0</ApplicationDisplayVersion>
-		<ApplicationVersion>1</ApplicationVersion>
+		<ApplicationDisplayVersion>1.0.1</ApplicationDisplayVersion>
+		<ApplicationVersion>2</ApplicationVersion>
 
 		<!-- To develop, package, and publish an app to the Microsoft Store, see: https://aka.ms/MauiTemplateUnpackaged -->
 		<WindowsPackageType>None</WindowsPackageType>
@@ -56,12 +56,8 @@
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)' == 'Release'">
-		<AndroidKeyStore>True</AndroidKeyStore>
-		<AndroidSigningKeyStore>..\public\android-signing\com.cnf.objectiveReacher-release.keystore</AndroidSigningKeyStore>
-		<AndroidSigningKeyAlias>objectivereacher</AndroidSigningKeyAlias>
-		<AndroidSigningStorePass>ObjReacher2026!</AndroidSigningStorePass>
-		<AndroidSigningKeyPass>ObjReacher2026!</AndroidSigningKeyPass>
-		<AndroidPackageFormat>apk</AndroidPackageFormat>
+		<AndroidKeyStore>False</AndroidKeyStore>
+		<AndroidPackageFormat>aab</AndroidPackageFormat>
 		<AndroidUseAapt2>True</AndroidUseAapt2>
 		<Optimize>True</Optimize>
 	</PropertyGroup>

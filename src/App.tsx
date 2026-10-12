@@ -466,6 +466,75 @@ function formatEntryTime(isoString: string): string {
   return `${monthDay}, ${timeStr}`;
 }
 
+function useHorizontalScrollProps() {
+  const dragStateRef = useRef<{
+    el: HTMLDivElement | null;
+    startX: number;
+    startScrollLeft: number;
+    hasDragged: boolean;
+  }>({
+    el: null,
+    startX: 0,
+    startScrollLeft: 0,
+    hasDragged: false,
+  });
+
+  return () => ({
+    onTouchStart: (e: React.TouchEvent<HTMLDivElement>) => {
+      e.stopPropagation();
+    },
+    onWheel: (e: React.WheelEvent<HTMLDivElement>) => {
+      const el = e.currentTarget;
+      if (el.scrollWidth <= el.clientWidth) return;
+      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+        el.scrollLeft += e.deltaY;
+      }
+    },
+    onMouseDown: (e: React.MouseEvent<HTMLDivElement>) => {
+      if (e.button !== 0) return;
+      const el = e.currentTarget;
+      dragStateRef.current = {
+        el,
+        startX: e.clientX,
+        startScrollLeft: el.scrollLeft,
+        hasDragged: false,
+      };
+    },
+    onMouseMove: (e: React.MouseEvent<HTMLDivElement>) => {
+      const st = dragStateRef.current;
+      if (!st.el || st.el !== e.currentTarget) return;
+      const dx = e.clientX - st.startX;
+      if (Math.abs(dx) > 5) {
+        st.hasDragged = true;
+        st.el.scrollLeft = st.startScrollLeft - dx;
+      }
+    },
+    onMouseUp: () => {
+      const st = dragStateRef.current;
+      if (!st.el) return;
+      st.el = null;
+      window.setTimeout(() => {
+        dragStateRef.current.hasDragged = false;
+      }, 40);
+    },
+    onMouseLeave: () => {
+      const st = dragStateRef.current;
+      if (!st.el) return;
+      st.el = null;
+      window.setTimeout(() => {
+        dragStateRef.current.hasDragged = false;
+      }, 40);
+    },
+    onClickCapture: (e: React.MouseEvent<HTMLDivElement>) => {
+      if (dragStateRef.current.hasDragged) {
+        e.stopPropagation();
+        e.preventDefault();
+        dragStateRef.current.hasDragged = false;
+      }
+    },
+  });
+}
+
 export function App() {
   const [state, setState] = useState<DashboardState>(() => loadState());
   const [selectedQuickAmount, setSelectedQuickAmount] = useState<number | null>(50);
@@ -586,6 +655,9 @@ export function App() {
 
   // Section refs for smooth scrolling
   const objectiveRef = useRef<HTMLDivElement>(null);
+  const objectiveTabsScrollRef = useRef<HTMLDivElement>(null);
+  const [isObjectiveTabsWrapped, setIsObjectiveTabsWrapped] = useState<boolean>(false);
+  const getHorizontalScrollProps = useHorizontalScrollProps();
   const entriesRef = useRef<HTMLDivElement>(null);
   const achievementsRef = useRef<HTMLDivElement>(null);
   const statsRef = useRef<HTMLDivElement>(null);
@@ -671,6 +743,22 @@ export function App() {
       state.objectives[0]
     );
   }, [state.objectives, state.selectedObjectiveId, activeObjectives]);
+
+  useEffect(() => {
+    if (isObjectiveTabsWrapped) return;
+    const container = objectiveTabsScrollRef.current;
+    if (!container) return;
+    const activeBtn = container.querySelector<HTMLElement>(
+      `[data-objective-tab="${currentObjective.id}"]`
+    );
+    if (activeBtn) {
+      activeBtn.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+        inline: 'center',
+      });
+    }
+  }, [currentObjective.id, isObjectiveTabsWrapped]);
 
   // Derived gamification properties
   const totalXp = state.gamification.totalXp;
@@ -2408,7 +2496,7 @@ export function App() {
       setIsEditorOpen(false);
       playCelebrationFanfare('levelUp');
       triggerCelebration(
-        '¡Nuevo Objetivo Forjado!',
+        '¡Nuevo Objetivo Creado!',
         `Conservamos "${currentObjective.title}" intacto y creamos "${newObj.title}" listo para empezar`,
         newObj.icon || '🚀',
         newObj.accentColor || '#65DB85'
@@ -2465,7 +2553,7 @@ export function App() {
     setIsEditorOpen(false);
     if (wasDraft || saveMode === 'overwrite_reset') {
       triggerCelebration(
-        wasDraft ? '¡Objetivo Forjado!' : '¡Tarjeta Reiniciada a 0!',
+        wasDraft ? '¡Objetivo Creado!' : '¡Tarjeta Reiniciada a 0!',
         `${input.icon || '🎯'} ${input.title.trim()} está listo para tu primer impulso`,
         input.icon || '🚀',
         input.accentColor || '#65DB85'
@@ -2881,9 +2969,11 @@ export function App() {
           <div className="space-y-3 sm:space-y-5">
             <div className="flex items-start justify-between gap-2">
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-10 h-10 rounded-[13px] bg-gradient-to-br from-[#7549B8] to-[#4A2E7F] border border-[#B58BFF]/50 shadow-[0_0_16px_rgba(140,92,224,0.35)] flex items-center justify-center text-lg shrink-0">
-                  🎯
-                </div>
+                <img
+                  src="/pwa-192x192.png"
+                  alt="Objective Reacher"
+                  className="w-10 h-10 rounded-[13px] object-cover border border-[#B58BFF]/50 shadow-[0_0_16px_rgba(140,92,224,0.35)] shrink-0"
+                />
                 <div className="min-w-0">
                   <div className="text-[16px] sm:text-[17px] font-extrabold tracking-tight leading-tight">
                     <span className="text-[#F4F1FF]">Objective</span>{' '}
@@ -3010,7 +3100,7 @@ export function App() {
         </aside>
 
         {/* Center Dashboard ScrollView */}
-        <main className="px-2.5 sm:px-4 pb-16 lg:pb-8 space-y-3.5 min-w-0">
+        <main className="w-full max-w-[100vw] lg:max-w-full overflow-x-hidden px-2.5 sm:px-4 pb-16 lg:pb-8 space-y-3.5 min-w-0">
           {/* Sticky Header Bar: Relative Full-Width Single-Row Layout with Notch Safe-Area Protection */}
           <div className="sticky top-0 z-20 -mx-2.5 sm:-mx-4 pt-[max(clamp(0.42rem,1.8vw,0.6rem),calc(env(safe-area-inset-top,0px)+0.35rem))] pb-[clamp(0.42rem,1.8vw,0.6rem)] pl-[max(clamp(0.5rem,2.4vw,1rem),calc(env(safe-area-inset-left,0px)+0.35rem))] pr-[max(clamp(0.5rem,2.4vw,1rem),calc(env(safe-area-inset-right,0px)+0.35rem))] bg-[#11121C]/95 backdrop-blur-md border-b border-[#29283C]/85 shadow-[0_6px_20px_rgba(7,8,16,0.45)]">
             <div className="flex flex-nowrap items-center justify-between w-full gap-[clamp(0.35rem,1.6vw,0.65rem)]">
@@ -3029,9 +3119,11 @@ export function App() {
                 </button>
 
                 <div className="h-[clamp(1.85rem,8vw,2.2rem)] inline-flex items-center gap-[clamp(0.3rem,1.4vw,0.5rem)] px-[clamp(0.45rem,2vw,0.75rem)] rounded-[clamp(8px,2.2vw,10px)] bg-[#1A1829] border border-[#453A6B] shadow-[0_2px_10px_rgba(0,0,0,0.3)] min-w-0">
-                  <span className="w-[clamp(1.15rem,5vw,1.4rem)] h-[clamp(1.15rem,5vw,1.4rem)] rounded-[clamp(5px,1.5vw,7px)] bg-gradient-to-br from-[#7549B8] to-[#3B8D61] flex items-center justify-center text-[clamp(0.65rem,2.8vw,0.8rem)] leading-none shrink-0">
-                    🎯
-                  </span>
+                  <img
+                    src="/pwa-192x192.png"
+                    alt="Objective Reacher"
+                    className="w-[clamp(1.15rem,5vw,1.4rem)] h-[clamp(1.15rem,5vw,1.4rem)] rounded-[clamp(5px,1.5vw,7px)] object-cover border border-[#B58BFF]/45 shrink-0"
+                  />
                   <div className="flex items-center gap-[clamp(0.2rem,0.9vw,0.35rem)] leading-none min-w-0">
                     <span className="text-[clamp(0.62rem,2.75vw,0.8rem)] font-black uppercase tracking-[0.04em] sm:tracking-[0.06em] text-[#F4F1FF] truncate">
                       OBJECTIVE
@@ -3143,57 +3235,123 @@ export function App() {
             </div>
           </div>
 
-          {/* Objective Tabs */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
-            {activeObjectives.map((obj) => {
-              const isSelected = obj.id === currentObjective.id;
-              const tabIcon = obj.icon || '🎯';
-              const tabTheme = findAccentTheme(obj.accentColor);
-              const tabAccent = tabTheme.primary;
-              const objProg =
-                obj.goalAmount > 0
-                  ? Math.min(100, Math.floor((obj.currentAmount / obj.goalAmount) * 100))
-                  : 0;
-              return (
+          {/* Objective Tabs: Full touch swipe + mouse drag + wheel + scrollbar + arrow buttons + wrap toggle */}
+          <div className="w-full max-w-full min-w-0 space-y-1">
+            <div className="flex items-center gap-1.5 w-full max-w-full min-w-0">
+              {!isObjectiveTabsWrapped && activeObjectives.length > 2 && (
                 <button
-                  key={obj.id}
-                  onClick={() => handleSelectObjective(obj.id)}
-                  style={
-                    isSelected
-                      ? {
-                          borderColor: tabAccent,
-                          backgroundColor: tabTheme.surfaceDark,
-                          boxShadow: `0 4px 14px -4px ${tabTheme.glow}`,
-                        }
-                      : undefined
-                  }
-                  className={`px-3.5 py-2 rounded-[13px] text-xs sm:text-sm font-medium whitespace-nowrap transition flex items-center gap-2 border ${
-                    isSelected
-                      ? 'text-white'
-                      : 'bg-[#1F1E2E] border-[#2C2A40] text-[#C9C2D8] hover:bg-[#29263D]'
-                  }`}
+                  type="button"
+                  onClick={() => {
+                    playUiTap(1);
+                    objectiveTabsScrollRef.current?.scrollBy({
+                      left: -180,
+                      behavior: 'smooth',
+                    });
+                  }}
+                  aria-label="Desplazar objetivos a la izquierda"
+                  title="Desplazar a la izquierda"
+                  className="w-7 h-9 rounded-[10px] bg-[#1F1E2E] border border-[#34304B] text-[#D9C9FF] hover:bg-[#2B2740] active:scale-95 transition flex items-center justify-center shrink-0 text-sm font-bold"
                 >
-                  <span>{tabIcon}</span>
-                  <span>{obj.title}</span>
-                  <span
-                    style={{
-                      color: isSelected ? tabAccent : '#9E97B0',
-                    }}
-                    className="text-[10px] font-mono-tabular font-bold"
-                  >
-                    {objProg}%
-                  </span>
+                  ‹
                 </button>
-              );
-            })}
+              )}
+
+              <div
+                ref={objectiveTabsScrollRef}
+                {...(!isObjectiveTabsWrapped ? getHorizontalScrollProps() : {})}
+                className={
+                  isObjectiveTabsWrapped
+                    ? 'flex flex-wrap items-center gap-2 w-full max-w-full min-w-0 pb-1'
+                    : 'flex flex-nowrap items-center gap-2 w-full max-w-full min-w-0 overflow-x-auto pb-1.5 pt-0.5 horizontal-scroll-strip cursor-grab active:cursor-grabbing'
+                }
+              >
+                {activeObjectives.map((obj) => {
+                  const isSelected = obj.id === currentObjective.id;
+                  const tabIcon = obj.icon || '🎯';
+                  const tabTheme = findAccentTheme(obj.accentColor);
+                  const tabAccent = tabTheme.primary;
+                  const objProg =
+                    obj.goalAmount > 0
+                      ? Math.min(
+                          100,
+                          Math.floor((obj.currentAmount / obj.goalAmount) * 100)
+                        )
+                      : 0;
+                  return (
+                    <button
+                      key={obj.id}
+                      data-objective-tab={obj.id}
+                      onClick={() => handleSelectObjective(obj.id)}
+                      style={
+                        isSelected
+                          ? {
+                              borderColor: tabAccent,
+                              backgroundColor: tabTheme.surfaceDark,
+                              boxShadow: `0 4px 14px -4px ${tabTheme.glow}`,
+                            }
+                          : undefined
+                      }
+                      className={`shrink-0 px-3.5 py-2 rounded-[13px] text-xs sm:text-sm font-medium whitespace-nowrap transition flex items-center gap-2 border select-none ${
+                        isSelected
+                          ? 'text-white'
+                          : 'bg-[#1F1E2E] border-[#2C2A40] text-[#C9C2D8] hover:bg-[#29263D]'
+                      }`}
+                    >
+                      <span>{tabIcon}</span>
+                      <span>{obj.title}</span>
+                      <span
+                        style={{
+                          color: isSelected ? tabAccent : '#9E97B0',
+                        }}
+                        className="text-[10px] font-mono-tabular font-bold"
+                      >
+                        {objProg}%
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {!isObjectiveTabsWrapped && activeObjectives.length > 2 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    playUiTap(1);
+                    objectiveTabsScrollRef.current?.scrollBy({
+                      left: 180,
+                      behavior: 'smooth',
+                    });
+                  }}
+                  aria-label="Desplazar objetivos a la derecha"
+                  title="Desplazar a la derecha"
+                  className="w-7 h-9 rounded-[10px] bg-[#1F1E2E] border border-[#34304B] text-[#D9C9FF] hover:bg-[#2B2740] active:scale-95 transition flex items-center justify-center shrink-0 text-sm font-bold"
+                >
+                  ›
+                </button>
+              )}
+            </div>
           </div>
 
-          {/* Subheader: Count + Archivados + Nuevo objetivo */}
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[12px] text-[#A8A3B8]">
-              {activeObjectives.length}{' '}
-              {activeObjectives.length === 1 ? 'objetivo activo' : 'objetivos activos'}
-            </span>
+          {/* Subheader: Count + Ver todos toggle + Archivados + Nuevo objetivo */}
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
+              <span className="text-[12px] text-[#A8A3B8]">
+                {activeObjectives.length}{' '}
+                {activeObjectives.length === 1 ? 'objetivo activo' : 'objetivos activos'}
+              </span>
+              {activeObjectives.length > 2 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    playUiTap(1);
+                    setIsObjectiveTabsWrapped((prev) => !prev);
+                  }}
+                  className="px-2 py-0.5 rounded-[8px] bg-[#211E32] border border-[#383350] text-[#C7A4FF] text-[11px] font-semibold hover:bg-[#2C2844] transition"
+                >
+                  {isObjectiveTabsWrapped ? '↔ 1 fila' : '☷ Ver todos'}
+                </button>
+              )}
+            </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => {
@@ -3219,8 +3377,8 @@ export function App() {
                 }}
                 className="px-3.5 py-1.5 rounded-[11px] text-[12px] font-extrabold hover:brightness-110 active:scale-95 transition flex items-center gap-1"
               >
-                <span>✨</span>
-                <span>Forjar objetivo</span>
+                <span>＋</span>
+                <span>Nuevo objetivo</span>
               </button>
             </div>
           </div>
@@ -3921,7 +4079,10 @@ export function App() {
               </button>
             </div>
 
-            <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+            <div
+              {...getHorizontalScrollProps()}
+              className="flex gap-2 overflow-x-auto pb-1.5 horizontal-scroll-strip cursor-grab active:cursor-grabbing"
+            >
               {ACHIEVEMENT_CATALOG.map((ach) => {
                 const isUnlocked =
                   currentObjective.unlockedAchievementIds.includes(ach.id);
@@ -7397,6 +7558,7 @@ function ObjectiveEditorModal({
     () => OBJECTIVE_TEMPLATES.find((t) => t.id === pendingTemplateId) || null,
     [pendingTemplateId]
   );
+  const getModalHorizontalScrollProps = useHorizontalScrollProps();
 
   return (
     <div className="fixed inset-0 z-50 bg-[#0E0E18]/95 backdrop-blur-md flex items-start sm:items-center justify-center p-3 sm:p-5 overflow-y-auto">
@@ -7408,7 +7570,7 @@ function ObjectiveEditorModal({
         <div className="flex items-center justify-between gap-2">
           <div>
             <h2 className="text-[20px] sm:text-[24px] font-extrabold text-[#F4F1FF] flex items-center gap-2">
-              <span>{isNewDraft ? '✨ Forjar Nuevo Objetivo' : '🎨 Personalizar Objetivo'}</span>
+              <span>{isNewDraft ? '＋ Crear Nuevo Objetivo' : '🎨 Personalizar Objetivo'}</span>
             </h2>
             <p className="text-[12px] text-[#A8A3B8]">
               {isNewDraft
@@ -7439,7 +7601,10 @@ function ObjectiveEditorModal({
               </span>
             )}
           </div>
-          <div className="flex gap-2 overflow-x-auto pb-1.5 no-scrollbar">
+          <div
+            {...getModalHorizontalScrollProps()}
+            className="flex gap-2 overflow-x-auto pb-1.5 horizontal-scroll-strip cursor-grab active:cursor-grabbing"
+          >
             {OBJECTIVE_TEMPLATES.map((tpl) => {
               const isSelected = activeTemplateId === tpl.id;
               const tplTheme = findAccentTheme(tpl.accentColor);
@@ -7825,7 +7990,10 @@ function ObjectiveEditorModal({
             >
               EMBLEMA DEL OBJETIVO
             </div>
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+            <div
+              {...getModalHorizontalScrollProps()}
+              className="flex items-center gap-1.5 overflow-x-auto pb-1.5 horizontal-scroll-strip cursor-grab active:cursor-grabbing"
+            >
               {OBJECTIVE_ICONS.map((ic) => {
                 const isSelected = icon === ic;
                 return (
@@ -7903,7 +8071,10 @@ function ObjectiveEditorModal({
                   {previewPreset.name}
                 </span>
               </div>
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+              <div
+                {...getModalHorizontalScrollProps()}
+                className="flex items-center gap-1.5 overflow-x-auto pb-1.5 horizontal-scroll-strip cursor-grab active:cursor-grabbing"
+              >
                 {BANNER_PRESETS.map((preset) => {
                   const isSelected = bannerId === preset.id;
                   return (
