@@ -95,6 +95,7 @@ export interface IndieSupportPack {
   badge: string;
   emoji: string;
   usdPrice: string;
+  usdNumeric: number;
   arsReference: string;
   googlePlaySku: string;
   gemsIncluded: number;
@@ -104,6 +105,62 @@ export interface IndieSupportPack {
   highlightColor: string;
   perks: string[];
 }
+
+export type PaymentGatewayChoice = 'mercadopago' | 'paypal_googlepay';
+
+export interface DualCheckoutResult {
+  success: boolean;
+  redirecting?: boolean;
+  mode:
+    | 'google_play_billing'
+    | 'mercadopago_live'
+    | 'paypal_googlepay_live'
+    | 'dual_placeholder_sandbox';
+  gateway: PaymentGatewayChoice | 'google_play';
+  receiptId: string;
+  licenseCode?: string;
+  arsPrice?: number;
+  notice?: string;
+}
+
+export interface VerifiedLicensePayload {
+  packId: string;
+  gems: number;
+  shields: number;
+  unlocksFounder: boolean;
+  usdAmount: number;
+  gateway: 'mercadopago' | 'paypal_googlepay' | 'google_play';
+  txId: string;
+  issuedAt: number;
+}
+
+// ============================================================================
+// PLACEHOLDERS DE CONFIGURACIÓN FRONTEND (LEÍDOS DESDE .ENV LOCAL)
+// ============================================================================
+const envMeta = (import.meta as unknown as { env?: Record<string, string> }).env || {};
+
+export const DUAL_PAYMENT_PLACEHOLDERS = {
+  // 1. Mercado Pago (Argentina & LatAm)
+  mpPublicKey:
+    envMeta.VITE_MP_PUBLIC_KEY ||
+    'APP_USR-PLACEHOLDER-TU-PUBLIC-KEY-DE-MERCADOPAGO',
+  mpDirectLinks: {
+    pack_coffee: envMeta.VITE_MP_LINK_COFFEE || '',
+    pack_founder: envMeta.VITE_MP_LINK_FOUNDER || '',
+    pack_gem_chest: envMeta.VITE_MP_LINK_GEM_CHEST || '',
+    custom_tip: envMeta.VITE_MP_LINK_CUSTOM_TIP || '',
+  },
+
+  // 2. Pasarela Global (PayPal + Google Pay / Lemon Squeezy MoR)
+  paypalClientId:
+    envMeta.VITE_PAYPAL_CLIENT_ID || 'PLACEHOLDER_TU_PAYPAL_CLIENT_ID_GLOBAL',
+  globalDirectLinks: {
+    pack_coffee: envMeta.VITE_GLOBAL_CHECKOUT_COFFEE_URL || '',
+    pack_founder: envMeta.VITE_GLOBAL_CHECKOUT_FOUNDER_URL || '',
+    pack_gem_chest: envMeta.VITE_GLOBAL_CHECKOUT_GEM_CHEST_URL || '',
+    custom_tip: envMeta.VITE_GLOBAL_CHECKOUT_CUSTOM_TIP_URL || '',
+  },
+};
 
 // ============================================================================
 // 1. MASCOT SKINS & AURAS (36 ITEMS: 11 FREE / 25 PREMIUM)
@@ -1268,7 +1325,8 @@ export const INDIE_SUPPORT_PACKS: IndieSupportPack[] = [
     badge: 'APOYO CERCANO',
     emoji: '☕',
     usdPrice: '$1.99 USD',
-    arsReference: 'Pago único · Google Play',
+    usdNumeric: 1.99,
+    arsReference: 'Mercado Pago (ARS) · PayPal · Google Pay',
     googlePlaySku: 'or_pack_indie_coffee',
     gemsIncluded: 280,
     shieldsIncluded: 1,
@@ -1279,7 +1337,7 @@ export const INDIE_SUPPORT_PACKS: IndieSupportPack[] = [
       '💎 +280 Gemas Astrales para Skins, Marcos y Sonidos',
       '🛡️ +1 Escudo de Racha Eterna incluido',
       '💚 Insignia exclusiva "Supporter Indie" junto a tu marca',
-      '🎵 Alcance inmediato para desbloquear Packs de Sonido o Marcos',
+      '🔑 Incluye Código de Recuperación PRO para restaurar en cualquier dispositivo',
     ],
   },
   {
@@ -1289,7 +1347,8 @@ export const INDIE_SUPPORT_PACKS: IndieSupportPack[] = [
     badge: 'MEJOR VALOR · PAGO ÚNICO',
     emoji: '👑',
     usdPrice: '$4.99 USD',
-    arsReference: 'Tuyo para siempre · Sin suscripción',
+    usdNumeric: 4.99,
+    arsReference: 'Tuyo para siempre · Mercado Pago / PayPal / GPay',
     googlePlaySku: 'or_pack_founder_lifetime',
     gemsIncluded: 750,
     shieldsIncluded: 3,
@@ -1301,7 +1360,7 @@ export const INDIE_SUPPORT_PACKS: IndieSupportPack[] = [
       '⚡ Bono Permanente +20% XP de Fundador en todos tus avances',
       '💎 +750 Gemas Astrales para gastar en Elixires, Néctar y Reliquias',
       '🛡️ +3 Escudos de Racha Eterna en tu inventario',
-      '👑 Emblema Dorado "Fundador Indie" junto a tu nombre',
+      '🔑 Código PRO vitalicio firmado para usar en Web y Android',
     ],
   },
   {
@@ -1311,7 +1370,8 @@ export const INDIE_SUPPORT_PACKS: IndieSupportPack[] = [
     badge: 'BOLSA DE CRISTALES',
     emoji: '💎',
     usdPrice: '$2.99 USD',
-    arsReference: 'Pago único · Google Play',
+    usdNumeric: 2.99,
+    arsReference: 'Mercado Pago (ARS) · PayPal · Google Pay',
     googlePlaySku: 'or_pack_500_gems',
     gemsIncluded: 500,
     shieldsIncluded: 1,
@@ -1321,7 +1381,7 @@ export const INDIE_SUPPORT_PACKS: IndieSupportPack[] = [
     perks: [
       '💎 +500 Gemas Astrales acreditadas al instante',
       '🛡️ +1 Escudo de Racha de regalo',
-      '🧪 Ideal para coleccionar Reliquias, Sonidos y Elixires ×1.5 XP',
+      '🔑 Código de respaldo PRO transferible entre tus dispositivos',
     ],
   },
 ];
@@ -1353,16 +1413,30 @@ export function formatRemainingBuffTime(isoUntil?: string): string {
   return `${Math.max(1, mins)}m`;
 }
 
-// Google Play Billing (Digital Goods API) + Web Preview Checkout Bridge
+// ============================================================================
+// PUENTE DE ARQUITECTURA DUAL DE PAGOS:
+// 1) Si corre dentro de Google Play (TWA Android), prioriza Google Play Billing.
+// 2) En Web / PWA, conecta con las rutas del servidor (`/api/payments/...`)
+//    para Mercado Pago (LatAm/ARS) o Pasarela Global (PayPal / Google Pay USD),
+//    o utiliza los links directos configurados en `.env`.
+// ============================================================================
 export async function triggerStoreCheckout(pack: {
+  id?: string;
   title: string;
   usdPrice: string;
+  usdNumeric?: number;
   googlePlaySku: string;
-}): Promise<{
-  success: boolean;
-  mode: 'google_play_billing' | 'indie_preview_checkout';
-  receiptId: string;
-}> {
+  preferredGateway?: PaymentGatewayChoice;
+}): Promise<DualCheckoutResult> {
+  const gateway: PaymentGatewayChoice =
+    pack.preferredGateway || 'mercadopago';
+  const packId = pack.id || 'custom_tip';
+  const numericUsd =
+    typeof pack.usdNumeric === 'number'
+      ? pack.usdNumeric
+      : Number(pack.usdPrice.replace(/[^0-9.]/g, '')) || 1.99;
+
+  // 1. Detectar si estamos dentro de la App Android instalada desde Google Play (Digital Goods API)
   try {
     const anyWindow = window as unknown as {
       getDigitalGoodsService?: (serviceUrl: string) => Promise<{
@@ -1386,27 +1460,149 @@ export async function triggerStoreCheckout(pack: {
             label: pack.title,
             amount: {
               currency: 'USD',
-              value: pack.usdPrice.replace(/[^0-9.]/g, '') || '1.99',
+              value: numericUsd.toFixed(2),
             },
           },
         };
         const request = new PaymentRequest(paymentMethods, details);
         const response = await request.show();
         await response.complete('success');
+
+        const gpTxId = `GP-${Date.now().toString(36).toUpperCase()}`;
+        const receiptRes = await fetch('/api/payments/issue-receipt-license', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            packId,
+            customUsdAmount: numericUsd,
+            gateway: 'google_play',
+            externalTxId: gpTxId,
+          }),
+        }).catch(() => null);
+        const receiptData = receiptRes ? await receiptRes.json().catch(() => null) : null;
+
         return {
           success: true,
           mode: 'google_play_billing',
-          receiptId: `GP-${Date.now().toString(36).toUpperCase()}`,
+          gateway: 'google_play',
+          receiptId: gpTxId,
+          licenseCode: receiptData?.licenseCode,
         };
       }
     }
   } catch {
-    // Fallback to preview checkout if Play Billing isn't active in current browser context
+    // Si no está en entorno Google Play TWA, continúa con la Pasarela Dual Web
+  }
+
+  // 2. Verificar si el desarrollador configuró un Link Directo Estático en .env
+  const directLinkMap =
+    gateway === 'mercadopago'
+      ? DUAL_PAYMENT_PLACEHOLDERS.mpDirectLinks
+      : DUAL_PAYMENT_PLACEHOLDERS.globalDirectLinks;
+
+  const configuredDirectUrl =
+    directLinkMap[packId as keyof typeof directLinkMap] || '';
+  if (
+    configuredDirectUrl &&
+    configuredDirectUrl.startsWith('http') &&
+    !configuredDirectUrl.includes('PLACEHOLDER')
+  ) {
+    window.location.href = configuredDirectUrl;
+    return {
+      success: false,
+      redirecting: true,
+      mode:
+        gateway === 'mercadopago'
+          ? 'mercadopago_live'
+          : 'paypal_googlepay_live',
+      gateway,
+      receiptId: 'REDIRECTING',
+    };
+  }
+
+  // 3. Llamar al Backend Dual (`/api/payments/mercadopago/create-preference` o `/api/payments/paypal/create-order`)
+  try {
+    const endpoint =
+      gateway === 'mercadopago'
+        ? '/api/payments/mercadopago/create-preference'
+        : '/api/payments/paypal/create-order';
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        packId,
+        customUsdAmount: numericUsd,
+      }),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+
+      // Si las credenciales reales están puestas en .env, redirige al Checkout Oficial
+      if (data.mode === 'live_redirect' && data.checkoutUrl) {
+        window.location.href = data.checkoutUrl;
+        return {
+          success: false,
+          redirecting: true,
+          mode:
+            gateway === 'mercadopago'
+              ? 'mercadopago_live'
+              : 'paypal_googlepay_live',
+          gateway,
+          receiptId: data.preferenceId || data.orderId || 'LIVE',
+          arsPrice: data.arsPrice,
+        };
+      }
+
+      // Modo Placeholder Local: devuelve recibo y código de licencia firmado (OR-PRO-...)
+      if (data.ok) {
+        return {
+          success: true,
+          mode: 'dual_placeholder_sandbox',
+          gateway,
+          receiptId: data.txId || `SIM-${Date.now().toString(36).toUpperCase()}`,
+          licenseCode: data.licenseCode,
+          arsPrice: data.arsPrice,
+          notice: data.notice,
+        };
+      }
+    }
+  } catch {
+    // Fallback local si se corre sin backend
   }
 
   return {
     success: true,
-    mode: 'indie_preview_checkout',
-    receiptId: `INDIE-${Date.now().toString(36).toUpperCase()}`,
+    mode: 'dual_placeholder_sandbox',
+    gateway,
+    receiptId: `LOCAL-${Date.now().toString(36).toUpperCase()}`,
   };
+}
+
+export async function verifyAndRedeemLicenseCode(code: string): Promise<{
+  valid: boolean;
+  payload?: VerifiedLicensePayload;
+  reason?: string;
+}> {
+  try {
+    const res = await fetch('/api/payments/verify-license', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return {
+        valid: false,
+        reason: err.reason || 'No se pudo verificar el código PRO.',
+      };
+    }
+    return await res.json();
+  } catch {
+    return {
+      valid: false,
+      reason: 'Error de conexión al verificar el código PRO con el servidor.',
+    };
+  }
 }

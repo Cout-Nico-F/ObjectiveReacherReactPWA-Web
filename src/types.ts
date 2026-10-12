@@ -79,6 +79,8 @@ export interface GamificationState {
   asmrPreferredTexture?: string;
   asmrGemsDateKey?: string;
   asmrGemsEarnedToday?: number;
+  redeemedLicenseTxIds?: string[];
+  lastIssuedLicenseCode?: string;
 }
 
 export interface DashboardState {

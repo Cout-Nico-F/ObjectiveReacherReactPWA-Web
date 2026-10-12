@@ -32,12 +32,14 @@ import {
   isTimestampActive,
   MASCOT_SKINS,
   MascotSkinDefinition,
+  PaymentGatewayChoice,
   SANCTUARY_BUFFS,
   SanctuaryBuffDefinition,
   SOUND_PACKS,
   SoundPackCatalogItem,
   triggerStoreCheckout,
   VAULT_STATS,
+  verifyAndRedeemLicenseCode,
 } from './monetization';
 import {
   ASMR_TEXTURES,
@@ -124,6 +126,8 @@ function createEmptyState(): DashboardState {
       supporterTier: 'none',
       asmrTotalTaps: 0,
       asmrPreferredTexture: 'bubbles',
+      redeemedLicenseTxIds: [],
+      lastIssuedLicenseCode: '',
     },
   };
 }
@@ -282,6 +286,13 @@ function loadState(): DashboardState {
           : 0;
       parsed.gamification.asmrPreferredTexture =
         parsed.gamification.asmrPreferredTexture || 'bubbles';
+      parsed.gamification.redeemedLicenseTxIds = Array.isArray(
+        parsed.gamification.redeemedLicenseTxIds
+      )
+        ? parsed.gamification.redeemedLicenseTxIds
+        : [];
+      parsed.gamification.lastIssuedLicenseCode =
+        parsed.gamification.lastIssuedLicenseCode || '';
       return parsed;
     }
   } catch {
@@ -1903,9 +1914,19 @@ export function App() {
     }
   };
 
-  const handlePurchaseSupportPack = async (pack: IndieSupportPack) => {
+  const handlePurchaseSupportPack = async (
+    pack: IndieSupportPack,
+    gateway: PaymentGatewayChoice = 'mercadopago'
+  ) => {
     playUiTap(3);
-    const result = await triggerStoreCheckout(pack);
+    const result = await triggerStoreCheckout({
+      id: pack.id,
+      title: pack.title,
+      usdPrice: pack.usdPrice,
+      usdNumeric: pack.usdNumeric,
+      googlePlaySku: pack.googlePlaySku,
+      preferredGateway: gateway,
+    });
     if (!result.success) return;
 
     playCelebrationFanfare('goal');
@@ -1920,6 +1941,7 @@ export function App() {
     setState((prev) => {
       const prevUnlocked = prev.gamification.unlockedSkins || ['default'];
       const prevVault = prev.gamification.unlockedVaultIds || [];
+      const prevTxIds = prev.gamification.redeemedLicenseTxIds || [];
       const nextUnlocked = pack.unlocksAllSkins
         ? Array.from(new Set([...prevUnlocked, ...allSkinIds]))
         : prevUnlocked;
@@ -1952,33 +1974,55 @@ export function App() {
             Boolean(prev.gamification.isIndieFounder) ||
             pack.id === 'pack_founder',
           supporterTier: nextTier,
+          redeemedLicenseTxIds: result.receiptId
+            ? Array.from(new Set([...prevTxIds, result.receiptId]))
+            : prevTxIds,
+          lastIssuedLicenseCode:
+            result.licenseCode || prev.gamification.lastIssuedLicenseCode || '',
         },
       };
     });
+
+    const gatewayLabel =
+      result.gateway === 'mercadopago'
+        ? 'Mercado Pago (LatAm)'
+        : result.gateway === 'paypal_googlepay'
+        ? 'PayPal / Google Pay'
+        : 'Google Play Billing';
 
     setMascotJoyId(Date.now());
     triggerCelebration(
       pack.id === 'pack_founder'
         ? '¡Gracias, Fundador Indie! 👑'
-        : `¡Gracias por apoyar este proyecto Indie! ${pack.emoji}`,
+        : `¡Gracias por apoyar (${gatewayLabel})! ${pack.emoji}`,
       `Recibiste +${pack.gemsIncluded} 💎 Gemas, +${pack.shieldsIncluded} 🛡️ Escudos${
         pack.unlocksAllSkins
           ? ', TODOS los cosméticos del Banco y +20% XP permanente'
           : ''
-      }.`,
+      }.${
+        result.licenseCode
+          ? ' Tu Código PRO de respaldo quedó guardado en la pestaña Apoyar al Dev.'
+          : ''
+      }`,
       pack.emoji,
       pack.highlightColor,
       true
     );
   };
 
-  const handleCustomTipSupport = async (usdAmount: number) => {
+  const handleCustomTipSupport = async (
+    usdAmount: number,
+    gateway: PaymentGatewayChoice = 'mercadopago'
+  ) => {
     const cleanUsd = Math.max(0.5, Math.min(500, Number(usdAmount.toFixed(2))));
     playUiTap(4);
     const result = await triggerStoreCheckout({
+      id: 'custom_tip',
       title: `Propina Indie Libre ($${cleanUsd.toFixed(2)} USD)`,
       usdPrice: `$${cleanUsd.toFixed(2)} USD`,
+      usdNumeric: cleanUsd,
       googlePlaySku: 'or_custom_indie_tip',
+      preferredGateway: gateway,
     });
     if (!result.success) return;
 
@@ -1997,6 +2041,7 @@ export function App() {
     setState((prev) => {
       const prevUnlocked = prev.gamification.unlockedSkins || ['default'];
       const prevVault = prev.gamification.unlockedVaultIds || [];
+      const prevTxIds = prev.gamification.redeemedLicenseTxIds || [];
       return {
         ...prev,
         gamification: {
@@ -2016,6 +2061,112 @@ export function App() {
             unlocksFounder || prev.gamification.isIndieFounder
               ? 'founder'
               : 'coffee',
+          redeemedLicenseTxIds: result.receiptId
+            ? Array.from(new Set([...prevTxIds, result.receiptId]))
+            : prevTxIds,
+          lastIssuedLicenseCode:
+            result.licenseCode || prev.gamification.lastIssuedLicenseCode || '',
+        },
+      };
+    });
+
+    const gatewayLabel =
+      result.gateway === 'mercadopago'
+        ? 'Mercado Pago'
+        : result.gateway === 'paypal_googlepay'
+        ? 'PayPal / Google Pay'
+        : 'Google Play';
+
+    setMascotJoyId(Date.now());
+    triggerCelebration(
+      unlocksFounder
+        ? `¡Propina de Fundador ($${cleanUsd.toFixed(2)} USD · ${gatewayLabel})! 👑`
+        : `¡Gracias por tu Propina ($${cleanUsd.toFixed(2)} USD · ${gatewayLabel})! 💖`,
+      `Como agradecimiento recibiste +${rewardedGems} 💎 Gemas Astrales y +${rewardedShields} 🛡️ Escudos${
+        unlocksFounder
+          ? ' + Desbloqueo Total del Pase Fundador Indie'
+          : ''
+      }.${
+        result.licenseCode
+          ? ' Tu Código PRO de respaldo fue generado y guardado.'
+          : ''
+      }`,
+      unlocksFounder ? '👑' : '💖',
+      unlocksFounder ? '#FFD54F' : '#82E59B',
+      true
+    );
+  };
+
+  const handleRedeemLicenseCode = async (rawCode: string): Promise<{
+    ok: boolean;
+    message: string;
+  }> => {
+    const clean = rawCode.trim();
+    if (!clean) {
+      return { ok: false, message: 'Ingresa un código OR-PRO- válido.' };
+    }
+    const res = await verifyAndRedeemLicenseCode(clean);
+    if (!res.valid || !res.payload) {
+      playUiTap(0);
+      return {
+        ok: false,
+        message: res.reason || 'El código ingresado no es válido.',
+      };
+    }
+
+    const { txId, gems: codeGems, shields: codeShields, unlocksFounder } =
+      res.payload;
+    const alreadyRedeemed = (
+      state.gamification.redeemedLicenseTxIds || []
+    ).includes(txId);
+
+    if (alreadyRedeemed && !unlocksFounder) {
+      playUiTap(0);
+      return {
+        ok: false,
+        message: `Este código (${txId}) ya fue acreditado en este dispositivo.`,
+      };
+    }
+
+    playCelebrationFanfare('goal');
+    const allSkinIds = MASCOT_SKINS.map((s) => s.id);
+    const allVaultIds = [
+      ...CARD_COSMETICS.map((c) => c.id),
+      ...SOUND_PACKS.map((s) => s.id),
+      ...CARD_STYLE_VAULT.map((st) => st.id),
+      ...GUARDIAN_TITLES.map((t) => t.id),
+    ];
+
+    setState((prev) => {
+      const prevUnlocked = prev.gamification.unlockedSkins || ['default'];
+      const prevVault = prev.gamification.unlockedVaultIds || [];
+      const prevTxIds = prev.gamification.redeemedLicenseTxIds || [];
+      const isAlreadyInState = prevTxIds.includes(txId);
+
+      return {
+        ...prev,
+        gamification: {
+          ...prev.gamification,
+          gems: isAlreadyInState
+            ? prev.gamification.gems ?? 0
+            : (prev.gamification.gems ?? 0) + codeGems,
+          streakShields: isAlreadyInState
+            ? prev.gamification.streakShields ?? 0
+            : (prev.gamification.streakShields ?? 0) + codeShields,
+          unlockedSkins: unlocksFounder
+            ? Array.from(new Set([...prevUnlocked, ...allSkinIds]))
+            : prevUnlocked,
+          unlockedVaultIds: unlocksFounder
+            ? Array.from(new Set([...prevVault, ...allVaultIds]))
+            : prevVault,
+          isIndieFounder:
+            Boolean(prev.gamification.isIndieFounder) || unlocksFounder,
+          supporterTier:
+            unlocksFounder || prev.gamification.isIndieFounder
+              ? 'founder'
+              : 'coffee',
+          redeemedLicenseTxIds: Array.from(new Set([...prevTxIds, txId])),
+          lastIssuedLicenseCode: clean,
         },
       };
     });
@@ -2023,18 +2174,55 @@ export function App() {
     setMascotJoyId(Date.now());
     triggerCelebration(
       unlocksFounder
-        ? `¡Propina de Fundador ($${cleanUsd.toFixed(2)} USD)! 👑`
-        : `¡Gracias por tu Propina ($${cleanUsd.toFixed(2)} USD)! 💖`,
-      `Como agradecimiento recibiste +${rewardedGems} 💎 Gemas Astrales y +${rewardedShields} 🛡️ Escudos${
-        unlocksFounder
-          ? ' + Desbloqueo Total del Pase Fundador Indie'
-          : ''
-      }.`,
-      unlocksFounder ? '👑' : '💖',
-      unlocksFounder ? '#FFD54F' : '#82E59B',
+        ? '¡Pase Fundador Restaurado! 👑'
+        : '¡Código PRO Canjeado con Éxito! 🔑',
+      `Se acreditaron +${codeGems} 💎 Gemas, +${codeShields} 🛡️ Escudos${
+        unlocksFounder ? ' y TODOS los cosméticos de Fundador' : ''
+      } (Recibo ${txId}).`,
+      '🔑',
+      '#FFD54F',
       true
     );
+
+    return {
+      ok: true,
+      message: `¡Código verificado! +${codeGems} 💎 y +${codeShields} 🛡️ acreditados.`,
+    };
   };
+
+  // Detectar retorno automático desde pasarela externa (Mercado Pago / PayPal / Google Pay)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const status = params.get('payment_status');
+    const packId = params.get('pack');
+    const gatewayParam = (params.get('gateway') ||
+      'mercadopago') as PaymentGatewayChoice;
+    const usdParam = Number(params.get('usd') || '1.99');
+
+    if (status === 'approved' && packId) {
+      // Limpiar la URL inmediatamente para evitar doble acreditación al recargar
+      window.history.replaceState({}, '', window.location.pathname);
+
+      fetch('/api/payments/issue-receipt-license', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          packId,
+          customUsdAmount: usdParam,
+          gateway: gatewayParam,
+        }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (data?.licenseCode) {
+            handleRedeemLicenseCode(data.licenseCode);
+          }
+        })
+        .catch(() => {
+          // Si falla la red al volver, igual abrimos la tienda en soporte
+        });
+    }
+  }, []);
 
   // Derived objective properties
   const progress =
@@ -5348,6 +5536,9 @@ export function App() {
           gemMagnetRemainingText={gemMagnetRemainingText}
           isIndieFounder={isIndieFounder}
           supporterTier={supporterTier}
+          lastIssuedLicenseCode={
+            state.gamification.lastIssuedLicenseCode || ''
+          }
           onSelectSkin={handleUnlockOrEquipSkin}
           onSelectCardCosmetic={handleSelectCardCosmetic}
           onSelectSoundPack={handleSelectSoundPack}
@@ -5356,6 +5547,7 @@ export function App() {
           onActivateBuff={handleActivateBuff}
           onPurchasePack={handlePurchaseSupportPack}
           onCustomTipSupport={handleCustomTipSupport}
+          onRedeemLicenseCode={handleRedeemLicenseCode}
           onJumpToBoard={() => {
             setIsIndieShopOpen(false);
             highlightSection('objective', objectiveRef);
@@ -8482,6 +8674,7 @@ function IndieEmporiumModal({
   gemMagnetRemainingText,
   isIndieFounder,
   supporterTier,
+  lastIssuedLicenseCode,
   onSelectSkin,
   onSelectCardCosmetic,
   onSelectSoundPack,
@@ -8490,6 +8683,7 @@ function IndieEmporiumModal({
   onActivateBuff,
   onPurchasePack,
   onCustomTipSupport,
+  onRedeemLicenseCode,
   onJumpToBoard,
   onClose,
 }: {
@@ -8513,14 +8707,24 @@ function IndieEmporiumModal({
   gemMagnetRemainingText: string;
   isIndieFounder: boolean;
   supporterTier: 'none' | 'coffee' | 'founder';
+  lastIssuedLicenseCode: string;
   onSelectSkin: (skin: MascotSkinDefinition) => void;
   onSelectCardCosmetic: (cosmetic: CardCosmeticDefinition) => void;
   onSelectSoundPack: (pack: SoundPackCatalogItem) => void;
   onApplyVaultCardStyle: (styleItem: CardStyleVaultItem) => void;
   onSelectGuardianTitle: (titleItem: GuardianTitleItem) => void;
   onActivateBuff: (buff: SanctuaryBuffDefinition) => void;
-  onPurchasePack: (pack: IndieSupportPack) => void;
-  onCustomTipSupport: (usdAmount: number) => void;
+  onPurchasePack: (
+    pack: IndieSupportPack,
+    gateway: PaymentGatewayChoice
+  ) => void;
+  onCustomTipSupport: (
+    usdAmount: number,
+    gateway: PaymentGatewayChoice
+  ) => void;
+  onRedeemLicenseCode: (
+    code: string
+  ) => Promise<{ ok: boolean; message: string }>;
   onJumpToBoard: () => void;
   onClose: () => void;
 }) {
@@ -8549,10 +8753,40 @@ function IndieEmporiumModal({
     color: string;
   } | null>(null);
 
-  // PedidosYa-style Editable Donation / Tip state
+  // PedidosYa-style Editable Donation / Tip state + Dual Payment Gateway Selector
   const [tipAmountText, setTipAmountText] = useState<string>('2.00');
   const [isCustomTipEditing, setIsCustomTipEditing] = useState<boolean>(false);
   const tipCustomInputRef = useRef<HTMLInputElement | null>(null);
+  const [selectedGateway, setSelectedGateway] =
+    useState<PaymentGatewayChoice>('mercadopago');
+  const [mpArsRate, setMpArsRate] = useState<number>(1250);
+  const [gatewayConfigStatus, setGatewayConfigStatus] = useState<{
+    mpReady: boolean;
+    globalReady: boolean;
+  }>({ mpReady: false, globalReady: false });
+  const [licenseInputText, setLicenseInputText] = useState<string>('');
+  const [licenseFeedback, setLicenseFeedback] = useState<{
+    ok: boolean;
+    message: string;
+  } | null>(null);
+  const [copiedCodeNotice, setCopiedCodeNotice] = useState<boolean>(false);
+
+  useEffect(() => {
+    fetch('/api/payments/config-status')
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.mercadopago?.usdToArsRate) {
+          setMpArsRate(Number(data.mercadopago.usdToArsRate));
+        }
+        setGatewayConfigStatus({
+          mpReady: Boolean(data?.mercadopago?.ready),
+          globalReady: Boolean(data?.globalGateway?.ready),
+        });
+      })
+      .catch(() => {
+        // Fallback silencioso
+      });
+  }, []);
 
   useEffect(() => {
     setPreviewSkinId(equippedSkinId);
@@ -9824,7 +10058,7 @@ function IndieEmporiumModal({
             </div>
           )}
 
-          {/* TAB 4: APOYAR AL DEV INDIE (PEDIDOSYA-STYLE EDITABLE TIP + PACKS) */}
+          {/* TAB 4: APOYAR AL DEV INDIE (ARQUITECTURA DUAL: MERCADO PAGO + PAYPAL / GOOGLE PAY + LICENCIAS PRO) */}
           {activeTab === 'support' && (
             <div className="space-y-4">
               {/* Empathy Note from the Solo Indie Developer */}
@@ -9837,8 +10071,98 @@ function IndieEmporiumModal({
                     <strong>De un Desarrollador Indie para ti:</strong> Construí{' '}
                     <span className="text-[#FFD54F] font-bold">Objective Reacher</span>{' '}
                     con dedicación artesanal para ayudarte a cumplir tus metas. Puedes jugar y ganar{' '}
-                    <strong className="text-[#9AF0AE]">💎 Gemas gratis</strong> todos los días, o elegir cualquier propina a tu medida para impulsar nuevas actualizaciones.
+                    <strong className="text-[#9AF0AE]">💎 Gemas gratis</strong> todos los días, o apoyar el proyecto mediante nuestra{' '}
+                    <strong className="text-[#64D8FF]">Pasarela Dual (Mercado Pago en ARS/LatAm o PayPal / Google Pay Global)</strong>.
                   </div>
+                </div>
+              </div>
+
+              {/* Dual Payment Gateway Switcher (Mercado Pago vs PayPal / Google Pay) */}
+              <div className="p-3.5 rounded-[18px] bg-[#161524] border border-[#3B315A] space-y-2.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <div className="text-[10px] font-extrabold uppercase tracking-wider text-[#C7A4FF]">
+                      🌐 PASARELA DE PAGO DUAL · ELIGE TU MÉTODO PREFERIDO
+                    </div>
+                    <div className="text-xs sm:text-sm font-extrabold text-white">
+                      Selecciona cómo prefieres abonar tu Pack o Propina:
+                    </div>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full bg-[#1F1B33] border border-[#53427E] text-[10px] font-bold text-[#9AF0AE] self-start sm:self-auto">
+                    {selectedGateway === 'mercadopago'
+                      ? gatewayConfigStatus.mpReady
+                        ? '🟢 Mercado Pago API Activa'
+                        : '🛠️ Mercado Pago (Modo Placeholder Local)'
+                      : gatewayConfigStatus.globalReady
+                      ? '🟢 PayPal / Google Pay Activo'
+                      : '🛠️ PayPal / Google Pay (Modo Placeholder Local)'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playUiTap(2);
+                      setSelectedGateway('mercadopago');
+                    }}
+                    className={`p-3 rounded-[14px] border text-left transition flex items-start gap-3 ${
+                      selectedGateway === 'mercadopago'
+                        ? 'bg-gradient-to-r from-[#14304B] to-[#1A263D] border-[#00B1EA] shadow-[0_4px_18px_rgba(0,177,234,0.22)]'
+                        : 'bg-[#12111D] border-[#2A263D] hover:border-[#494069]'
+                    }`}
+                  >
+                    <div className="w-10 h-10 rounded-[11px] bg-[#009EE3]/20 border border-[#00B1EA]/50 flex items-center justify-center text-xl shrink-0">
+                      🤝
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-xs sm:text-sm font-extrabold text-white">
+                          Mercado Pago (LatAm / ARS)
+                        </span>
+                        {selectedGateway === 'mercadopago' && (
+                          <span className="px-1.5 py-0.5 rounded bg-[#009EE3] text-white text-[9px] font-extrabold">
+                            ACTIVO
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-[#B8D4E8] mt-0.5 leading-snug">
+                        Dinero en cuenta MP, Transferencia, Débito y Crédito en pesos (~${mpArsRate} ARS/USD ref).
+                      </p>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playUiTap(2);
+                      setSelectedGateway('paypal_googlepay');
+                    }}
+                    className={`p-3 rounded-[14px] border text-left transition flex items-start gap-3 ${
+                      selectedGateway === 'paypal_googlepay'
+                        ? 'bg-gradient-to-r from-[#241E46] to-[#1C1936] border-[#FFD54F] shadow-[0_4px_18px_rgba(255,213,79,0.18)]'
+                        : 'bg-[#12111D] border-[#2A263D] hover:border-[#494069]'
+                    }`}
+                  >
+                    <div className="w-10 h-10 rounded-[11px] bg-[#FFD54F]/15 border border-[#FFD54F]/50 flex items-center justify-center text-xl shrink-0">
+                      🌍
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-xs sm:text-sm font-extrabold text-white">
+                          PayPal · Google Pay · Tarjetas (USD)
+                        </span>
+                        {selectedGateway === 'paypal_googlepay' && (
+                          <span className="px-1.5 py-0.5 rounded bg-[#FFD54F] text-[#181226] text-[9px] font-extrabold">
+                            ACTIVO
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-[#D8C5FF] mt-0.5 leading-snug">
+                        Checkout internacional en USD con PayPal, billetera Google Pay y tarjetas globales.
+                      </p>
+                    </div>
+                  </button>
                 </div>
               </div>
 
@@ -9975,10 +10299,31 @@ function IndieEmporiumModal({
 
                   <button
                     type="button"
-                    onClick={() => onCustomTipSupport(Math.max(0.5, parsedTipUsd))}
-                    className="flex-1 h-[42px] px-4 rounded-[11px] bg-gradient-to-r from-[#65DB85] to-[#26E6A6] text-[#0D2116] text-xs sm:text-sm font-extrabold hover:brightness-110 active:scale-95 transition shadow flex items-center justify-center gap-2"
+                    onClick={() =>
+                      onCustomTipSupport(
+                        Math.max(0.5, parsedTipUsd),
+                        selectedGateway
+                      )
+                    }
+                    className={`flex-1 h-[42px] px-4 rounded-[11px] text-xs sm:text-sm font-extrabold hover:brightness-110 active:scale-95 transition shadow flex items-center justify-center gap-2 ${
+                      selectedGateway === 'mercadopago'
+                        ? 'bg-gradient-to-r from-[#009EE3] to-[#00C4FF] text-[#051824]'
+                        : 'bg-gradient-to-r from-[#65DB85] to-[#26E6A6] text-[#0D2116]'
+                    }`}
                   >
-                    <span>💖 Enviar Propina de ${Math.max(0.5, parsedTipUsd).toFixed(2)} USD</span>
+                    <span>
+                      {selectedGateway === 'mercadopago'
+                        ? `🤝 Aportar con Mercado Pago ($${Math.max(
+                            0.5,
+                            parsedTipUsd
+                          ).toFixed(2)} USD · ~$${Math.round(
+                            Math.max(0.5, parsedTipUsd) * mpArsRate
+                          ).toLocaleString('es-AR')} ARS)`
+                        : `🌍 Aportar con PayPal / GPay ($${Math.max(
+                            0.5,
+                            parsedTipUsd
+                          ).toFixed(2)} USD)`}
+                    </span>
                     <span className="px-2 py-0.5 rounded-full bg-black/20 text-[11px] font-mono-tabular">
                       +{tipRewardGems} 💎
                     </span>
@@ -9991,6 +10336,9 @@ function IndieEmporiumModal({
                 {INDIE_SUPPORT_PACKS.map((pack) => {
                   const isFounderPack = pack.id === 'pack_founder';
                   const alreadyFounder = isFounderPack && isIndieFounder;
+                  const estimatedArs = Math.round(
+                    pack.usdNumeric * mpArsRate
+                  ).toLocaleString('es-AR');
 
                   return (
                     <div
@@ -10025,8 +10373,10 @@ function IndieEmporiumModal({
                             <h4 className="text-[15px] font-extrabold text-white leading-snug">
                               {pack.title}
                             </h4>
-                            <p className="text-[10px] text-[#B8B2C8]">
-                              {pack.arsReference}
+                            <p className="text-[10px] text-[#9AF0AE] font-semibold">
+                              {selectedGateway === 'mercadopago'
+                                ? `Mercado Pago: ~$${estimatedArs} ARS`
+                                : 'PayPal · Google Pay · Tarjeta Global'}
                             </p>
                           </div>
                         </div>
@@ -10050,10 +10400,12 @@ function IndieEmporiumModal({
                       <button
                         type="button"
                         disabled={alreadyFounder}
-                        onClick={() => onPurchasePack(pack)}
+                        onClick={() => onPurchasePack(pack, selectedGateway)}
                         style={{
                           background: alreadyFounder
                             ? '#1E3B2E'
+                            : selectedGateway === 'mercadopago' && !isFounderPack
+                            ? 'linear-gradient(90deg, #008AD6, #00B1EA)'
                             : isFounderPack
                             ? 'linear-gradient(90deg, #E5B945, #FFD54F)'
                             : 'linear-gradient(90deg, #7549B8, #9B6BFF)',
@@ -10067,11 +10419,92 @@ function IndieEmporiumModal({
                       >
                         {alreadyFounder
                           ? '👑 Pase Fundador Activo'
-                          : `Elegir Pack (${pack.usdPrice})`}
+                          : selectedGateway === 'mercadopago'
+                          ? `🤝 Pagar con Mercado Pago (${pack.usdPrice})`
+                          : `🌍 Pagar con PayPal / GPay (${pack.usdPrice})`}
                       </button>
                     </div>
                   );
                 })}
+              </div>
+
+              {/* Stateless PRO License Backup & Multi-Device Restore Card */}
+              <div className="p-4 rounded-[18px] bg-[#141322] border border-[#382F54] space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#FFD54F]">
+                      🔑 RESPALDO CRIPTOGRÁFICO PRO · WEB & ANDROID
+                    </span>
+                    <h4 className="text-sm sm:text-base font-extrabold text-white">
+                      Código de Recuperación de Compras (Sin cuentas ni contraseñas)
+                    </h4>
+                    <p className="text-[11px] text-[#A8A3B8]">
+                      Cada compra en Web o Android genera un código firmado con HMAC (`OR-PRO-...`). Guárdalo para restaurar tus Gemas o tu Pase Fundador si cambias de teléfono o usas la versión Web.
+                    </p>
+                  </div>
+                </div>
+
+                {lastIssuedLicenseCode && (
+                  <div className="p-3 rounded-[12px] bg-[#1D1930] border border-[#65DB85]/50 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-[10px] font-bold text-[#82E59B]">
+                        ✓ Tu último Código de Respaldo PRO emitido:
+                      </div>
+                      <div className="text-xs font-mono-tabular text-white break-all select-all mt-0.5">
+                        {lastIssuedLicenseCode}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard?.writeText(lastIssuedLicenseCode);
+                        setCopiedCodeNotice(true);
+                        window.setTimeout(() => setCopiedCodeNotice(false), 2200);
+                      }}
+                      className="px-3 py-1.5 rounded-[9px] bg-[#2B4238] text-[#9AF0AE] text-[11px] font-extrabold hover:brightness-110 shrink-0"
+                    >
+                      {copiedCodeNotice ? '✓ Copiado' : '📋 Copiar Código'}
+                    </button>
+                  </div>
+                )}
+
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                  <input
+                    type="text"
+                    value={licenseInputText}
+                    onChange={(e) => {
+                      setLicenseInputText(e.target.value);
+                      setLicenseFeedback(null);
+                    }}
+                    placeholder="Pega aquí tu código OR-PRO-..."
+                    className="flex-1 h-10 px-3 rounded-[10px] bg-[#0E0D18] border border-[#2F2947] text-xs text-white font-mono-tabular placeholder-[#6E6885] focus:outline-none focus:border-[#FFD54F]"
+                  />
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const res = await onRedeemLicenseCode(licenseInputText);
+                      setLicenseFeedback(res);
+                      if (res.ok) {
+                        setLicenseInputText('');
+                      }
+                    }}
+                    className="h-10 px-4 rounded-[10px] bg-[#342A52] hover:bg-[#45376B] border border-[#7559B8] text-white text-xs font-extrabold transition shrink-0"
+                  >
+                    🔓 Restaurar / Canjear Código
+                  </button>
+                </div>
+
+                {licenseFeedback && (
+                  <div
+                    className={`text-[11px] font-bold px-3 py-2 rounded-[9px] ${
+                      licenseFeedback.ok
+                        ? 'bg-[#193328] text-[#82E59B] border border-[#65DB85]/40'
+                        : 'bg-[#3A1D28] text-[#FF8A80] border border-[#FF5252]/40'
+                    }`}
+                  >
+                    {licenseFeedback.message}
+                  </div>
+                )}
               </div>
             </div>
           )}
