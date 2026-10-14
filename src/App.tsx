@@ -4347,7 +4347,7 @@ export function App() {
                   }`}
                 >
                   <span>{isSereneMode ? '🌱' : '⚡'}</span>
-                  <span>{isSereneMode ? t.sereneFocusMode : 'XP'}</span>
+                  <span>{isSereneMode ? '🌱 Enfoque Sereno (Ocultar XP)' : '⚡ Modo XP Activo'}</span>
                 </button>
 
                 {!isSereneMode && liveXpPreview && (
@@ -4716,6 +4716,17 @@ export function App() {
                     <span className="text-[14px] sm:text-[15px] font-bold text-[#F4F1FF] tabular-nums">
                       {experienceText}
                     </span>
+                    <button
+                      type="button"
+                      onClick={() => setAlertDialog({
+                        title: '🐾 Tu Mascota Guardiana (Módulo 100% Opcional)',
+                        message: 'Tu mascota evoluciona y te acompaña a medida que registras avances en tus objetivos principales. Es un acompañante puramente decorativo y motivacional. No es obligatorio interactuar con ella ni afecta el cálculo de tus metas. Puedes disfrutar de tus objetivos con o sin mascota según prefieras.'
+                      })}
+                      className="w-5 h-5 rounded-full bg-[#29233E] text-[#B58BFF] border border-[#51436C] text-[10px] font-bold flex items-center justify-center hover:bg-[#383054] transition"
+                      title="¿Qué es esto?"
+                    >
+                      ?
+                    </button>
                     <span
                       style={{
                         color: mascotMood.color,
@@ -5047,9 +5058,22 @@ export function App() {
                     🫧
                   </div>
                   <div>
-                    <h3 className="text-[14px] sm:text-[15px] font-extrabold uppercase tracking-wider text-[#64D8FF] leading-tight">
-                      {t.asmrTitle}
-                    </h3>
+                    <div className="flex items-center gap-1.5">
+                      <h3 className="text-[14px] sm:text-[15px] font-extrabold uppercase tracking-wider text-[#64D8FF] leading-tight">
+                        {t.asmrTitle}
+                      </h3>
+                      <button
+                        type="button"
+                        onClick={() => setAlertDialog({
+                          title: '🫧 Santuario ASMR (Módulo 100% Opcional)',
+                          message: 'Este bloque es un espacio puramente de relajación sensorial y sonora. Al tocar el orbe o cambiar de estilo, generas sonidos binaurales y puedes desbloquear aspectos estéticos gratis mientras avanzas en tus metas. Es totalmente opcional: si prefieres una experiencia minimalista o sin sonido, puedes ignorarlo por completo sin perder ninguna función principal de tus metas ni agregar complejidad de uso.'
+                        })}
+                        className="w-5 h-5 rounded-full bg-[#20293D] text-[#64D8FF] border border-[#3E527D] text-[10px] font-bold flex items-center justify-center hover:bg-[#2A3752] transition"
+                        title="¿Qué es esto?"
+                      >
+                        ?
+                      </button>
+                    </div>
                     <p className="text-[11px] text-[#C8C2D8] leading-tight">
                       {t.asmrSubtitle}
                     </p>
