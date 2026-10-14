@@ -218,13 +218,13 @@ export function loadState(): DashboardState {
       parsed.objectives = parsed.objectives.map((obj, idx) => {
         const sanitizedEntries = Array.isArray(obj.entries)
           ? obj.entries.map((e) => ({
-              ...e,
-              amount: clampSafeAmount(
-                e.amount || 0,
-                -MAX_SAFE_AMOUNT,
-                MAX_SAFE_AMOUNT
-              ),
-            }))
+            ...e,
+            amount: clampSafeAmount(
+              e.amount || 0,
+              -MAX_SAFE_AMOUNT,
+              MAX_SAFE_AMOUNT
+            ),
+          }))
           : [];
         const latestEntryIso = sanitizedEntries[0]?.createdAt;
         const fallbackIso = new Date(baseTimeMs + idx * 60000).toISOString();
@@ -688,7 +688,7 @@ export function App() {
       const next = !prev;
       try {
         localStorage.setItem('objectivereacher_serene_mode', String(next));
-      } catch {}
+      } catch { }
       return next;
     });
   };
@@ -781,6 +781,14 @@ export function App() {
   const [asmrFilterCategory, setAsmrFilterCategory] = useState<
     'all' | 'unlocked' | 'taps' | 'skins'
   >('all');
+
+  useEffect(() => {
+    return () => {
+      if (asmrHoldTimerRef.current !== null) {
+        window.clearTimeout(asmrHoldTimerRef.current);
+      }
+    };
+  }, []);
 
   // Save state to localStorage
   useEffect(() => {
@@ -885,9 +893,8 @@ export function App() {
     1,
     Math.max(0, (totalXp - xpAtLevelStart) / xpForCurrentLevel)
   );
-  const levelProgressText = `${totalXp - xpAtLevelStart}/${
-    xpAtNextLevel - xpAtLevelStart
-  } XP para el siguiente nivel`;
+  const levelProgressText = `${totalXp - xpAtLevelStart}/${xpAtNextLevel - xpAtLevelStart
+    } XP para el siguiente nivel`;
 
   const mascotTier = Math.floor((Math.min(200, Math.max(1, level)) - 1) / 10);
   const mascotEmojis = [
@@ -927,8 +934,8 @@ export function App() {
     streakDays === 0
       ? t.streakIgnitePrompt
       : streakDays === 1
-      ? `1 ${t.streakDaysUnit}`
-      : `${streakDays} ${t.streakDaysPlural}`;
+        ? `1 ${t.streakDaysUnit}`
+        : `${streakDays} ${t.streakDaysPlural}`;
 
   // Indie Monetization, Cosmetics & Active Buffs derived properties
   const gems = state.gamification.gems ?? 0;
@@ -1549,10 +1556,10 @@ export function App() {
       const sparkText = newlyUnlockedTapStyle
         ? `🔓 ¡${newlyUnlockedTapStyle.emoji} ${newlyUnlockedTapStyle.name}!`
         : dropsPrize
-        ? awardedGems > 0
-          ? `🎁 +${awardedGems} 💎 · +${awardedXp} XP`
-          : `🧘 +${awardedXp} XP Zen`
-        : `${activeAsmrTextureObj.emoji} ${t.calmSpark}`;
+          ? awardedGems > 0
+            ? `🎁 +${awardedGems} 💎 · +${awardedXp} XP`
+            : `🧘 +${awardedXp} XP Zen`
+          : `${activeAsmrTextureObj.emoji} ${t.calmSpark}`;
       const sparkColor =
         dropsPrize || newlyUnlockedTapStyle
           ? '#FFD54F'
@@ -1606,58 +1613,48 @@ export function App() {
     });
   };
 
-  const handleStartAsmrHold = () => {
-    if (isHoldingActiveRef.current) return;
-    isHoldingActiveRef.current = true;
-    setIsAsmrHolding(true);
-    asmrHoldMouseDownFiredRef.current = true;
-
-    // Immediate initial click
-    handleAsmrClick();
-
-    if (asmrHoldTimerRef.current) {
+  const stopAsmrTimer = () => {
+    if (asmrHoldTimerRef.current !== null) {
       window.clearTimeout(asmrHoldTimerRef.current);
       asmrHoldTimerRef.current = null;
     }
-
-    // Brisk, accelerated starting speed: 235ms (~4.25 taps/sec)
-    asmrHoldIntervalRef.current = 235;
-    asmrHoldLastShiftTimeRef.current = Date.now();
-
-    const scheduleNextHoldTick = () => {
-      if (!isHoldingActiveRef.current) return;
-
-      const now = Date.now();
-      // Every 550ms of continuous holding, the speed accelerates steadily
-      if (now - asmrHoldLastShiftTimeRef.current >= 550) {
-        asmrHoldLastShiftTimeRef.current = now;
-        // 92% probability accelerates by 5-9ms, never increases interval during a hold session
-        const accelerates = Math.random() < 0.92;
-        const delta = accelerates ? -(Math.floor(Math.random() * 5) + 5) : 0;
-        asmrHoldIntervalRef.current = Math.min(
-          235,
-          Math.max(160, asmrHoldIntervalRef.current + delta)
-        );
-      }
-
-      asmrHoldTimerRef.current = window.setTimeout(() => {
-        if (!isHoldingActiveRef.current) return;
-        handleAsmrClick();
-        scheduleNextHoldTick();
-      }, asmrHoldIntervalRef.current);
-    };
-
-    scheduleNextHoldTick();
   };
 
   const handleStopAsmrHold = () => {
-    isHoldingActiveRef.current = false;
     setIsAsmrHolding(false);
-    asmrHoldIntervalRef.current = 235;
-    if (asmrHoldTimerRef.current) {
-      window.clearTimeout(asmrHoldTimerRef.current);
-      asmrHoldTimerRef.current = null;
+    stopAsmrTimer();
+  };
+
+  const handleStartAsmrHold = (e?: React.SyntheticEvent) => {
+    // Cancela la emulación de clic de ratón si el evento vino de pantalla táctil
+    if (e && e.type === 'touchstart') {
+      e.preventDefault();
     }
+
+    // Destruye cualquier temporizador activo previo antes de instanciar uno nuevo
+    stopAsmrTimer();
+
+    setIsAsmrHolding(true);
+    asmrHoldMouseDownFiredRef.current = true;
+    asmrHoldIntervalRef.current = 235;
+    asmrHoldLastShiftTimeRef.current = Date.now();
+
+    // Primer disparo instantáneo (0 ms latencia)
+    handleAsmrClick();
+
+    const runHoldLoop = () => {
+      const now = Date.now();
+      if (now - asmrHoldLastShiftTimeRef.current >= 550) {
+        asmrHoldLastShiftTimeRef.current = now;
+        asmrHoldIntervalRef.current = Math.max(160, asmrHoldIntervalRef.current - 15);
+      }
+
+      handleAsmrClick();
+
+      asmrHoldTimerRef.current = window.setTimeout(runHoldLoop, asmrHoldIntervalRef.current);
+    };
+
+    asmrHoldTimerRef.current = window.setTimeout(runHoldLoop, asmrHoldIntervalRef.current);
   };
 
   const handleClickOrb = () => {
@@ -1817,10 +1814,10 @@ export function App() {
         objectives: prev.objectives.map((o) =>
           o.id === currentObjective.id
             ? {
-                ...o,
-                accentColor: styleItem.accentColor,
-                bannerId: styleItem.bannerId,
-              }
+              ...o,
+              accentColor: styleItem.accentColor,
+              bannerId: styleItem.bannerId,
+            }
             : o
         ),
         gamification: {
@@ -2091,16 +2088,14 @@ export function App() {
       playCelebrationFanfare('levelUp');
       triggerCelebration(
         `¡Subiste al Nivel ${nextLevel}!`,
-        `${buff.name} otorgó +${awardedXp} XP${
-          addedShields > 0 ? ` y +${addedShields} 🛡️` : ''
+        `${buff.name} otorgó +${awardedXp} XP${addedShields > 0 ? ` y +${addedShields} 🛡️` : ''
         }`,
         buff.icon,
         buff.accentColor
       );
     } else {
       triggerMascotSpeech(
-        `${buff.icon} ¡${buff.name} activado!${
-          awardedXp > 0 ? ` +${awardedXp} XP` : ''
+        `${buff.icon} ¡${buff.name} activado!${awardedXp > 0 ? ` +${awardedXp} XP` : ''
         }${addedShields > 0 ? ` +${addedShields} 🛡️ Escudo` : ''}`
       );
     }
@@ -2178,8 +2173,8 @@ export function App() {
       result.gateway === 'mercadopago'
         ? 'Mercado Pago (LatAm)'
         : result.gateway === 'paypal_googlepay'
-        ? 'PayPal / Google Pay'
-        : 'Google Play Billing';
+          ? 'PayPal / Google Pay'
+          : 'Google Play Billing';
 
     setMascotJoyId(Date.now());
     const isFounderPack =
@@ -2188,14 +2183,12 @@ export function App() {
       isFounderPack
         ? '¡Gracias, Fundador Indie! 👑'
         : `¡Gracias por apoyar (${gatewayLabel})! ${pack.emoji}`,
-      `Recibiste +${pack.gemsIncluded} 💎 Gemas, +${pack.shieldsIncluded} 🛡️ Escudos${
-        pack.unlocksAllSkins
-          ? `, TODOS los cosméticos del Banco y +${pack.permanentXpBonusPct}% XP permanente`
-          : ''
-      }.${
-        result.licenseCode
-          ? ' Tu Código PRO de respaldo quedó guardado en la pestaña Apoyar al Dev.'
-          : ''
+      `Recibiste +${pack.gemsIncluded} 💎 Gemas, +${pack.shieldsIncluded} 🛡️ Escudos${pack.unlocksAllSkins
+        ? `, TODOS los cosméticos del Banco y +${pack.permanentXpBonusPct}% XP permanente`
+        : ''
+      }.${result.licenseCode
+        ? ' Tu Código PRO de respaldo quedó guardado en la pestaña Apoyar al Dev.'
+        : ''
       }`,
       pack.emoji,
       pack.highlightColor,
@@ -2267,22 +2260,20 @@ export function App() {
       result.gateway === 'mercadopago'
         ? 'Mercado Pago'
         : result.gateway === 'paypal_googlepay'
-        ? 'PayPal / Google Pay'
-        : 'Google Play';
+          ? 'PayPal / Google Pay'
+          : 'Google Play';
 
     setMascotJoyId(Date.now());
     triggerCelebration(
       unlocksFounder
         ? `¡Propina de Fundador ($${cleanUsd.toFixed(2)} USD · ${gatewayLabel})! 👑`
         : `¡Gracias por tu Propina ($${cleanUsd.toFixed(2)} USD · ${gatewayLabel})! 💖`,
-      `Como agradecimiento recibiste +${rewardedGems} 💎 Gemas Astrales y +${rewardedShields} 🛡️ Escudos${
-        unlocksFounder
-          ? ' + Desbloqueo Total del Pase Fundador Indie'
-          : ''
-      }.${
-        result.licenseCode
-          ? ' Tu Código PRO de respaldo fue generado y guardado.'
-          : ''
+      `Como agradecimiento recibiste +${rewardedGems} 💎 Gemas Astrales y +${rewardedShields} 🛡️ Escudos${unlocksFounder
+        ? ' + Desbloqueo Total del Pase Fundador Indie'
+        : ''
+      }.${result.licenseCode
+        ? ' Tu Código PRO de respaldo fue generado y guardado.'
+        : ''
       }`,
       unlocksFounder ? '👑' : '💖',
       unlocksFounder ? '#FFD54F' : '#82E59B',
@@ -2369,8 +2360,7 @@ export function App() {
       unlocksFounder
         ? '¡Pase Fundador Restaurado! 👑'
         : '¡Código PRO Canjeado con Éxito! 🔑',
-      `Se acreditaron +${codeGems} 💎 Gemas, +${codeShields} 🛡️ Escudos${
-        unlocksFounder ? ' y TODOS los cosméticos de Fundador' : ''
+      `Se acreditaron +${codeGems} 💎 Gemas, +${codeShields} 🛡️ Escudos${unlocksFounder ? ' y TODOS los cosméticos de Fundador' : ''
       } (Recibo ${txId}).`,
       '🔑',
       '#FFD54F',
@@ -2422,19 +2412,19 @@ export function App() {
     currentObjective.goalAmount <= 0
       ? 0
       : Math.min(
-          1,
-          Math.max(0, currentObjective.currentAmount / currentObjective.goalAmount)
-        );
+        1,
+        Math.max(0, currentObjective.currentAmount / currentObjective.goalAmount)
+      );
   const progressText = `${Math.floor(progress * 100)}%`;
   const remainingText =
     currentObjective.currentAmount >= currentObjective.goalAmount
       ? t.goalCompletedCelebration
       : t.remainingToGoalShort(
-          formatObjectiveAmount(
-            currentObjective.goalAmount - currentObjective.currentAmount,
-            currentObjective
-          )
-        );
+        formatObjectiveAmount(
+          currentObjective.goalAmount - currentObjective.currentAmount,
+          currentObjective
+        )
+      );
 
   const hasValidSelectedAmount = useMemo(() => {
     return true;
@@ -2482,10 +2472,10 @@ export function App() {
       activeXpMultiplier > 1
         ? `buff ×${activeXpMultiplier.toFixed(1)} XP`
         : !hadEntryToday
-        ? t.dailyBonusIncluded
-        : isAddition && previewStreak > 1
-        ? t.streakMultiplier(previewStreak)
-        : '';
+          ? t.dailyBonusIncluded
+          : isAddition && previewStreak > 1
+            ? t.streakMultiplier(previewStreak)
+            : '';
     return {
       estimatedXp,
       willLevelUp,
@@ -2633,24 +2623,24 @@ export function App() {
     const nextObjectives = state.objectives.map((o) =>
       o.id === currentObjective.id
         ? {
-            ...o,
-            currentAmount: clampSafeAmount(
-              o.currentAmount + amount,
-              0,
-              MAX_SAFE_AMOUNT * 2
-            ),
-            lastUsedAt: nowIso,
-            entries: [
-              {
-                id: crypto.randomUUID(),
-                description,
-                amount,
-                createdAt: nowIso,
-              },
-              ...o.entries,
-            ],
-            unlockedAchievementIds: [...o.unlockedAchievementIds],
-          }
+          ...o,
+          currentAmount: clampSafeAmount(
+            o.currentAmount + amount,
+            0,
+            MAX_SAFE_AMOUNT * 2
+          ),
+          lastUsedAt: nowIso,
+          entries: [
+            {
+              id: crypto.randomUUID(),
+              description,
+              amount,
+              createdAt: nowIso,
+            },
+            ...o.entries,
+          ],
+          unlockedAchievementIds: [...o.unlockedAchievementIds],
+        }
         : { ...o, entries: [...o.entries], unlockedAchievementIds: [...o.unlockedAchievementIds] }
     );
 
@@ -2735,10 +2725,9 @@ export function App() {
       playCelebrationFanfare('levelUp');
       triggerCelebration(
         `¡Excelente constancia (${percentCompleted}% completado)!`,
-        `Quedan ${remainingFormatted} para tu meta. ${
-          newlyUnlocked.length > 0
-            ? 'Hito: ' + newlyUnlocked.join(' · ')
-            : 'Cada paso te acerca más a tu objetivo.'
+        `Quedan ${remainingFormatted} para tu meta. ${newlyUnlocked.length > 0
+          ? 'Hito: ' + newlyUnlocked.join(' · ')
+          : 'Cada paso te acerca más a tu objetivo.'
         }`,
         nextMascotEmoji,
         '#B58BFF'
@@ -2767,7 +2756,7 @@ export function App() {
       const randomQuote = motivationalQuotes[Math.floor(Math.abs(amount * 17) % motivationalQuotes.length)];
       triggerCelebration(
         amount > 0 ? '¡Avance registrado!' : 'Registro actualizado',
-        amount > 0 
+        amount > 0
           ? `${percentCompleted}% completado · Quedan ${remainingFormatted} para la meta.`
           : `Saldo ajustado · Quedan ${remainingFormatted} para la meta.`,
         amount > 0 ? '✨' : '📝',
@@ -2923,29 +2912,29 @@ export function App() {
       const nextObjectives = prev.objectives.map((o) =>
         o.id === currentObjective.id
           ? {
-              ...o,
-              title: input.title.trim(),
-              description: input.description.trim(),
-              goalAmount: safeGoalAmount,
-              currentAmount:
-                saveMode === 'overwrite_reset' ? 0 : o.currentAmount,
-              entries: saveMode === 'overwrite_reset' ? [] : [...o.entries],
-              unitId: input.unitId,
-              customUnitLabel:
-                input.unitId === CUSTOM_UNIT_ID ? input.customUnitLabel.trim() : '',
-              icon: input.icon || '🎯',
-              category: input.category.trim() || 'Personal',
-              accentColor: input.accentColor || '#65DB85',
-              bannerId: input.bannerId || o.bannerId || 'gradient',
-              targetDate: input.targetDate || '',
-              pledge: input.pledge.trim(),
-              createdAt: wasDraft ? nowIso : o.createdAt || nowIso,
-              lastUsedAt: nowIso,
-              unlockedAchievementIds:
-                saveMode === 'overwrite_reset'
-                  ? []
-                  : [...o.unlockedAchievementIds],
-            }
+            ...o,
+            title: input.title.trim(),
+            description: input.description.trim(),
+            goalAmount: safeGoalAmount,
+            currentAmount:
+              saveMode === 'overwrite_reset' ? 0 : o.currentAmount,
+            entries: saveMode === 'overwrite_reset' ? [] : [...o.entries],
+            unitId: input.unitId,
+            customUnitLabel:
+              input.unitId === CUSTOM_UNIT_ID ? input.customUnitLabel.trim() : '',
+            icon: input.icon || '🎯',
+            category: input.category.trim() || 'Personal',
+            accentColor: input.accentColor || '#65DB85',
+            bannerId: input.bannerId || o.bannerId || 'gradient',
+            targetDate: input.targetDate || '',
+            pledge: input.pledge.trim(),
+            createdAt: wasDraft ? nowIso : o.createdAt || nowIso,
+            lastUsedAt: nowIso,
+            unlockedAchievementIds:
+              saveMode === 'overwrite_reset'
+                ? []
+                : [...o.unlockedAchievementIds],
+          }
           : o
       );
       const updatedObj = nextObjectives.find((o) => o.id === currentObjective.id)!;
@@ -3053,11 +3042,11 @@ export function App() {
           const nextObjectives = prev.objectives.map((o) =>
             o.id === currentObjective.id
               ? {
-                  ...o,
-                  currentAmount: o.currentAmount - entry.amount,
-                  entries: o.entries.filter((e) => e.id !== entryId),
-                  unlockedAchievementIds: [],
-                }
+                ...o,
+                currentAmount: o.currentAmount - entry.amount,
+                entries: o.entries.filter((e) => e.id !== entryId),
+                unlockedAchievementIds: [],
+              }
               : o
           );
 
@@ -3104,22 +3093,22 @@ export function App() {
       const nextObjectives = prev.objectives.map((o) =>
         o.id === currentObjective.id
           ? {
-              ...o,
-              currentAmount: o.currentAmount + diff,
-              entries: o.entries.map((e) =>
-                e.id === entryId
-                  ? {
-                      ...e,
-                      description:
-                        newDescription.trim() === ''
-                          ? 'Entrada'
-                          : newDescription.trim(),
-                      amount: updatedAmount,
-                    }
-                  : e
-              ),
-              unlockedAchievementIds: [],
-            }
+            ...o,
+            currentAmount: o.currentAmount + diff,
+            entries: o.entries.map((e) =>
+              e.id === entryId
+                ? {
+                  ...e,
+                  description:
+                    newDescription.trim() === ''
+                      ? 'Entrada'
+                      : newDescription.trim(),
+                  amount: updatedAmount,
+                }
+                : e
+            ),
+            unlockedAchievementIds: [],
+          }
           : o
       );
 
@@ -3148,11 +3137,11 @@ export function App() {
       objectives: prev.objectives.map((o) =>
         o.id === currentObjective.id
           ? {
-              ...o,
-              bannerId,
-              bannerOffsetX: Math.max(-1, Math.min(1, offsetX)),
-              bannerOffsetY: Math.max(-1, Math.min(1, offsetY)),
-            }
+            ...o,
+            bannerId,
+            bannerOffsetX: Math.max(-1, Math.min(1, offsetX)),
+            bannerOffsetY: Math.max(-1, Math.min(1, offsetY)),
+          }
           : o
       ),
     }));
@@ -3251,19 +3240,19 @@ export function App() {
       progress < 0.25
         ? 25
         : progress < 0.5
-        ? 50
-        : progress < 0.75
-        ? 75
-        : progress < 1
-        ? 100
-        : null;
+          ? 50
+          : progress < 0.75
+            ? 75
+            : progress < 1
+              ? 100
+              : null;
     const amountToNextMilestone =
       nextMilestonePct !== null
         ? Math.max(
-            0,
-            currentObjective.goalAmount * (nextMilestonePct / 100) -
-              currentObjective.currentAmount
-          )
+          0,
+          currentObjective.goalAmount * (nextMilestonePct / 100) -
+          currentObjective.currentAmount
+        )
         : 0;
 
     return {
@@ -3387,11 +3376,10 @@ export function App() {
       <div className="max-w-[1440px] mx-auto grid grid-cols-1 lg:grid-cols-[240px_1fr_320px] min-h-screen items-start">
         {/* Left Navigation Panel: Sticky on 16:9 Desktop, Scrollable Drawer on Portrait & Landscape Mobile */}
         <aside
-          className={`fixed inset-y-0 left-0 z-40 w-[268px] max-w-[82vw] lg:sticky lg:top-0 lg:h-screen lg:w-auto lg:max-w-none bg-[#171723] border-r border-[#29283C] pt-[max(0.875rem,calc(env(safe-area-inset-top,0px)+0.5rem))] pb-[max(0.875rem,calc(env(safe-area-inset-bottom,0px)+0.5rem))] pl-[max(0.875rem,calc(env(safe-area-inset-left,0px)+0.5rem))] pr-3.5 sm:p-4 flex flex-col justify-between overflow-y-auto overscroll-contain transition-transform duration-200 ${
-            isNavigationOpen
-              ? 'translate-x-0'
-              : '-translate-x-full lg:translate-x-0'
-          }`}
+          className={`fixed inset-y-0 left-0 z-40 w-[268px] max-w-[82vw] lg:sticky lg:top-0 lg:h-screen lg:w-auto lg:max-w-none bg-[#171723] border-r border-[#29283C] pt-[max(0.875rem,calc(env(safe-area-inset-top,0px)+0.5rem))] pb-[max(0.875rem,calc(env(safe-area-inset-bottom,0px)+0.5rem))] pl-[max(0.875rem,calc(env(safe-area-inset-left,0px)+0.5rem))] pr-3.5 sm:p-4 flex flex-col justify-between overflow-y-auto overscroll-contain transition-transform duration-200 ${isNavigationOpen
+            ? 'translate-x-0'
+            : '-translate-x-full lg:translate-x-0'
+            }`}
         >
           <div className="space-y-3 sm:space-y-5">
             <div className="flex items-start justify-between gap-2">
@@ -3476,11 +3464,10 @@ export function App() {
                   <button
                     key={item.key}
                     onClick={item.action}
-                    className={`w-full h-[42px] sm:h-[48px] px-3.5 rounded-[12px] text-left font-medium text-[13px] sm:text-sm transition flex items-center truncate ${
-                      isSelected
-                        ? 'bg-[#302747] text-[#E6D9FF]'
-                        : 'bg-transparent text-[#F4F1FF] hover:bg-[#242238]'
-                    }`}
+                    className={`w-full h-[42px] sm:h-[48px] px-3.5 rounded-[12px] text-left font-medium text-[13px] sm:text-sm transition flex items-center truncate ${isSelected
+                      ? 'bg-[#302747] text-[#E6D9FF]'
+                      : 'bg-transparent text-[#F4F1FF] hover:bg-[#242238]'
+                      }`}
                   >
                     {item.label}
                   </button>
@@ -3513,8 +3500,8 @@ export function App() {
                   {isIndieFounder
                     ? t.sidebarFounderBadge
                     : supporterTier === 'coffee'
-                    ? t.sidebarSupporterBadge
-                    : t.sidebarIndieProject}
+                      ? t.sidebarSupporterBadge
+                      : t.sidebarIndieProject}
                 </span>
                 <span className="text-[11px] font-mono-tabular font-bold text-[#9AF0AE]">
                   💎 {gems}
@@ -3619,17 +3606,16 @@ export function App() {
                   title={
                     sensoryPrefs.musicEnabled
                       ? `Música ambiental activa (${getAmbientMusicStyleName(
-                          currentObjective.accentColor
-                        )}) · Toca para apagar`
+                        currentObjective.accentColor
+                      )}) · Toca para apagar`
                       : `Activar música ambiental procedural (${getAmbientMusicStyleName(
-                          currentObjective.accentColor
-                        )})`
+                        currentObjective.accentColor
+                      )})`
                   }
-                  className={`w-[clamp(1.85rem,8vw,2.2rem)] h-[clamp(1.85rem,8vw,2.2rem)] rounded-[clamp(8px,2.2vw,10px)] text-[clamp(0.75rem,3.3vw,0.92rem)] flex items-center justify-center transition shrink-0 border ${
-                    sensoryPrefs.musicEnabled
-                      ? 'bg-gradient-to-r from-[#2D2149] to-[#1D352E] border-[#82E59B]/60 text-[#9AF0AE] shadow-[0_0_10px_rgba(130,229,155,0.25)]'
-                      : 'bg-[#1A1928] border-[#29283C] text-[#7D7894] hover:bg-[#242238] hover:text-[#D9C9FF]'
-                  }`}
+                  className={`w-[clamp(1.85rem,8vw,2.2rem)] h-[clamp(1.85rem,8vw,2.2rem)] rounded-[clamp(8px,2.2vw,10px)] text-[clamp(0.75rem,3.3vw,0.92rem)] flex items-center justify-center transition shrink-0 border ${sensoryPrefs.musicEnabled
+                    ? 'bg-gradient-to-r from-[#2D2149] to-[#1D352E] border-[#82E59B]/60 text-[#9AF0AE] shadow-[0_0_10px_rgba(130,229,155,0.25)]'
+                    : 'bg-[#1A1928] border-[#29283C] text-[#7D7894] hover:bg-[#242238] hover:text-[#D9C9FF]'
+                    }`}
                 >
                   🎵
                 </button>
@@ -3644,11 +3630,10 @@ export function App() {
                       ? 'Efectos de sonido y vibración activos (toca para silenciar)'
                       : 'Sonido y vibración en silencio (toca para activar)'
                   }
-                  className={`w-[clamp(1.85rem,8vw,2.2rem)] h-[clamp(1.85rem,8vw,2.2rem)] rounded-[clamp(8px,2.2vw,10px)] text-[clamp(0.75rem,3.3vw,0.92rem)] flex items-center justify-center transition shrink-0 border ${
-                    sensoryPrefs.soundEnabled
-                      ? 'bg-[#242238] border-[#3E355B] text-[#D9C9FF] hover:bg-[#302747]'
-                      : 'bg-[#1A1928] border-[#29283C] text-[#7D7894] hover:bg-[#242238]'
-                  }`}
+                  className={`w-[clamp(1.85rem,8vw,2.2rem)] h-[clamp(1.85rem,8vw,2.2rem)] rounded-[clamp(8px,2.2vw,10px)] text-[clamp(0.75rem,3.3vw,0.92rem)] flex items-center justify-center transition shrink-0 border ${sensoryPrefs.soundEnabled
+                    ? 'bg-[#242238] border-[#3E355B] text-[#D9C9FF] hover:bg-[#302747]'
+                    : 'bg-[#1A1928] border-[#29283C] text-[#7D7894] hover:bg-[#242238]'
+                    }`}
                 >
                   {sensoryPrefs.soundEnabled ? '🔊' : '🔇'}
                 </button>
@@ -3707,9 +3692,9 @@ export function App() {
                   const objProg =
                     obj.goalAmount > 0
                       ? Math.min(
-                          100,
-                          Math.floor((obj.currentAmount / obj.goalAmount) * 100)
-                        )
+                        100,
+                        Math.floor((obj.currentAmount / obj.goalAmount) * 100)
+                      )
                       : 0;
                   return (
                     <button
@@ -3719,17 +3704,16 @@ export function App() {
                       style={
                         isSelected
                           ? {
-                              borderColor: tabAccent,
-                              backgroundColor: tabTheme.surfaceDark,
-                              boxShadow: `0 4px 14px -4px ${tabTheme.glow}`,
-                            }
+                            borderColor: tabAccent,
+                            backgroundColor: tabTheme.surfaceDark,
+                            boxShadow: `0 4px 14px -4px ${tabTheme.glow}`,
+                          }
                           : undefined
                       }
-                      className={`shrink-0 px-3.5 py-2 rounded-[13px] text-xs sm:text-sm font-medium whitespace-nowrap transition flex items-center gap-2 border select-none ${
-                        isSelected
-                          ? 'text-white'
-                          : 'bg-[#1F1E2E] border-[#2C2A40] text-[#C9C2D8] hover:bg-[#29263D]'
-                      }`}
+                      className={`shrink-0 px-3.5 py-2 rounded-[13px] text-xs sm:text-sm font-medium whitespace-nowrap transition flex items-center gap-2 border select-none ${isSelected
+                        ? 'text-white'
+                        : 'bg-[#1F1E2E] border-[#2C2A40] text-[#C9C2D8] hover:bg-[#29263D]'
+                        }`}
                     >
                       <span>{tabIcon}</span>
                       <span>{obj.title}</span>
@@ -3828,29 +3812,27 @@ export function App() {
                 highlightedSection === 'objective'
                   ? currentAccentTheme.primary
                   : equippedCardCosmetic.id !== 'frame_default'
-                  ? equippedCardCosmetic.borderColor
-                  : `${currentAccentTheme.primary}66`,
+                    ? equippedCardCosmetic.borderColor
+                    : `${currentAccentTheme.primary}66`,
               boxShadow:
                 equippedCardCosmetic.id !== 'frame_default'
                   ? `0 12px 34px -8px rgba(8, 7, 16, 0.75), 0 0 28px -3px ${equippedCardCosmetic.glowColor}`
                   : `0 12px 34px -8px rgba(8, 7, 16, 0.7), 0 0 26px -5px ${currentAccentTheme.glow}`,
             }}
-            className={`relative min-h-[385px] rounded-[24px] overflow-hidden transition-all ${
-              highlightedSection === 'objective'
-                ? 'border-[3px]'
-                : equippedCardCosmetic.id !== 'frame_default'
+            className={`relative min-h-[385px] rounded-[24px] overflow-hidden transition-all ${highlightedSection === 'objective'
+              ? 'border-[3px]'
+              : equippedCardCosmetic.id !== 'frame_default'
                 ? 'border-2'
                 : 'border'
-            }`}
+              }`}
           >
             {bannerImageSrc && (
               <img
                 src={bannerImageSrc}
                 alt=""
                 style={{
-                  objectPosition: `${50 - currentObjective.bannerOffsetX * 50}% ${
-                    50 - currentObjective.bannerOffsetY * 50
-                  }%`,
+                  objectPosition: `${50 - currentObjective.bannerOffsetX * 50}% ${50 - currentObjective.bannerOffsetY * 50
+                    }%`,
                 }}
                 className="absolute inset-0 w-full h-full object-cover opacity-70 pointer-events-none select-none transition-all duration-500"
               />
@@ -3896,25 +3878,24 @@ export function App() {
                         style={
                           objectiveInsights.daysLeft > 7
                             ? {
-                                backgroundColor: currentAccentTheme.surfaceDark,
-                                borderColor: `${currentAccentTheme.primary}38`,
-                                color: currentAccentTheme.textSoft,
-                              }
+                              backgroundColor: currentAccentTheme.surfaceDark,
+                              borderColor: `${currentAccentTheme.primary}38`,
+                              color: currentAccentTheme.textSoft,
+                            }
                             : undefined
                         }
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold border backdrop-blur-sm ${
-                          objectiveInsights.daysLeft < 0
-                            ? 'bg-[#4A202A]/80 border-[#F27783]/50 text-[#FFD1D7]'
-                            : objectiveInsights.daysLeft <= 7
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold border backdrop-blur-sm ${objectiveInsights.daysLeft < 0
+                          ? 'bg-[#4A202A]/80 border-[#F27783]/50 text-[#FFD1D7]'
+                          : objectiveInsights.daysLeft <= 7
                             ? 'bg-[#443318]/80 border-[#FFD54F]/60 text-[#FFE082]'
                             : ''
-                        }`}
+                          }`}
                       >
                         {objectiveInsights.daysLeft < 0
                           ? t.dateOverdue
                           : objectiveInsights.daysLeft === 0
-                          ? t.dateTodayDue
-                          : t.daysRemaining(objectiveInsights.daysLeft)}
+                            ? t.dateTodayDue
+                            : t.daysRemaining(objectiveInsights.daysLeft)}
                       </span>
                     )}
                   </div>
@@ -4038,9 +4019,8 @@ export function App() {
                           ? { color: currentAccentTheme.primary }
                           : undefined
                       }
-                      className={`text-[10px] font-mono-tabular font-bold ${
-                        isAddition ? '' : 'text-[#FFD1D7]'
-                      }`}
+                      className={`text-[10px] font-mono-tabular font-bold ${isAddition ? '' : 'text-[#FFD1D7]'
+                        }`}
                     >
                       {isAddition ? '▲ +' : '▼ −'}
                       {formatObjectiveAmount(selectedAmount, currentObjective)}
@@ -4143,11 +4123,11 @@ export function App() {
                   >
                     {objectiveInsights.remaining > 0
                       ? t.remainingToGoal(
-                          formatObjectiveAmount(
-                            objectiveInsights.remaining,
-                            currentObjective
-                          )
+                        formatObjectiveAmount(
+                          objectiveInsights.remaining,
+                          currentObjective
                         )
+                      )
                       : t.goalSurpassed}
                   </div>
                 </div>
@@ -4210,11 +4190,10 @@ export function App() {
                               currentObjective
                             )
                           )}
-                          className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-4 h-4 rounded-full border-2 flex items-center justify-center text-[8px] font-bold transition-all ${
-                            reached
-                              ? 'text-white scale-110 shadow-[0_0_8px_rgba(255,255,255,0.5)]'
-                              : 'text-[#9E97B0]'
-                          }`}
+                          className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-4 h-4 rounded-full border-2 flex items-center justify-center text-[8px] font-bold transition-all ${reached
+                            ? 'text-white scale-110 shadow-[0_0_8px_rgba(255,255,255,0.5)]'
+                            : 'text-[#9E97B0]'
+                            }`}
                         >
                           {reached ? '✓' : ''}
                         </div>
@@ -4230,12 +4209,12 @@ export function App() {
                     <span className="font-medium leading-snug">
                       {objectiveInsights.nextMilestonePct !== null
                         ? t.nextMilestone(
-                            objectiveInsights.nextMilestonePct,
-                            formatObjectiveAmount(
-                              objectiveInsights.amountToNextMilestone,
-                              currentObjective
-                            )
+                          objectiveInsights.nextMilestonePct,
+                          formatObjectiveAmount(
+                            objectiveInsights.amountToNextMilestone,
+                            currentObjective
                           )
+                        )
                         : t.allMilestonesCompleted}
                     </span>
                     <span
@@ -4263,19 +4242,19 @@ export function App() {
                     <span className="break-words">
                       {objectiveInsights.dailyPaceNeeded !== null
                         ? t.suggestedPace(
-                            formatObjectiveAmount(
-                              objectiveInsights.dailyPaceNeeded,
-                              currentObjective
-                            )
+                          formatObjectiveAmount(
+                            objectiveInsights.dailyPaceNeeded,
+                            currentObjective
                           )
+                        )
                         : objectiveInsights.bestEntry > 0
-                        ? t.highestImpulse(
+                          ? t.highestImpulse(
                             formatObjectiveAmount(
                               objectiveInsights.bestEntry,
                               currentObjective
                             )
                           )
-                        : remainingText}
+                          : remainingText}
                     </span>
                   </div>
 
@@ -4304,11 +4283,10 @@ export function App() {
           {/* Entries Section (Registrar Progreso — Unified Sanctuary Card) */}
           <div
             ref={entriesRef}
-            className={`p-3.5 sm:p-4 rounded-[20px] bg-gradient-to-b from-[#1E1C2E] to-[#171624] space-y-3 relative overflow-hidden shadow-[0_8px_28px_rgba(10,9,20,0.45)] transition-all ${
-              highlightedSection === 'entries'
-                ? 'border-[2px] border-[#C7A4FF]'
-                : 'border border-[#342D4B]'
-            }`}
+            className={`p-3.5 sm:p-4 rounded-[20px] bg-gradient-to-b from-[#1E1C2E] to-[#171624] space-y-3 relative overflow-hidden shadow-[0_8px_28px_rgba(10,9,20,0.45)] transition-all ${highlightedSection === 'entries'
+              ? 'border-[2px] border-[#C7A4FF]'
+              : 'border border-[#342D4B]'
+              }`}
           >
             <div
               style={{
@@ -4340,11 +4318,10 @@ export function App() {
                   type="button"
                   onClick={toggleSereneMode}
                   title={t.sereneFocusSubtitle}
-                  className={`text-[10px] font-bold px-2 py-1 rounded-full border transition-all flex items-center gap-1 ${
-                    isSereneMode
-                      ? 'bg-[#182923] border-[#65DB85]/60 text-[#82E59B]'
-                      : 'bg-[#1E1C2C] border-[#38334E] text-[#A8A3B8] hover:text-[#D8C5FF]'
-                  }`}
+                  className={`text-[10px] font-bold px-2 py-1 rounded-full border transition-all flex items-center gap-1 ${isSereneMode
+                    ? 'bg-[#182923] border-[#65DB85]/60 text-[#82E59B]'
+                    : 'bg-[#1E1C2C] border-[#38334E] text-[#A8A3B8] hover:text-[#D8C5FF]'
+                    }`}
                 >
                   <span>{isSereneMode ? '🌱' : '⚡'}</span>
                   <span>{isSereneMode ? '🌱 Enfoque Sereno (Ocultar XP)' : '⚡ Modo XP Activo'}</span>
@@ -4352,13 +4329,12 @@ export function App() {
 
                 {!isSereneMode && liveXpPreview && (
                   <div
-                    className={`text-[10px] sm:text-[11px] font-bold px-2.5 py-1 rounded-full border flex items-center gap-1 transition-all duration-200 shrink-0 ${
-                      liveXpPreview.willLevelUp
-                        ? 'bg-[#2E2519] border-[#FFD54F]/70 text-[#FFD54F] shadow-[0_0_12px_rgba(255,213,79,0.25)]'
-                        : isAddition
+                    className={`text-[10px] sm:text-[11px] font-bold px-2.5 py-1 rounded-full border flex items-center gap-1 transition-all duration-200 shrink-0 ${liveXpPreview.willLevelUp
+                      ? 'bg-[#2E2519] border-[#FFD54F]/70 text-[#FFD54F] shadow-[0_0_12px_rgba(255,213,79,0.25)]'
+                      : isAddition
                         ? 'bg-[#182923] border-[#65DB85]/45 text-[#82E59B]'
                         : 'bg-[#241E36] border-[#4B3F6B] text-[#D8C5FF]'
-                    }`}
+                      }`}
                   >
                     <span>
                       +{liveXpPreview.estimatedXp} XP
@@ -4382,11 +4358,10 @@ export function App() {
                   playUiTap(2);
                   setIsAddition(true);
                 }}
-                className={`h-[42px] rounded-[10px] font-bold text-xs sm:text-[13px] flex items-center justify-center gap-1.5 transition-all ${
-                  isAddition
-                    ? 'bg-gradient-to-r from-[#1F4E37] to-[#193C2B] border border-[#65DB85]/60 text-[#B8F7C8] shadow-[0_2px_12px_rgba(101,219,133,0.2)]'
-                    : 'bg-transparent border border-transparent text-[#8F89A3] hover:text-[#D5CFE6]'
-                }`}
+                className={`h-[42px] rounded-[10px] font-bold text-xs sm:text-[13px] flex items-center justify-center gap-1.5 transition-all ${isAddition
+                  ? 'bg-gradient-to-r from-[#1F4E37] to-[#193C2B] border border-[#65DB85]/60 text-[#B8F7C8] shadow-[0_2px_12px_rgba(101,219,133,0.2)]'
+                  : 'bg-transparent border border-transparent text-[#8F89A3] hover:text-[#D5CFE6]'
+                  }`}
               >
                 <span className="text-sm leading-none">＋</span>
                 <span>{t.addAdvance}</span>
@@ -4397,11 +4372,10 @@ export function App() {
                   playUiTap(0);
                   setIsAddition(false);
                 }}
-                className={`h-[42px] rounded-[10px] font-bold text-xs sm:text-[13px] flex items-center justify-center gap-1.5 transition-all ${
-                  !isAddition
-                    ? 'bg-gradient-to-r from-[#522435] to-[#3B1A26] border border-[#FF7A8A]/60 text-[#FFD1D7] shadow-[0_2px_12px_rgba(242,119,131,0.2)]'
-                    : 'bg-transparent border border-transparent text-[#8F89A3] hover:text-[#D5CFE6]'
-                }`}
+                className={`h-[42px] rounded-[10px] font-bold text-xs sm:text-[13px] flex items-center justify-center gap-1.5 transition-all ${!isAddition
+                  ? 'bg-gradient-to-r from-[#522435] to-[#3B1A26] border border-[#FF7A8A]/60 text-[#FFD1D7] shadow-[0_2px_12px_rgba(242,119,131,0.2)]'
+                  : 'bg-transparent border border-transparent text-[#8F89A3] hover:text-[#D5CFE6]'
+                  }`}
               >
                 <span className="text-sm leading-none">−</span>
                 <span>{t.subtractExpense}</span>
@@ -4420,18 +4394,17 @@ export function App() {
                     style={
                       isSelected
                         ? {
-                            backgroundColor: currentAccentTheme.surfaceDark,
-                            borderColor: currentAccentTheme.primary,
-                            color: '#FFFFFF',
-                            boxShadow: `0 0 12px ${currentAccentTheme.glow}`,
-                          }
+                          backgroundColor: currentAccentTheme.surfaceDark,
+                          borderColor: currentAccentTheme.primary,
+                          color: '#FFFFFF',
+                          boxShadow: `0 0 12px ${currentAccentTheme.glow}`,
+                        }
                         : undefined
                     }
-                    className={`h-[40px] px-1.5 rounded-[11px] text-[12px] font-mono-tabular font-bold truncate border transition-all active:scale-95 ${
-                      isSelected
-                        ? ''
-                        : 'bg-[#141320]/90 border-[#2B273D] text-[#C9C2D8] hover:border-[#4A4068] hover:bg-[#1B192B]'
-                    }`}
+                    className={`h-[40px] px-1.5 rounded-[11px] text-[12px] font-mono-tabular font-bold truncate border transition-all active:scale-95 ${isSelected
+                      ? ''
+                      : 'bg-[#141320]/90 border-[#2B273D] text-[#C9C2D8] hover:border-[#4A4068] hover:bg-[#1B192B]'
+                      }`}
                   >
                     {isAddition ? '+' : '−'}
                     {formatObjectiveAmount(amt, currentObjective)}
@@ -4474,17 +4447,16 @@ export function App() {
                 style={
                   isAddition
                     ? {
-                        background: `linear-gradient(90deg, ${currentAccentTheme.secondary}, ${currentAccentTheme.primary})`,
-                        color: currentAccentTheme.buttonText,
-                        boxShadow: `0 4px 14px -2px ${currentAccentTheme.glow}`,
-                      }
+                      background: `linear-gradient(90deg, ${currentAccentTheme.secondary}, ${currentAccentTheme.primary})`,
+                      color: currentAccentTheme.buttonText,
+                      boxShadow: `0 4px 14px -2px ${currentAccentTheme.glow}`,
+                    }
                     : undefined
                 }
-                className={`h-[44px] px-4 rounded-[12px] font-extrabold text-xs sm:text-[13px] hover:brightness-110 active:scale-95 disabled:opacity-50 transition-all shrink-0 flex items-center justify-center gap-1.5 ${
-                  isAddition
-                    ? ''
-                    : 'bg-gradient-to-r from-[#8E354A] to-[#B5435E] text-white shadow-[0_4px_14px_rgba(181,67,94,0.35)]'
-                }`}
+                className={`h-[44px] px-4 rounded-[12px] font-extrabold text-xs sm:text-[13px] hover:brightness-110 active:scale-95 disabled:opacity-50 transition-all shrink-0 flex items-center justify-center gap-1.5 ${isAddition
+                  ? ''
+                  : 'bg-gradient-to-r from-[#8E354A] to-[#B5435E] text-white shadow-[0_4px_14px_rgba(181,67,94,0.35)]'
+                  }`}
               >
                 <span>{isAddition ? '＋' : '−'}</span>
                 <span>
@@ -4533,11 +4505,10 @@ export function App() {
           {/* Achievements Horizontal Section (Unified Sanctuary Medals) */}
           <div
             ref={achievementsRef}
-            className={`p-3.5 sm:p-4 rounded-[20px] bg-gradient-to-b from-[#1E1C2E] to-[#171624] space-y-3 relative overflow-hidden shadow-[0_8px_28px_rgba(10,9,20,0.45)] transition-all ${
-              highlightedSection === 'achievements'
-                ? 'border-[2px] border-[#C7A4FF]'
-                : 'border border-[#342D4B]'
-            }`}
+            className={`p-3.5 sm:p-4 rounded-[20px] bg-gradient-to-b from-[#1E1C2E] to-[#171624] space-y-3 relative overflow-hidden shadow-[0_8px_28px_rgba(10,9,20,0.45)] transition-all ${highlightedSection === 'achievements'
+              ? 'border-[2px] border-[#C7A4FF]'
+              : 'border border-[#342D4B]'
+              }`}
           >
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2.5 min-w-0">
@@ -4582,26 +4553,23 @@ export function App() {
                   <button
                     key={ach.id}
                     onClick={() => handleAchievementClick(ach)}
-                    className={`w-[235px] shrink-0 p-2.5 rounded-[14px] border text-left flex items-start gap-2.5 transition-all active:scale-98 ${
-                      isUnlocked
-                        ? 'bg-gradient-to-br from-[#1B312A] to-[#14221E] border-[#65DB85]/50 shadow-[0_4px_14px_rgba(101,219,133,0.12)] hover:border-[#82E59B]'
-                        : 'bg-[#141320]/90 border-[#2B273D] hover:border-[#463D63] hover:bg-[#191728]'
-                    }`}
+                    className={`w-[235px] shrink-0 p-2.5 rounded-[14px] border text-left flex items-start gap-2.5 transition-all active:scale-98 ${isUnlocked
+                      ? 'bg-gradient-to-br from-[#1B312A] to-[#14221E] border-[#65DB85]/50 shadow-[0_4px_14px_rgba(101,219,133,0.12)] hover:border-[#82E59B]'
+                      : 'bg-[#141320]/90 border-[#2B273D] hover:border-[#463D63] hover:bg-[#191728]'
+                      }`}
                   >
                     <div
-                      className={`w-10 h-10 rounded-[11px] border flex items-center justify-center text-[20px] shrink-0 mt-0.5 ${
-                        isUnlocked
-                          ? 'bg-[#12221C] border-[#65DB85]/45 shadow-[0_0_10px_rgba(101,219,133,0.2)]'
-                          : 'bg-[#1C1A2B] border-[#2C283E] opacity-75'
-                      }`}
+                      className={`w-10 h-10 rounded-[11px] border flex items-center justify-center text-[20px] shrink-0 mt-0.5 ${isUnlocked
+                        ? 'bg-[#12221C] border-[#65DB85]/45 shadow-[0_0_10px_rgba(101,219,133,0.2)]'
+                        : 'bg-[#1C1A2B] border-[#2C283E] opacity-75'
+                        }`}
                     >
                       {icon}
                     </div>
                     <div className="min-w-0 flex-1 space-y-0.5">
                       <div
-                        className={`text-[12px] font-bold leading-snug break-words ${
-                          isUnlocked ? 'text-[#9AF0AE]' : 'text-[#D5CFE6]'
-                        }`}
+                        className={`text-[12px] font-bold leading-snug break-words ${isUnlocked ? 'text-[#9AF0AE]' : 'text-[#D5CFE6]'
+                          }`}
                       >
                         {title}
                       </div>
@@ -4610,11 +4578,10 @@ export function App() {
                       </div>
                       <div className="flex items-center gap-1 pt-0.5">
                         <span
-                          className={`text-[9px] font-mono-tabular font-bold px-1.5 py-0.2 rounded ${
-                            isUnlocked
-                              ? 'bg-[#1E3B2E] text-[#82E59B]'
-                              : 'bg-[#221F33] text-[#B58BFF]'
-                          }`}
+                          className={`text-[9px] font-mono-tabular font-bold px-1.5 py-0.2 rounded ${isUnlocked
+                            ? 'bg-[#1E3B2E] text-[#82E59B]'
+                            : 'bg-[#221F33] text-[#B58BFF]'
+                            }`}
                         >
                           {isUnlocked
                             ? `✓ +${ach.rewardXp} XP`
@@ -4680,8 +4647,8 @@ export function App() {
                       mascotJoyId
                         ? `joy-${mascotJoyId}`
                         : xpBurst
-                        ? `burst-${xpBurst.id}`
-                        : `lvl-${level}`
+                          ? `burst-${xpBurst.id}`
+                          : `lvl-${level}`
                     }
                     className={
                       mascotJoyId && Date.now() - mascotJoyId < 900
@@ -4697,11 +4664,10 @@ export function App() {
                   </div>
                   {/* Floating heart/sparkle badge */}
                   <span
-                    className={`absolute -bottom-1 -right-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold border shadow-sm transition-transform group-hover:scale-110 ${
-                      !hasPettedToday
-                        ? 'bg-[#3A1E36] text-[#FF9EC2] border-[#FF80AB]/60'
-                        : 'bg-[#262238] text-[#D8C5FF] border-[#51436C]'
-                    }`}
+                    className={`absolute -bottom-1 -right-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold border shadow-sm transition-transform group-hover:scale-110 ${!hasPettedToday
+                      ? 'bg-[#3A1E36] text-[#FF9EC2] border-[#FF80AB]/60'
+                      : 'bg-[#262238] text-[#D8C5FF] border-[#51436C]'
+                      }`}
                   >
                     {!hasPettedToday
                       ? t.petMascotRewardUnclaimed
@@ -4852,13 +4818,12 @@ export function App() {
                           setIsMascotGalleryOpen(true);
                         }}
                         title={t.viewLevelInCodex(nodeLevel)}
-                        className={`h-[7px] flex-1 rounded-full transition-all ${
-                          isCurrent
-                            ? 'bg-gradient-to-r from-[#FFD54F] to-[#82E59B] shadow-[0_0_8px_rgba(255,213,79,0.65)] scale-y-125'
-                            : isPassed
+                        className={`h-[7px] flex-1 rounded-full transition-all ${isCurrent
+                          ? 'bg-gradient-to-r from-[#FFD54F] to-[#82E59B] shadow-[0_0_8px_rgba(255,213,79,0.65)] scale-y-125'
+                          : isPassed
                             ? 'bg-[#8C5CE0] hover:bg-[#B58BFF]'
                             : 'bg-[#2C273F] hover:bg-[#3B3454]'
-                        }`}
+                          }`}
                       />
                     );
                   })}
@@ -4914,15 +4879,14 @@ export function App() {
                             ? `Hoy (${d.isActive ? 'Activo' : 'Pendiente'})`
                             : d.key
                         }
-                        className={`w-[22px] h-[22px] rounded-[7px] text-[9px] font-bold flex items-center justify-center border transition-all ${
-                          d.isActive
-                            ? 'bg-gradient-to-b from-[#3E7B52] to-[#234931] border-[#82E59B] text-white shadow-[0_0_6px_rgba(130,229,155,0.3)]'
-                            : d.isToday
+                        className={`w-[22px] h-[22px] rounded-[7px] text-[9px] font-bold flex items-center justify-center border transition-all ${d.isActive
+                          ? 'bg-gradient-to-b from-[#3E7B52] to-[#234931] border-[#82E59B] text-white shadow-[0_0_6px_rgba(130,229,155,0.3)]'
+                          : d.isToday
                             ? 'bg-[#2B253E] border-[#FFD54F] text-[#FFD54F]'
                             : d.isFuture
-                            ? 'bg-[#171624] border-[#262338] text-[#635E78]'
-                            : 'bg-[#1B1A29] border-[#2C293E] text-[#7D7894]'
-                        }`}
+                              ? 'bg-[#171624] border-[#262338] text-[#635E78]'
+                              : 'bg-[#1B1A29] border-[#2C293E] text-[#7D7894]'
+                          }`}
                       >
                         {d.isActive ? '✓' : d.label}
                       </div>
@@ -4934,11 +4898,10 @@ export function App() {
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <button
                     onClick={() => setIsDailyRitualOpen((prev) => !prev)}
-                    className={`px-2.5 py-1.5 rounded-[10px] text-[10px] sm:text-[11px] font-bold border flex items-center gap-1.5 transition ${
-                      unclaimedReadyQuestsCount > 0 || canClaimAllDailyBonus
-                        ? 'bg-[#35294F] border-[#FFD54F] text-[#FFE082] shadow-[0_0_10px_rgba(255,213,79,0.25)]'
-                        : 'bg-[#252136] border-[#3D3559] text-[#D8C5FF] hover:bg-[#2F2A44]'
-                    }`}
+                    className={`px-2.5 py-1.5 rounded-[10px] text-[10px] sm:text-[11px] font-bold border flex items-center gap-1.5 transition ${unclaimedReadyQuestsCount > 0 || canClaimAllDailyBonus
+                      ? 'bg-[#35294F] border-[#FFD54F] text-[#FFE082] shadow-[0_0_10px_rgba(255,213,79,0.25)]'
+                      : 'bg-[#252136] border-[#3D3559] text-[#D8C5FF] hover:bg-[#2F2A44]'
+                      }`}
                   >
                     <span>
                       {t.dailyQuestsHeader(completedQuestsCount, dailyQuests.length)}
@@ -4959,96 +4922,93 @@ export function App() {
               {(isDailyRitualOpen ||
                 unclaimedReadyQuestsCount > 0 ||
                 canClaimAllDailyBonus) && (
-                <div className="p-2.5 rounded-[14px] bg-[#141320]/90 border border-[#2E2942] space-y-2 animate-in fade-in duration-150">
-                  <div className="flex items-center justify-between flex-wrap gap-1.5 text-[10px] text-[#A8A3B8]">
-                    <span className="leading-snug">
-                      {t.dailySealBonusNotice}
-                    </span>
-                    {isAllDailyBonusClaimed ? (
-                      <span className="text-[#82E59B] font-bold shrink-0">
-                        {t.dailySealCompleted}
+                  <div className="p-2.5 rounded-[14px] bg-[#141320]/90 border border-[#2E2942] space-y-2 animate-in fade-in duration-150">
+                    <div className="flex items-center justify-between flex-wrap gap-1.5 text-[10px] text-[#A8A3B8]">
+                      <span className="leading-snug">
+                        {t.dailySealBonusNotice}
                       </span>
-                    ) : canClaimAllDailyBonus ? (
-                      <button
-                        onClick={handleClaimAllDailyBonus}
-                        className="px-2.5 py-1 rounded-[7px] bg-gradient-to-r from-[#E5B945] to-[#FFD54F] text-[#1A162B] font-extrabold text-[10px] hover:brightness-110 active:scale-95 transition shadow shrink-0"
-                      >
-                        {t.claimChestBonus}
-                      </button>
-                    ) : (
-                      <span className="text-[#FFD54F] font-mono-tabular shrink-0">
-                        {t.dailyChestLabel(completedQuestsCount)}
-                      </span>
-                    )}
-                  </div>
+                      {isAllDailyBonusClaimed ? (
+                        <span className="text-[#82E59B] font-bold shrink-0">
+                          {t.dailySealCompleted}
+                        </span>
+                      ) : canClaimAllDailyBonus ? (
+                        <button
+                          onClick={handleClaimAllDailyBonus}
+                          className="px-2.5 py-1 rounded-[7px] bg-gradient-to-r from-[#E5B945] to-[#FFD54F] text-[#1A162B] font-extrabold text-[10px] hover:brightness-110 active:scale-95 transition shadow shrink-0"
+                        >
+                          {t.claimChestBonus}
+                        </button>
+                      ) : (
+                        <span className="text-[#FFD54F] font-mono-tabular shrink-0">
+                          {t.dailyChestLabel(completedQuestsCount)}
+                        </span>
+                      )}
+                    </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
-                    {dailyQuests.map((q) => {
-                      const canClaim = q.isCompleted && !q.isClaimed;
-                      return (
-                        <div
-                          key={q.id}
-                          className={`p-2 rounded-[10px] border flex items-center justify-between gap-2 transition ${
-                            q.isClaimed
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                      {dailyQuests.map((q) => {
+                        const canClaim = q.isCompleted && !q.isClaimed;
+                        return (
+                          <div
+                            key={q.id}
+                            className={`p-2 rounded-[10px] border flex items-center justify-between gap-2 transition ${q.isClaimed
                               ? 'bg-[#1B2623]/70 border-[#3A6B52]/60'
                               : canClaim
-                              ? 'bg-[#2B2342] border-[#FFD54F]/80'
-                              : 'bg-[#1B1A29] border-[#2B283E]'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="text-base shrink-0">{q.icon}</span>
-                            <div className="min-w-0">
-                              <div
-                                className={`text-[11px] font-bold leading-snug break-words ${
-                                  q.isClaimed
+                                ? 'bg-[#2B2342] border-[#FFD54F]/80'
+                                : 'bg-[#1B1A29] border-[#2B283E]'
+                              }`}
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="text-base shrink-0">{q.icon}</span>
+                              <div className="min-w-0">
+                                <div
+                                  className={`text-[11px] font-bold leading-snug break-words ${q.isClaimed
                                     ? 'text-[#82E59B]'
                                     : 'text-[#F4F1FF]'
-                                }`}
-                              >
-                                {q.title}
-                              </div>
-                              <div className="text-[9px] text-[#A8A3B8] leading-snug break-words">
-                                {q.subtitle}
+                                    }`}
+                                >
+                                  {q.title}
+                                </div>
+                                <div className="text-[9px] text-[#A8A3B8] leading-snug break-words">
+                                  {q.subtitle}
+                                </div>
                               </div>
                             </div>
-                          </div>
 
-                          {q.isClaimed ? (
-                            <span className="text-[9px] font-bold text-[#82E59B] px-1.5 py-0.5 rounded bg-[#1F3A2E] shrink-0">
-                              ✓ +{q.rewardXp}
-                            </span>
-                          ) : canClaim ? (
-                            <button
-                              onClick={() =>
-                                handleClaimQuest(q.id, q.rewardXp, q.title)
-                              }
-                              className="px-2 py-1 rounded-[7px] bg-[#82E59B] text-[#102618] font-extrabold text-[10px] hover:brightness-110 active:scale-95 transition shrink-0 shadow-sm"
-                            >
-                              +{q.rewardXp} XP
-                            </button>
-                          ) : (
-                            <span className="text-[9px] font-mono-tabular text-[#88839E] shrink-0">
-                              +{q.rewardXp} XP
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })}
+                            {q.isClaimed ? (
+                              <span className="text-[9px] font-bold text-[#82E59B] px-1.5 py-0.5 rounded bg-[#1F3A2E] shrink-0">
+                                ✓ +{q.rewardXp}
+                              </span>
+                            ) : canClaim ? (
+                              <button
+                                onClick={() =>
+                                  handleClaimQuest(q.id, q.rewardXp, q.title)
+                                }
+                                className="px-2 py-1 rounded-[7px] bg-[#82E59B] text-[#102618] font-extrabold text-[10px] hover:brightness-110 active:scale-95 transition shrink-0 shadow-sm"
+                              >
+                                +{q.rewardXp} XP
+                              </button>
+                            ) : (
+                              <span className="text-[9px] font-mono-tabular text-[#88839E] shrink-0">
+                                +{q.rewardXp} XP
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
             </div>
           </div>
 
           {/* Dedicated Standalone ASMR Sanctuary Bento Card (Placed right below Mascot & before Boost Stats) */}
           <div
             ref={asmrSanctuaryRef}
-            className={`p-3.5 sm:p-4 rounded-[20px] bg-gradient-to-b from-[#181C2C] via-[#141525] to-[#12121E] space-y-3.5 relative overflow-hidden shadow-[0_8px_28px_rgba(10,9,20,0.45)] transition-all ${
-              highlightedSection === 'asmr' || highlightedSection === 'asmr_clicker'
-                ? 'border-[2px] border-[#64D8FF]'
-                : 'border border-[#2D334D]'
-            }`}
+            className={`p-3.5 sm:p-4 rounded-[20px] bg-gradient-to-b from-[#181C2C] via-[#141525] to-[#12121E] space-y-3.5 relative overflow-hidden shadow-[0_8px_28px_rgba(10,9,20,0.45)] transition-all ${highlightedSection === 'asmr' || highlightedSection === 'asmr_clicker'
+              ? 'border-[2px] border-[#64D8FF]'
+              : 'border border-[#2D334D]'
+              }`}
           >
             {/* Header: Title, Taps Counter, Daily Gems Badge, Ambient Music Toggle */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
@@ -5087,11 +5047,10 @@ export function App() {
                 </span>
                 <span
                   title={t.dailyGemsTooltip}
-                  className={`px-2.5 py-1 rounded-full border text-[10px] font-mono-tabular font-extrabold ${
-                    asmrRemainingDailyGems > 0
-                      ? 'bg-[#231F38] border-[#FFD54F]/50 text-[#FFE082]'
-                      : 'bg-[#1D3028] border-[#82E59B]/50 text-[#9AF0AE]'
-                  }`}
+                  className={`px-2.5 py-1 rounded-full border text-[10px] font-mono-tabular font-extrabold ${asmrRemainingDailyGems > 0
+                    ? 'bg-[#231F38] border-[#FFD54F]/50 text-[#FFE082]'
+                    : 'bg-[#1D3028] border-[#82E59B]/50 text-[#9AF0AE]'
+                    }`}
                 >
                   {t.dailyGemsCap(asmrGemsEarnedToday, DAILY_ASMR_GEM_CAP)}
                 </span>
@@ -5101,24 +5060,23 @@ export function App() {
                   title={
                     sensoryPrefs.musicEnabled
                       ? t.ambientMusicTooltipOn(
-                          getAmbientMusicStyleName(currentObjective.accentColor)
-                        )
+                        getAmbientMusicStyleName(currentObjective.accentColor)
+                      )
                       : t.ambientMusicTooltipOff(
-                          getAmbientMusicStyleName(currentObjective.accentColor)
-                        )
+                        getAmbientMusicStyleName(currentObjective.accentColor)
+                      )
                   }
-                  className={`px-2.5 py-1 rounded-[10px] border text-[10px] font-extrabold shrink-0 flex items-center gap-1.5 transition ${
-                    sensoryPrefs.musicEnabled
-                      ? 'bg-[#1D352E] border-[#82E59B]/60 text-[#9AF0AE]'
-                      : 'bg-[#1E1B2E] border-[#383252] text-[#C8C2D8] hover:text-white'
-                  }`}
+                  className={`px-2.5 py-1 rounded-[10px] border text-[10px] font-extrabold shrink-0 flex items-center gap-1.5 transition ${sensoryPrefs.musicEnabled
+                    ? 'bg-[#1D352E] border-[#82E59B]/60 text-[#9AF0AE]'
+                    : 'bg-[#1E1B2E] border-[#383252] text-[#C8C2D8] hover:text-white'
+                    }`}
                 >
                   <span>🎵</span>
                   <span>
                     {sensoryPrefs.musicEnabled
                       ? t.ambientMusicOn(
-                          getAmbientMusicStyleName(currentObjective.accentColor)
-                        )
+                        getAmbientMusicStyleName(currentObjective.accentColor)
+                      )
                       : t.ambientMusicOff}
                   </span>
                 </button>
@@ -5132,9 +5090,8 @@ export function App() {
                   { id: 'all', label: `${t.filterAll} (${ASMR_TEXTURES.length})` },
                   {
                     id: 'unlocked',
-                    label: `${t.filterMyOrbs} (${
-                      ASMR_TEXTURES.filter((tex) => isAsmrStyleUnlocked(tex)).length
-                    })`,
+                    label: `${t.filterMyOrbs} (${ASMR_TEXTURES.filter((tex) => isAsmrStyleUnlocked(tex)).length
+                      })`,
                   },
                   { id: 'taps', label: `${t.filterTaps} (4)` },
                   { id: 'skins', label: `${t.filterSkins} (8)` },
@@ -5150,11 +5107,10 @@ export function App() {
                           tab.id as 'all' | 'unlocked' | 'taps' | 'skins'
                         );
                       }}
-                      className={`px-2.5 py-1 rounded-[8px] text-[10px] font-bold border transition ${
-                        active
-                          ? 'bg-[#24344D] border-[#64D8FF] text-white'
-                          : 'bg-[#171625] border-[#2C2840] text-[#A8A3B8] hover:text-white'
-                      }`}
+                      className={`px-2.5 py-1 rounded-[8px] text-[10px] font-bold border transition ${active
+                        ? 'bg-[#24344D] border-[#64D8FF] text-white'
+                        : 'bg-[#171625] border-[#2C2840] text-[#A8A3B8] hover:text-white'
+                        }`}
                     >
                       {tab.label}
                     </button>
@@ -5205,9 +5161,9 @@ export function App() {
                 const tapProgPct =
                   tex.unlockKind === 'taps' && tex.requiredTaps > 0
                     ? Math.min(
-                        100,
-                        Math.floor((asmrTotalTaps / tex.requiredTaps) * 100)
-                      )
+                      100,
+                      Math.floor((asmrTotalTaps / tex.requiredTaps) * 100)
+                    )
                     : 100;
 
                 return (
@@ -5218,18 +5174,17 @@ export function App() {
                     style={
                       isSelected
                         ? {
-                            borderColor: tex.accentColor,
-                            boxShadow: `0 0 12px -2px ${tex.secondaryColor}`,
-                          }
+                          borderColor: tex.accentColor,
+                          boxShadow: `0 0 12px -2px ${tex.secondaryColor}`,
+                        }
                         : undefined
                     }
-                    className={`min-w-[122px] max-w-[134px] p-2 rounded-[12px] border text-left shrink-0 transition flex flex-col justify-between gap-1 ${
-                      isSelected
-                        ? 'bg-[#1D253A] text-white'
-                        : unlocked
+                    className={`min-w-[122px] max-w-[134px] p-2 rounded-[12px] border text-left shrink-0 transition flex flex-col justify-between gap-1 ${isSelected
+                      ? 'bg-[#1D253A] text-white'
+                      : unlocked
                         ? 'bg-[#171625] border-[#2F2B46] text-[#E6E0F2] hover:border-[#64D8FF]/60'
                         : 'bg-[#13121E]/90 border-[#28243C] text-[#A8A3B8] hover:border-[#FFD54F]/60'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-center justify-between gap-1">
                       <div
@@ -5238,13 +5193,12 @@ export function App() {
                           borderColor: tex.accentColor,
                           boxShadow: `0 0 8px ${tex.secondaryColor}`,
                         }}
-                        className={`w-7 h-7 rounded-full border flex items-center justify-center text-xs shrink-0 ${
-                          tex.ringStyle === 'dashed'
-                            ? 'border-dashed'
-                            : tex.ringStyle === 'double'
+                        className={`w-7 h-7 rounded-full border flex items-center justify-center text-xs shrink-0 ${tex.ringStyle === 'dashed'
+                          ? 'border-dashed'
+                          : tex.ringStyle === 'double'
                             ? 'border-2'
                             : ''
-                        }`}
+                          }`}
                       >
                         {tex.emoji}
                       </div>
@@ -5350,17 +5304,15 @@ export function App() {
                       ? `0 0 42px 6px ${activeAsmrTextureObj.secondaryColor}, 0 0 20px #FFD54F`
                       : `0 0 28px -2px ${activeAsmrTextureObj.secondaryColor}`,
                   }}
-                  className={`w-28 h-28 sm:w-24 sm:h-24 rounded-full border-2 flex flex-col items-center justify-center gap-0.5 select-none cursor-pointer relative transition-transform ${
-                    isAsmrHolding
-                      ? 'scale-95 ring-4 ring-[#FFD54F]/70'
-                      : 'hover:scale-105 active:scale-95'
-                  } ${
-                    activeAsmrTextureObj.ringStyle === 'dashed'
+                  className={`w-28 h-28 sm:w-24 sm:h-24 rounded-full border-2 flex flex-col items-center justify-center gap-0.5 select-none cursor-pointer relative transition-transform ${isAsmrHolding
+                    ? 'scale-95 ring-4 ring-[#FFD54F]/70'
+                    : 'hover:scale-105 active:scale-95'
+                    } ${activeAsmrTextureObj.ringStyle === 'dashed'
                       ? 'border-dashed'
                       : activeAsmrTextureObj.ringStyle === 'double'
-                      ? 'ring-2 ring-white/25'
-                      : ''
-                  }`}
+                        ? 'ring-2 ring-white/25'
+                        : ''
+                    }`}
                 >
                   <span className={`text-3xl leading-none drop-shadow ${isAsmrHolding ? 'animate-pulse' : ''}`}>
                     {activeAsmrTextureObj.emoji}
@@ -5448,11 +5400,10 @@ export function App() {
           {/* Statistics Section (Unified Sanctuary Bento Grid) */}
           <div
             ref={statsRef}
-            className={`p-3.5 sm:p-4 rounded-[20px] bg-gradient-to-b from-[#1E1C2E] to-[#171624] space-y-3 relative overflow-hidden shadow-[0_8px_28px_rgba(10,9,20,0.45)] transition-all ${
-              highlightedSection === 'stats'
-                ? 'border-[2px] border-[#C7A4FF]'
-                : 'border border-[#342D4B]'
-            }`}
+            className={`p-3.5 sm:p-4 rounded-[20px] bg-gradient-to-b from-[#1E1C2E] to-[#171624] space-y-3 relative overflow-hidden shadow-[0_8px_28px_rgba(10,9,20,0.45)] transition-all ${highlightedSection === 'stats'
+              ? 'border-[2px] border-[#C7A4FF]'
+              : 'border border-[#342D4B]'
+              }`}
           >
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2.5">
@@ -5508,9 +5459,9 @@ export function App() {
                 >
                   {objectiveInsights.bestEntry > 0
                     ? `+${formatObjectiveAmount(
-                        objectiveInsights.bestEntry,
-                        currentObjective
-                      )}`
+                      objectiveInsights.bestEntry,
+                      currentObjective
+                    )}`
                     : '—'}
                 </div>
                 <div className="text-[10px] text-[#8F89A3] leading-tight break-words">
@@ -5536,11 +5487,10 @@ export function App() {
           {/* Settings Section (Unified Sanctuary 2x2 Action Grid) */}
           <div
             ref={settingsRef}
-            className={`p-3.5 sm:p-4 rounded-[20px] bg-gradient-to-b from-[#1E1C2E] to-[#171624] space-y-3 relative overflow-hidden shadow-[0_8px_28px_rgba(10,9,20,0.45)] transition-all ${
-              highlightedSection === 'settings'
-                ? 'border-[2px] border-[#C7A4FF]'
-                : 'border border-[#342D4B]'
-            }`}
+            className={`p-3.5 sm:p-4 rounded-[20px] bg-gradient-to-b from-[#1E1C2E] to-[#171624] space-y-3 relative overflow-hidden shadow-[0_8px_28px_rgba(10,9,20,0.45)] transition-all ${highlightedSection === 'settings'
+              ? 'border-[2px] border-[#C7A4FF]'
+              : 'border border-[#342D4B]'
+              }`}
           >
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div className="flex items-center gap-2.5">
@@ -5573,11 +5523,10 @@ export function App() {
                       type="button"
                       onClick={() => changeLanguage(l.code as AppLanguage)}
                       title={`Cambiar idioma a ${l.label}`}
-                      className={`px-2 py-1 rounded-[7px] text-[10px] font-extrabold transition ${
-                        appLanguage === l.code
-                          ? 'bg-[#653CA6] text-white shadow-sm'
-                          : 'text-[#A8A3B8] hover:text-white'
-                      }`}
+                      className={`px-2 py-1 rounded-[7px] text-[10px] font-extrabold transition ${appLanguage === l.code
+                        ? 'bg-[#653CA6] text-white shadow-sm'
+                        : 'text-[#A8A3B8] hover:text-white'
+                        }`}
                     >
                       {l.label}
                     </button>
@@ -5590,24 +5539,23 @@ export function App() {
                   title={
                     sensoryPrefs.musicEnabled
                       ? t.ambientMusicTooltipOn(
-                          getAmbientMusicStyleName(currentObjective.accentColor)
-                        )
+                        getAmbientMusicStyleName(currentObjective.accentColor)
+                      )
                       : t.ambientMusicTooltipOff(
-                          getAmbientMusicStyleName(currentObjective.accentColor)
-                        )
+                        getAmbientMusicStyleName(currentObjective.accentColor)
+                      )
                   }
-                  className={`px-3 py-1.5 rounded-[11px] border text-[11px] font-bold flex items-center gap-1.5 transition ${
-                    sensoryPrefs.musicEnabled
-                      ? 'bg-[#1F2D2B] border-[#65DB85]/45 text-[#9AF0AE]'
-                      : 'bg-[#181726] border-[#2E2A42] text-[#9E97B0]'
-                  }`}
+                  className={`px-3 py-1.5 rounded-[11px] border text-[11px] font-bold flex items-center gap-1.5 transition ${sensoryPrefs.musicEnabled
+                    ? 'bg-[#1F2D2B] border-[#65DB85]/45 text-[#9AF0AE]'
+                    : 'bg-[#181726] border-[#2E2A42] text-[#9E97B0]'
+                    }`}
                 >
                   <span>🎵</span>
                   <span>
                     {sensoryPrefs.musicEnabled
                       ? t.ambientMusicOn(
-                          getAmbientMusicStyleName(currentObjective.accentColor)
-                        )
+                        getAmbientMusicStyleName(currentObjective.accentColor)
+                      )
                       : t.ambientMusicOff}
                   </span>
                 </button>
@@ -5620,11 +5568,10 @@ export function App() {
                       ? t.soundHapticsTooltipOn
                       : t.soundHapticsTooltipOff
                   }
-                  className={`px-3 py-1.5 rounded-[11px] border text-[11px] font-bold flex items-center gap-1.5 transition ${
-                    sensoryPrefs.soundEnabled
-                      ? 'bg-[#1F2D2B] border-[#65DB85]/45 text-[#9AF0AE]'
-                      : 'bg-[#181726] border-[#2E2A42] text-[#9E97B0]'
-                  }`}
+                  className={`px-3 py-1.5 rounded-[11px] border text-[11px] font-bold flex items-center gap-1.5 transition ${sensoryPrefs.soundEnabled
+                    ? 'bg-[#1F2D2B] border-[#65DB85]/45 text-[#9AF0AE]'
+                    : 'bg-[#181726] border-[#2E2A42] text-[#9E97B0]'
+                    }`}
                 >
                   <span>{sensoryPrefs.soundEnabled ? '🔊' : '🔇'}</span>
                   <span>
@@ -5750,11 +5697,10 @@ export function App() {
 
         {/* Right History Panel */}
         <aside
-          className={`fixed inset-y-0 right-0 z-40 w-[320px] max-w-[86vw] lg:static lg:w-auto lg:max-w-none lg:block bg-[#171723] border-l border-[#29283C] pt-[max(1rem,calc(env(safe-area-inset-top,0px)+0.5rem))] pb-[max(1rem,calc(env(safe-area-inset-bottom,0px)+0.5rem))] pr-[max(1rem,calc(env(safe-area-inset-right,0px)+0.5rem))] pl-4 sm:p-4 flex flex-col gap-3.5 transition-transform duration-200 ${
-            isHistoryOpen
-              ? 'translate-x-0'
-              : 'translate-x-full lg:translate-x-0'
-          }`}
+          className={`fixed inset-y-0 right-0 z-40 w-[320px] max-w-[86vw] lg:static lg:w-auto lg:max-w-none lg:block bg-[#171723] border-l border-[#29283C] pt-[max(1rem,calc(env(safe-area-inset-top,0px)+0.5rem))] pb-[max(1rem,calc(env(safe-area-inset-bottom,0px)+0.5rem))] pr-[max(1rem,calc(env(safe-area-inset-right,0px)+0.5rem))] pl-4 sm:p-4 flex flex-col gap-3.5 transition-transform duration-200 ${isHistoryOpen
+            ? 'translate-x-0'
+            : 'translate-x-full lg:translate-x-0'
+            }`}
         >
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
@@ -5792,11 +5738,10 @@ export function App() {
                   onClick={() =>
                     setHistoryFilter(tab.id as 'all' | 'add' | 'subtract')
                   }
-                  className={`h-[34px] rounded-[9px] text-[11px] font-bold transition ${
-                    isSelected
-                      ? 'bg-[#32264D] text-white border border-[#5B4588]/60 shadow-sm'
-                      : 'text-[#9E97B0] hover:text-[#E2D8FF]'
-                  }`}
+                  className={`h-[34px] rounded-[9px] text-[11px] font-bold transition ${isSelected
+                    ? 'bg-[#32264D] text-white border border-[#5B4588]/60 shadow-sm'
+                    : 'text-[#9E97B0] hover:text-[#E2D8FF]'
+                    }`}
                 >
                   {tab.label}
                 </button>
@@ -5813,23 +5758,21 @@ export function App() {
             ) : (
               filteredEntries.map((entry) => {
                 const isPositive = entry.amount >= 0;
-                const amountFormatted = `${
-                  isPositive ? '+' : '−'
-                }${formatObjectiveAmount(
-                  Math.abs(entry.amount),
-                  currentObjective
-                )}`;
+                const amountFormatted = `${isPositive ? '+' : '−'
+                  }${formatObjectiveAmount(
+                    Math.abs(entry.amount),
+                    currentObjective
+                  )}`;
                 return (
                   <div
                     key={entry.id}
                     className="p-2.5 rounded-[13px] border border-[#2B273D] bg-[#141320]/90 hover:border-[#3E3759] flex items-center gap-2.5 transition"
                   >
                     <div
-                      className={`w-8 h-8 rounded-[9px] border flex items-center justify-center text-xs font-extrabold shrink-0 ${
-                        isPositive
-                          ? 'bg-[#162B22] border-[#65DB85]/40 text-[#82E59B]'
-                          : 'bg-[#2D1822] border-[#FF7A8A]/40 text-[#FF9EAB]'
-                      }`}
+                      className={`w-8 h-8 rounded-[9px] border flex items-center justify-center text-xs font-extrabold shrink-0 ${isPositive
+                        ? 'bg-[#162B22] border-[#65DB85]/40 text-[#82E59B]'
+                        : 'bg-[#2D1822] border-[#FF7A8A]/40 text-[#FF9EAB]'
+                        }`}
                     >
                       {isPositive ? '＋' : '−'}
                     </div>
@@ -5992,36 +5935,32 @@ export function App() {
                   <button
                     key={ach.id}
                     onClick={() => handleAchievementClick(ach)}
-                    className={`p-3.5 rounded-[16px] border text-left flex items-center gap-3 transition-all ${
-                      isUnlocked
-                        ? 'bg-gradient-to-br from-[#1B312A] to-[#14221E] border-[#65DB85]/55 shadow-[0_4px_14px_rgba(101,219,133,0.12)] hover:border-[#82E59B]'
-                        : 'bg-[#161522]/90 border-[#2B273D] hover:border-[#463D63]'
-                    }`}
+                    className={`p-3.5 rounded-[16px] border text-left flex items-center gap-3 transition-all ${isUnlocked
+                      ? 'bg-gradient-to-br from-[#1B312A] to-[#14221E] border-[#65DB85]/55 shadow-[0_4px_14px_rgba(101,219,133,0.12)] hover:border-[#82E59B]'
+                      : 'bg-[#161522]/90 border-[#2B273D] hover:border-[#463D63]'
+                      }`}
                   >
                     <div
-                      className={`w-12 h-12 rounded-[13px] border flex items-center justify-center text-[24px] shrink-0 ${
-                        isUnlocked
-                          ? 'bg-[#12221C] border-[#65DB85]/45'
-                          : 'bg-[#1E1C2D] border-[#2E2A42] opacity-75'
-                      }`}
+                      className={`w-12 h-12 rounded-[13px] border flex items-center justify-center text-[24px] shrink-0 ${isUnlocked
+                        ? 'bg-[#12221C] border-[#65DB85]/45'
+                        : 'bg-[#1E1C2D] border-[#2E2A42] opacity-75'
+                        }`}
                     >
                       {icon}
                     </div>
                     <div className="min-w-0 flex-1 space-y-1">
                       <div className="flex items-center justify-between gap-2">
                         <span
-                          className={`text-[13px] font-bold truncate ${
-                            isUnlocked ? 'text-[#9AF0AE]' : 'text-[#E2D8FF]'
-                          }`}
+                          className={`text-[13px] font-bold truncate ${isUnlocked ? 'text-[#9AF0AE]' : 'text-[#E2D8FF]'
+                            }`}
                         >
                           {title}
                         </span>
                         <span
-                          className={`text-[10px] font-mono-tabular font-bold px-2 py-0.5 rounded-full shrink-0 ${
-                            isUnlocked
-                              ? 'bg-[#1E3B2E] text-[#82E59B]'
-                              : 'bg-[#242036] text-[#B58BFF]'
-                          }`}
+                          className={`text-[10px] font-mono-tabular font-bold px-2 py-0.5 rounded-full shrink-0 ${isUnlocked
+                            ? 'bg-[#1E3B2E] text-[#82E59B]'
+                            : 'bg-[#242036] text-[#B58BFF]'
+                            }`}
                         >
                           {isUnlocked
                             ? `✓ +${ach.rewardXp} XP`
