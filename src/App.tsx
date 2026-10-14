@@ -9,6 +9,8 @@ import {
   findBannerPreset,
   findObjectiveUnit,
   formatObjectiveAmount,
+  getLocalizedAchievement,
+  getLocalizedTemplate,
   MAX_SAFE_AMOUNT,
   OBJECTIVE_ACCENT_THEMES,
   OBJECTIVE_ICONS,
@@ -61,6 +63,13 @@ import {
   SOUND_PACK_STEP_LABELS,
   syncAmbientMusic,
 } from './soundEffects';
+import {
+  AppLanguage,
+  loadAppLanguage,
+  saveAppLanguage,
+  TRANSLATIONS,
+  TranslationDictionary,
+} from './i18n';
 import {
   AchievementCondition,
   AchievementDefinition,
@@ -546,6 +555,23 @@ function useHorizontalScrollProps() {
   });
 }
 
+const LAUNCH_DEADLINE_STORAGE_KEY = 'objectivereacher_v1_launch_deadline_ts';
+function getLaunchEndTimestamp(): number {
+  try {
+    const saved = localStorage.getItem(LAUNCH_DEADLINE_STORAGE_KEY);
+    if (saved) {
+      const val = Number(saved);
+      if (val > Date.now()) return val;
+    }
+    // Oferta especial de bienvenida: 6 días, 18 horas y 30 minutos desde la activación
+    const newEnd = Date.now() + (6 * 24 * 3600 + 18 * 3600 + 30 * 60) * 1000;
+    localStorage.setItem(LAUNCH_DEADLINE_STORAGE_KEY, String(newEnd));
+    return newEnd;
+  } catch {
+    return Date.now() + 585000000;
+  }
+}
+
 export function App() {
   const [state, setState] = useState<DashboardState>(() => loadState());
   const [selectedQuickAmount, setSelectedQuickAmount] = useState<number | null>(50);
@@ -555,6 +581,36 @@ export function App() {
   const [newEntryDescription, setNewEntryDescription] = useState<string>('');
   const [historyFilter, setHistoryFilter] = useState<'all' | 'add' | 'subtract'>('all');
   const [persistenceMessage, setPersistenceMessage] = useState<string>('');
+
+  // Cuenta regresiva en vivo para el Banner de Lanzamiento v1.0
+  const [launchTimeLeft, setLaunchTimeLeft] = useState<{
+    days: number;
+    hours: number;
+    minutes: number;
+    seconds: number;
+  }>(() => {
+    const diff = Math.max(0, getLaunchEndTimestamp() - Date.now());
+    return {
+      days: Math.floor(diff / (1000 * 60 * 60 * 24)),
+      hours: Math.floor((diff / (1000 * 60 * 60)) % 24),
+      minutes: Math.floor((diff / (1000 * 60)) % 60),
+      seconds: Math.floor((diff / 1000) % 60),
+    };
+  });
+
+  useEffect(() => {
+    const updateTimer = () => {
+      const diff = Math.max(0, getLaunchEndTimestamp() - Date.now());
+      setLaunchTimeLeft({
+        days: Math.floor(diff / (1000 * 60 * 60 * 24)),
+        hours: Math.floor((diff / (1000 * 60 * 60)) % 24),
+        minutes: Math.floor((diff / (1000 * 60)) % 60),
+        seconds: Math.floor((diff / 1000) % 60),
+      });
+    };
+    const interval = window.setInterval(updateTimer, 1000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   // Layout & Drawers
   const [activeNav, setActiveNav] = useState<string>('objective');
@@ -584,12 +640,59 @@ export function App() {
   const [isDailyRitualOpen, setIsDailyRitualOpen] = useState<boolean>(false);
   const [isAsmrSanctuaryOpen, setIsAsmrSanctuaryOpen] = useState<boolean>(false);
   const [asmrFloatingSparks, setAsmrFloatingSparks] = useState<
-    Array<{ id: number; text: string; color: string; xOffset: number }>
+    Array<{
+      id: number;
+      text: string;
+      color: string;
+      xOffset: number;
+      yOffset?: number;
+      rotDeg?: number;
+    }>
   >([]);
   const [lastAsmrPrizeNotice, setLastAsmrPrizeNotice] = useState<string | null>(
     null
   );
+  const [appLanguage, setAppLanguage] = useState<AppLanguage>(() =>
+    loadAppLanguage()
+  );
+  const t = useMemo(() => TRANSLATIONS[appLanguage], [appLanguage]);
+
+  const changeLanguage = (newLang: AppLanguage) => {
+    playUiTap(2);
+    setAppLanguage(newLang);
+    saveAppLanguage(newLang);
+  };
+
   const asmrTapCooldownCounterRef = useRef<number>(0);
+  const asmrHoldTimerRef = useRef<number | null>(null);
+  const asmrHoldIntervalRef = useRef<number>(255);
+  const asmrHoldLastShiftTimeRef = useRef<number>(0);
+  const isHoldingActiveRef = useRef<boolean>(false);
+  const asmrHoldMouseDownFiredRef = useRef<boolean>(false);
+  const asmrTotalTapsRef = useRef<number>(0);
+  const asmrLastSparkTimeRef = useRef<number>(0);
+  const asmrSparkLaneRef = useRef<number>(0);
+  const [isAsmrHolding, setIsAsmrHolding] = useState<boolean>(false);
+
+  const [isSereneMode, setIsSereneMode] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('objectivereacher_serene_mode') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleSereneMode = () => {
+    playUiTap(1);
+    setIsSereneMode((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('objectivereacher_serene_mode', String(next));
+      } catch {}
+      return next;
+    });
+  };
+
   const [sensoryPrefs, setSensoryPrefs] = useState<SensoryPreferences>(() =>
     loadSensoryPreferences()
   );
@@ -685,7 +788,7 @@ export function App() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     } catch {
       setPersistenceMessage(
-        'No se pudo guardar el progreso. Los cambios podrían perderse al cerrar la app.'
+        t.saveErrorAlert
       );
     }
   }, [state]);
@@ -810,29 +913,7 @@ export function App() {
     '🪐',
   ];
   const mascotEmoji = mascotEmojis[mascotTier] || '🪐';
-  const mascotMessages = [
-    'Brote Esmeralda · Tu viaje acaba de comenzar 💪',
-    'Espíritu Neko · ¡Buen comienzo, sigue así!',
-    'Zorro Kitsune · Tu constancia multiplica tu energía',
-    'Búho Sabio · Visión clara hacia tu objetivo',
-    'Lobo Boreal · Paso firme bajo la aurora',
-    'Tigre Guardián · ¡Tu esfuerzo está creciendo!',
-    'León Solar · Tu disciplina brilla con fuerza',
-    'Ciervo del Bosque · Armonía y avance constante',
-    'Fénix Carmesí · Volando alto con alas de fuego',
-    'Gólem de Cristal · Fortaleza rúnica inquebrantable',
-    'Kraken Abisal · ¡Has superado el nivel 100!',
-    'Cronos Autómata · Dominando cada segundo hacia la meta',
-    'Dragón Imperial · ¡Has superado los 120 niveles!',
-    'Polilla Astral · Alas lunares que cruzan el cosmos',
-    'Serafín Ophanim · Seis alas y anillos de fuego sagrado',
-    'Hidra Tricéfala · Tres voluntades unidas por tu objetivo',
-    'Djinn Astral · Poder místico desatado a tu favor',
-    'Valkiria Celestial · Honor y victoria en cada aporte',
-    'Arquitecto Merkaba · Geometría sagrada del progreso',
-    '¡Singularidad Cósmica! Leyenda suprema del universo',
-  ];
-  const mascotMessage = mascotMessages[mascotTier] || mascotMessages[0];
+  const mascotMessage = t.mascotMessages[mascotTier] || t.mascotMessages[0];
 
   const streakDays = useMemo(
     () =>
@@ -844,13 +925,13 @@ export function App() {
   );
   const streakText =
     streakDays === 0
-      ? '¡Mantén encendida la llama de tu racha! 🔥'
+      ? t.streakIgnitePrompt
       : streakDays === 1
-      ? '1 día consecutivo'
-      : `${streakDays} días consecutivos`;
+      ? `1 ${t.streakDaysUnit}`
+      : `${streakDays} ${t.streakDaysPlural}`;
 
   // Indie Monetization, Cosmetics & Active Buffs derived properties
-  const gems = state.gamification.gems ?? 80;
+  const gems = state.gamification.gems ?? 0;
   const unlockedSkins = state.gamification.unlockedSkins || ['default'];
   const equippedSkinId = state.gamification.equippedSkinId || 'default';
   const equippedSkin = useMemo(
@@ -919,7 +1000,7 @@ export function App() {
     isAllAchievementsOpen,
     isArchivedModalOpen,
   ]);
-  const streakShields = state.gamification.streakShields ?? 1;
+  const streakShields = state.gamification.streakShields ?? 0;
   const isIndieFounder = Boolean(state.gamification.isIndieFounder);
   const supporterTier = state.gamification.supporterTier || 'none';
   const isXpBoostActive = isTimestampActive(state.gamification.xpBoostUntil);
@@ -974,8 +1055,8 @@ export function App() {
     () => [
       {
         id: 'pet_guardian',
-        title: 'Vínculo con tu Guardián',
-        subtitle: 'Toca a tu mascota para animarla hoy',
+        title: t.questPetTitle,
+        subtitle: t.questPetSub,
         rewardXp: 15,
         isCompleted: hasPettedToday,
         isClaimed: claimedToday.includes('pet_guardian'),
@@ -983,8 +1064,8 @@ export function App() {
       },
       {
         id: 'daily_entry',
-        title: 'Impulso del Día',
-        subtitle: 'Registra al menos 1 movimiento hoy',
+        title: t.questEntryTitle,
+        subtitle: t.questEntrySub,
         rewardXp: 25,
         isCompleted: hasEntryToday,
         isClaimed: claimedToday.includes('daily_entry'),
@@ -992,15 +1073,15 @@ export function App() {
       },
       {
         id: 'mindful_contribution',
-        title: 'Aporte con Propósito',
-        subtitle: 'Suma un aporte con nota personalizada hoy',
+        title: t.questMindfulTitle,
+        subtitle: t.questMindfulSub,
         rewardXp: 30,
         isCompleted: hasPositiveNoteToday,
         isClaimed: claimedToday.includes('mindful_contribution'),
         icon: '🎯',
       },
     ],
-    [hasPettedToday, hasEntryToday, hasPositiveNoteToday, claimedToday]
+    [hasPettedToday, hasEntryToday, hasPositiveNoteToday, claimedToday, t]
   );
 
   const completedQuestsCount = dailyQuests.filter((q) => q.isCompleted).length;
@@ -1106,15 +1187,15 @@ export function App() {
 
     if (nextTier > prevTier) {
       triggerCelebration(
-        '¡Nueva especie desbloqueada!',
-        `Nivel ${nextLevel} · +${xpAmount} XP · ${mascotMessages[nextTier] || ''}`,
+        t.newSpeciesUnlocked,
+        `${t.levelAbbr} ${nextLevel} · +${xpAmount} XP · ${t.mascotMessages[nextTier] || ''}`,
         mascotEmojis[nextTier] || '🪐',
         '#FFD54F',
         true
       );
     } else if (nextLevel > prevLevel) {
       triggerCelebration(
-        `¡Subiste al Nivel ${nextLevel}!`,
+        t.levelUpCelebration(nextLevel),
         `${reasonTitle} (+${xpAmount} XP)`,
         mascotEmojis[nextTier] || reasonEmoji,
         '#B58BFF'
@@ -1133,17 +1214,15 @@ export function App() {
 
     const contextualPhrases = [
       !hasEntryToday
-        ? '¡Qué alegría verte hoy! Un pequeño aporte encenderá nuestra racha 🔥'
-        : `¡Eso es! Ya llevamos ${streakDays} ${streakDays === 1 ? 'día' : 'días'} seguidos brillando ✨`,
+        ? t.petGreetNoEntry
+        : t.petGreetStreak(streakDays),
       levelsToNextSpecies > 0
-        ? `¡Siento el poder crecer! Solo ${levelsToNextSpecies} ${
-            levelsToNextSpecies === 1 ? 'nivel' : 'niveles'
-          } más para descubrir una nueva especie 🐾`
-        : '¡Hemos alcanzado la cumbre cósmica juntos! 🪐',
+        ? t.petGreetLevelsLeft(levelsToNextSpecies)
+        : t.petGreetMax,
       currentObjective.currentAmount >= currentObjective.goalAmount
-        ? `¡Completamos "${currentObjective.title}"! Eres imparable 🏆`
-        : `¡Vamos por "${currentObjective.title}"! Faltan ${remainingAmountFormatted} 🚀`,
-      '¡Gracias por cuidarme! Cada paso tuyo me hace evolucionar 💖',
+        ? t.petGreetObjectiveSurpassed(currentObjective.title)
+        : t.petGreetObjectiveRemaining(currentObjective.title, remainingAmountFormatted),
+      t.petGreetThanks,
     ];
 
     if (!hasPettedToday) {
@@ -1160,7 +1239,7 @@ export function App() {
           ...prev.gamification,
           totalXp: prev.gamification.totalXp + petXp,
           bonusXp: (prev.gamification.bonusXp || 0) + petXp,
-          gems: (prev.gamification.gems ?? 80) + petGems,
+          gems: (prev.gamification.gems ?? 0) + petGems,
           lastPetDateKey: todayDateKey,
         },
       }));
@@ -1200,7 +1279,7 @@ export function App() {
           ...prev.gamification,
           totalXp: prev.gamification.totalXp + boostedXp,
           bonusXp: (prev.gamification.bonusXp || 0) + boostedXp,
-          gems: (prev.gamification.gems ?? 80) + questGems,
+          gems: (prev.gamification.gems ?? 0) + questGems,
           claimedQuestsByDay: {
             ...(prev.gamification.claimedQuestsByDay || {}),
             [todayDateKey]: [...prevClaimed, questId],
@@ -1238,7 +1317,7 @@ export function App() {
           ...prev.gamification,
           totalXp: prev.gamification.totalXp + bonusXp,
           bonusXp: (prev.gamification.bonusXp || 0) + bonusXp,
-          gems: (prev.gamification.gems ?? 80) + chestGems,
+          gems: (prev.gamification.gems ?? 0) + chestGems,
           claimedQuestsByDay: {
             ...(prev.gamification.claimedQuestsByDay || {}),
             [todayDateKey]: [...prevClaimed, 'all_daily_bonus'],
@@ -1271,7 +1350,7 @@ export function App() {
     setIsIndieShopOpen(true);
   };
 
-  const DAILY_ASMR_GEM_CAP = 12;
+  const DAILY_ASMR_GEM_CAP = 8;
   const ASMR_CYCLE_TAPS = 50;
   const asmrTotalTaps = state.gamification.asmrTotalTaps ?? 0;
   const asmrPreferredTexture =
@@ -1334,7 +1413,7 @@ export function App() {
         },
       }));
       triggerMascotSpeech(
-        `${tex.emoji} ¡Orbe ASMR «${tex.name}» equipado! Toca el orbe para sentir su textura binaural.`
+        `${tex.emoji} ¡Orbe ASMR «${tex.name}» equipado! Toca o mantén el orbe para sentir su textura binaural.`
       );
       return;
     }
@@ -1365,7 +1444,7 @@ export function App() {
         ...prev,
         gamification: {
           ...prev.gamification,
-          gems: Math.max(0, (prev.gamification.gems ?? 80) - tex.gemCost),
+          gems: Math.max(0, (prev.gamification.gems ?? 0) - tex.gemCost),
           unlockedVaultIds: prevVault.includes(vaultSkinKey)
             ? prevVault
             : [...prevVault, vaultSkinKey],
@@ -1383,14 +1462,20 @@ export function App() {
   };
 
   const handleAsmrClick = () => {
-    const nextTaps = asmrTotalTaps + 1;
+    asmrTotalTapsRef.current = Math.max(
+      asmrTotalTapsRef.current,
+      state.gamification.asmrTotalTaps ?? 0
+    ) + 1;
+    const nextTaps = asmrTotalTapsRef.current;
     asmrTapCooldownCounterRef.current += 1;
 
+    // Rebalanced luck: cycle milestones give +1 gem (or +2 if magnet is active)
+    // Random lucky prize requires at least 45 cooldown taps and a rare 1.2% chance
     const isMilestonePrize = nextTaps % ASMR_CYCLE_TAPS === 0;
     const isLuckyRandomPrize =
       !isMilestonePrize &&
-      asmrTapCooldownCounterRef.current >= 30 &&
-      Math.random() < 0.025;
+      asmrTapCooldownCounterRef.current >= 45 &&
+      Math.random() < 0.012;
     const dropsPrize = isMilestonePrize || isLuckyRandomPrize;
 
     if (dropsPrize) {
@@ -1416,44 +1501,79 @@ export function App() {
     let prizeText = '';
 
     if (dropsPrize) {
-      const baseRawGems =
-        (isMilestonePrize ? 2 : 1) * activeGemMultiplier;
+      const baseRawGems = 1 * activeGemMultiplier;
       awardedGems = Math.min(asmrRemainingDailyGems, baseRawGems);
       awardedXp = Math.round(
-        (isMilestonePrize ? 10 : 5) * activeXpMultiplier
+        (isMilestonePrize ? 10 : 4) * activeXpMultiplier
       );
 
       if (newlyUnlockedTapStyle) {
-        prizeText = `🎉 ¡DESBLOQUEASTE «${newlyUnlockedTapStyle.name}» (${newlyUnlockedTapStyle.emoji}) por alcanzar ${nextTaps} toques! ${
-          awardedGems > 0 ? `+${awardedGems} 💎 y ` : ''
-        }+${awardedXp} XP`;
+        prizeText = t.asmrUnlockedTapStyle(
+          newlyUnlockedTapStyle.name,
+          newlyUnlockedTapStyle.emoji,
+          nextTaps,
+          awardedGems > 0 ? `+${awardedGems} 💎 ` : '',
+          awardedXp
+        );
       } else if (awardedGems > 0) {
         const nextEarnedToday = asmrGemsEarnedToday + awardedGems;
-        prizeText = `🎁 ¡Armonía ASMR! +${awardedGems} 💎 (${nextEarnedToday}/${DAILY_ASMR_GEM_CAP} hoy) y +${awardedXp} XP`;
+        prizeText = t.asmrLuckBonus(awardedGems, nextEarnedToday, DAILY_ASMR_GEM_CAP, awardedXp);
       } else {
-        prizeText = `🧘 ¡Armonía Zen! +${awardedXp} XP de Calma (Tope diario de ${DAILY_ASMR_GEM_CAP} 💎 alcanzado hoy)`;
+        prizeText = t.asmrZenCapBonus(awardedXp, DAILY_ASMR_GEM_CAP);
       }
       setLastAsmrPrizeNotice(prizeText);
       triggerMascotSpeech(prizeText);
     }
 
-    const sparkText = newlyUnlockedTapStyle
-      ? `🔓 ¡${newlyUnlockedTapStyle.emoji} ${newlyUnlockedTapStyle.name}!`
-      : dropsPrize
-      ? awardedGems > 0
-        ? `🎁 +${awardedGems} 💎 · +${awardedXp} XP`
-        : `🧘 +${awardedXp} XP Zen`
-      : `${activeAsmrTextureObj.emoji} +Calma`;
-    const sparkColor =
-      dropsPrize || newlyUnlockedTapStyle
-        ? '#FFD54F'
-        : activeAsmrTextureObj.accentColor;
-    const xOffset = Math.floor(Math.random() * 90) - 45;
+    const nowTimestamp = Date.now();
+    const isSpecialSpark =
+      Boolean(dropsPrize) || Boolean(newlyUnlockedTapStyle);
+    // When holding, throttle calm sparks to at least 720ms so labels never bunch up; special unlocks always show
+    const shouldSpawnSpark =
+      isSpecialSpark || nowTimestamp - asmrLastSparkTimeRef.current >= 720;
 
-    setAsmrFloatingSparks((prev) => [
-      ...prev.slice(-5),
-      { id: nowId, text: sparkText, color: sparkColor, xOffset },
-    ]);
+    if (shouldSpawnSpark) {
+      asmrLastSparkTimeRef.current = nowTimestamp;
+      // Staggered distinct lanes with wider horizontal spread:
+      const sparkLanes = [-64, -32, 0, 32, 64];
+      asmrSparkLaneRef.current =
+        (asmrSparkLaneRef.current + 1) % sparkLanes.length;
+      const xOffset = sparkLanes[asmrSparkLaneRef.current];
+      // Vertical variation so consecutive sparks don't overlap on the exact same plane
+      const yOffset = -((asmrSparkLaneRef.current % 3) * 8);
+      const rotDeg =
+        asmrSparkLaneRef.current % 2 === 0
+          ? -3
+          : 3;
+
+      const sparkText = newlyUnlockedTapStyle
+        ? `🔓 ¡${newlyUnlockedTapStyle.emoji} ${newlyUnlockedTapStyle.name}!`
+        : dropsPrize
+        ? awardedGems > 0
+          ? `🎁 +${awardedGems} 💎 · +${awardedXp} XP`
+          : `🧘 +${awardedXp} XP Zen`
+        : `${activeAsmrTextureObj.emoji} ${t.calmSpark}`;
+      const sparkColor =
+        dropsPrize || newlyUnlockedTapStyle
+          ? '#FFD54F'
+          : activeAsmrTextureObj.accentColor;
+
+      const newSpark = {
+        id: nowId,
+        text: sparkText,
+        color: sparkColor,
+        xOffset,
+        yOffset,
+        rotDeg,
+      };
+
+      setAsmrFloatingSparks((prev) => [...prev.slice(-3), newSpark]);
+
+      // Automatically clean up spark after 2.8s
+      window.setTimeout(() => {
+        setAsmrFloatingSparks((prev) => prev.filter((s) => s.id !== nowId));
+      }, 2800);
+    }
 
     setState((prev) => {
       const prevEarnedToday =
@@ -1468,13 +1588,13 @@ export function App() {
         ...prev,
         gamification: {
           ...prev.gamification,
-          asmrTotalTaps: (prev.gamification.asmrTotalTaps ?? 0) + 1,
+          asmrTotalTaps: nextTaps,
           asmrPreferredTexture: newlyUnlockedTapStyle
             ? newlyUnlockedTapStyle.id
             : prev.gamification.asmrPreferredTexture || 'bubbles',
           asmrGemsDateKey: todayDateKey,
           asmrGemsEarnedToday: prevEarnedToday + awardedGems,
-          gems: (prev.gamification.gems ?? 80) + awardedGems,
+          gems: (prev.gamification.gems ?? 0) + awardedGems,
           totalXp: prev.gamification.totalXp + awardedXp,
           bonusXp: (prev.gamification.bonusXp || 0) + awardedXp,
           unlockedVaultIds:
@@ -1485,6 +1605,78 @@ export function App() {
       };
     });
   };
+
+  const handleStartAsmrHold = () => {
+    if (isHoldingActiveRef.current) return;
+    isHoldingActiveRef.current = true;
+    setIsAsmrHolding(true);
+    asmrHoldMouseDownFiredRef.current = true;
+
+    // Immediate initial click
+    handleAsmrClick();
+
+    if (asmrHoldTimerRef.current) {
+      window.clearTimeout(asmrHoldTimerRef.current);
+      asmrHoldTimerRef.current = null;
+    }
+
+    // Brisk, accelerated starting speed: 235ms (~4.25 taps/sec)
+    asmrHoldIntervalRef.current = 235;
+    asmrHoldLastShiftTimeRef.current = Date.now();
+
+    const scheduleNextHoldTick = () => {
+      if (!isHoldingActiveRef.current) return;
+
+      const now = Date.now();
+      // Every 550ms of continuous holding, the speed accelerates steadily
+      if (now - asmrHoldLastShiftTimeRef.current >= 550) {
+        asmrHoldLastShiftTimeRef.current = now;
+        // 92% probability accelerates by 5-9ms, never increases interval during a hold session
+        const accelerates = Math.random() < 0.92;
+        const delta = accelerates ? -(Math.floor(Math.random() * 5) + 5) : 0;
+        asmrHoldIntervalRef.current = Math.min(
+          235,
+          Math.max(160, asmrHoldIntervalRef.current + delta)
+        );
+      }
+
+      asmrHoldTimerRef.current = window.setTimeout(() => {
+        if (!isHoldingActiveRef.current) return;
+        handleAsmrClick();
+        scheduleNextHoldTick();
+      }, asmrHoldIntervalRef.current);
+    };
+
+    scheduleNextHoldTick();
+  };
+
+  const handleStopAsmrHold = () => {
+    isHoldingActiveRef.current = false;
+    setIsAsmrHolding(false);
+    asmrHoldIntervalRef.current = 235;
+    if (asmrHoldTimerRef.current) {
+      window.clearTimeout(asmrHoldTimerRef.current);
+      asmrHoldTimerRef.current = null;
+    }
+  };
+
+  const handleClickOrb = () => {
+    // If the tap was already triggered on mouseDown, consume the flag and avoid double-clicking
+    if (asmrHoldMouseDownFiredRef.current) {
+      asmrHoldMouseDownFiredRef.current = false;
+      return;
+    }
+    handleAsmrClick();
+  };
+
+  useEffect(() => {
+    return () => {
+      isHoldingActiveRef.current = false;
+      if (asmrHoldTimerRef.current) {
+        window.clearTimeout(asmrHoldTimerRef.current);
+      }
+    };
+  }, []);
 
   const handleSelectCardCosmetic = (cosmetic: CardCosmeticDefinition) => {
     const isOwned =
@@ -1524,7 +1716,7 @@ export function App() {
         ...prev,
         gamification: {
           ...prev.gamification,
-          gems: Math.max(0, (prev.gamification.gems ?? 80) - cosmetic.gemCost),
+          gems: Math.max(0, (prev.gamification.gems ?? 0) - cosmetic.gemCost),
           unlockedVaultIds: prevVault.includes(cosmetic.id)
             ? prevVault
             : [...prevVault, cosmetic.id],
@@ -1580,7 +1772,7 @@ export function App() {
         ...prev,
         gamification: {
           ...prev.gamification,
-          gems: Math.max(0, (prev.gamification.gems ?? 80) - pack.gemCost),
+          gems: Math.max(0, (prev.gamification.gems ?? 0) - pack.gemCost),
           unlockedVaultIds: prevVault.includes(pack.id)
             ? prevVault
             : [...prevVault, pack.id],
@@ -1634,8 +1826,8 @@ export function App() {
         gamification: {
           ...prev.gamification,
           gems: isOwned
-            ? prev.gamification.gems ?? 80
-            : Math.max(0, (prev.gamification.gems ?? 80) - styleItem.gemCost),
+            ? prev.gamification.gems ?? 0
+            : Math.max(0, (prev.gamification.gems ?? 0) - styleItem.gemCost),
           unlockedVaultIds:
             isOwned || prevVault.includes(styleItem.id)
               ? prevVault
@@ -1697,7 +1889,7 @@ export function App() {
         ...prev,
         gamification: {
           ...prev.gamification,
-          gems: Math.max(0, (prev.gamification.gems ?? 80) - titleItem.gemCost),
+          gems: Math.max(0, (prev.gamification.gems ?? 0) - titleItem.gemCost),
           unlockedVaultIds: prevVault.includes(titleItem.id)
             ? prevVault
             : [...prevVault, titleItem.id],
@@ -1751,7 +1943,7 @@ export function App() {
         ...prev,
         gamification: {
           ...prev.gamification,
-          gems: Math.max(0, (prev.gamification.gems ?? 80) - skin.gemCost),
+          gems: Math.max(0, (prev.gamification.gems ?? 0) - skin.gemCost),
           unlockedSkins: currentUnlocked.includes(skin.id)
             ? currentUnlocked
             : [...currentUnlocked, skin.id],
@@ -1821,7 +2013,7 @@ export function App() {
         ...prev,
         gamification: {
           ...prev.gamification,
-          gems: Math.max(0, (prev.gamification.gems ?? 80) - buff.gemCost),
+          gems: Math.max(0, (prev.gamification.gems ?? 0) - buff.gemCost),
           xpBoostUntil: nextUntilIso,
         },
       }));
@@ -1842,7 +2034,7 @@ export function App() {
         ...prev,
         gamification: {
           ...prev.gamification,
-          gems: Math.max(0, (prev.gamification.gems ?? 80) - buff.gemCost),
+          gems: Math.max(0, (prev.gamification.gems ?? 0) - buff.gemCost),
           gemMagnetUntil: nextUntilIso,
         },
       }));
@@ -1873,11 +2065,11 @@ export function App() {
         ...prev,
         gamification: {
           ...prev.gamification,
-          gems: Math.max(0, (prev.gamification.gems ?? 80) - buff.gemCost),
+          gems: Math.max(0, (prev.gamification.gems ?? 0) - buff.gemCost),
           totalXp: prev.gamification.totalXp + awardedXp,
           bonusXp: (prev.gamification.bonusXp || 0) + awardedXp,
           streakShields:
-            (prev.gamification.streakShields ?? 1) + addedShields,
+            (prev.gamification.streakShields ?? 0) + addedShields,
           unlockedVaultIds:
             shouldRecordId && !prevVault.includes(buff.id)
               ? [...prevVault, buff.id]
@@ -1948,8 +2140,10 @@ export function App() {
       const nextVault = pack.unlocksAllSkins
         ? Array.from(new Set([...prevVault, ...allVaultIds]))
         : prevVault;
+      const isFounderPack =
+        pack.id === 'pack_founder' || pack.id === 'pack_bundle_ultimate';
       const nextTier =
-        pack.id === 'pack_founder' || prev.gamification.isIndieFounder
+        isFounderPack || prev.gamification.isIndieFounder
           ? 'founder'
           : 'coffee';
 
@@ -1957,22 +2151,19 @@ export function App() {
         ...prev,
         gamification: {
           ...prev.gamification,
-          gems: (prev.gamification.gems ?? 80) + pack.gemsIncluded,
+          gems: (prev.gamification.gems ?? 0) + pack.gemsIncluded,
           streakShields:
-            (prev.gamification.streakShields ?? 1) + pack.shieldsIncluded,
+            (prev.gamification.streakShields ?? 0) + pack.shieldsIncluded,
           unlockedSkins: nextUnlocked,
           unlockedVaultIds: nextVault,
-          equippedSkinId:
-            pack.id === 'pack_founder'
-              ? 'skin_prismatic_founder'
-              : prev.gamification.equippedSkinId || 'default',
-          equippedTitleId:
-            pack.id === 'pack_founder'
-              ? 'title_founder'
-              : prev.gamification.equippedTitleId || 'title_seed',
+          equippedSkinId: isFounderPack
+            ? 'skin_prismatic_founder'
+            : prev.gamification.equippedSkinId || 'default',
+          equippedTitleId: isFounderPack
+            ? 'title_founder'
+            : prev.gamification.equippedTitleId || 'title_seed',
           isIndieFounder:
-            Boolean(prev.gamification.isIndieFounder) ||
-            pack.id === 'pack_founder',
+            Boolean(prev.gamification.isIndieFounder) || isFounderPack,
           supporterTier: nextTier,
           redeemedLicenseTxIds: result.receiptId
             ? Array.from(new Set([...prevTxIds, result.receiptId]))
@@ -1991,13 +2182,15 @@ export function App() {
         : 'Google Play Billing';
 
     setMascotJoyId(Date.now());
+    const isFounderPack =
+      pack.id === 'pack_founder' || pack.id === 'pack_bundle_ultimate';
     triggerCelebration(
-      pack.id === 'pack_founder'
+      isFounderPack
         ? '¡Gracias, Fundador Indie! 👑'
         : `¡Gracias por apoyar (${gatewayLabel})! ${pack.emoji}`,
       `Recibiste +${pack.gemsIncluded} 💎 Gemas, +${pack.shieldsIncluded} 🛡️ Escudos${
         pack.unlocksAllSkins
-          ? ', TODOS los cosméticos del Banco y +20% XP permanente'
+          ? `, TODOS los cosméticos del Banco y +${pack.permanentXpBonusPct}% XP permanente`
           : ''
       }.${
         result.licenseCode
@@ -2046,9 +2239,9 @@ export function App() {
         ...prev,
         gamification: {
           ...prev.gamification,
-          gems: (prev.gamification.gems ?? 80) + rewardedGems,
+          gems: (prev.gamification.gems ?? 0) + rewardedGems,
           streakShields:
-            (prev.gamification.streakShields ?? 1) + rewardedShields,
+            (prev.gamification.streakShields ?? 0) + rewardedShields,
           unlockedSkins: unlocksFounder
             ? Array.from(new Set([...prevUnlocked, ...allSkinIds]))
             : prevUnlocked,
@@ -2235,17 +2428,34 @@ export function App() {
   const progressText = `${Math.floor(progress * 100)}%`;
   const remainingText =
     currentObjective.currentAmount >= currentObjective.goalAmount
-      ? '¡Objetivo completado!'
-      : `¡A solo ${formatObjectiveAmount(
-          currentObjective.goalAmount - currentObjective.currentAmount,
-          currentObjective
-        )} de la meta! Un último impulso 🚀`;
+      ? t.goalCompletedCelebration
+      : t.remainingToGoalShort(
+          formatObjectiveAmount(
+            currentObjective.goalAmount - currentObjective.currentAmount,
+            currentObjective
+          )
+        );
 
   const hasValidSelectedAmount = useMemo(() => {
     if (selectedQuickAmount !== null) return true;
     const parsed = Number(customAmountText.replace(',', '.'));
     return !Number.isNaN(parsed) && parsed > 0;
   }, [selectedQuickAmount, customAmountText]);
+
+  const projectedGoalProgress = useMemo(() => {
+    if (!hasValidSelectedAmount) return null;
+    const effectiveAmount = isAddition
+      ? selectedAmount
+      : -Math.min(selectedAmount, Math.max(1, currentObjective.currentAmount));
+    const nextAmount = Math.max(0, currentObjective.currentAmount + effectiveAmount);
+    const nextPct = Math.min(100, Math.round((nextAmount / Math.max(1, currentObjective.goalAmount)) * 100));
+    const nextRemaining = Math.max(0, currentObjective.goalAmount - nextAmount);
+    return {
+      nextAmount,
+      nextPct,
+      nextRemainingFormatted: formatObjectiveAmount(nextRemaining, currentObjective),
+    };
+  }, [hasValidSelectedAmount, isAddition, selectedAmount, currentObjective]);
 
   const liveXpPreview = useMemo(() => {
     if (!hasValidSelectedAmount) return null;
@@ -2274,9 +2484,9 @@ export function App() {
       activeXpMultiplier > 1
         ? `buff ×${activeXpMultiplier.toFixed(1)} XP`
         : !hadEntryToday
-        ? 'incluye bono diario'
+        ? t.dailyBonusIncluded
         : isAddition && previewStreak > 1
-        ? `racha x${previewStreak}d`
+        ? t.streakMultiplier(previewStreak)
         : '';
     return {
       estimatedXp,
@@ -2296,6 +2506,7 @@ export function App() {
     xpAtNextLevel,
     xpAtLevelStart,
     xpForCurrentLevel,
+    t,
   ]);
 
   const filteredEntries = useMemo(() => {
@@ -2475,7 +2686,7 @@ export function App() {
         newlyUnlocked.length * 15 +
         levelsGained * 15) *
       activeGemMultiplier;
-    nextGamification.gems = (state.gamification.gems ?? 80) + earnedGems;
+    nextGamification.gems = (state.gamification.gems ?? 0) + earnedGems;
     const nextTier = Math.floor((Math.min(200, Math.max(1, nextLevel)) - 1) / 10);
     const nextMascotEmoji = mascotEmojis[nextTier] || '🪐';
     const nextMascotMessage = mascotMessages[nextTier] || mascotMessages[0];
@@ -2781,7 +2992,7 @@ export function App() {
     setConfirmDialog({
       title: 'Eliminar objetivo',
       message: `¿Eliminar '${target.title}' y todas sus entradas? Esta acción no se puede deshacer.`,
-      confirmText: 'Eliminar',
+      confirmText: t.deleteConfirmAction,
       onConfirm: () => {
         setConfirmDialog(null);
         const activeCount = state.objectives.filter((o) => !o.isArchived).length;
@@ -2815,7 +3026,7 @@ export function App() {
   const handleDeleteEntry = (entryId: string) => {
     setConfirmDialog({
       title: 'Eliminar entrada',
-      message: '¿Eliminar esta entrada del historial?',
+      message: t.deleteEntryHistoryPrompt,
       confirmText: 'Eliminar',
       onConfirm: () => {
         setConfirmDialog(null);
@@ -2932,20 +3143,25 @@ export function App() {
     setIsBannerPickerOpen(false);
   };
 
-  const handleAchievementClick = (def: AchievementDefinition) => {
+  const handleAchievementClick = (rawDef: AchievementDefinition) => {
+    const def = getLocalizedAchievement(rawDef, appLanguage);
     const isUnlocked = currentObjective.unlockedAchievementIds.includes(def.id);
     const title =
-      def.isSecret && !isUnlocked ? 'Logro oculto' : `${def.icon} ${def.title}`;
+      def.isSecret && !isUnlocked ? t.secretAchievement : `${def.icon} ${def.title}`;
+    const hintPrefix = appLanguage === 'es' ? 'Pista: ' : appLanguage === 'pt' ? 'Dica: ' : 'Hint: ';
     const detail =
       def.isSecret && !isUnlocked
-        ? `Pista: ${def.description}`
+        ? `${hintPrefix}${def.description}`
         : def.description;
+    const unlockedLabel = appLanguage === 'es' ? 'Desbloqueado' : appLanguage === 'pt' ? 'Desbloqueado' : 'Unlocked';
+    const lockedLabel = appLanguage === 'es' ? 'Por desbloquear' : appLanguage === 'pt' ? 'A desbloquear' : 'Locked';
+    const rewardLabel = appLanguage === 'es' ? 'Recompensa' : appLanguage === 'pt' ? 'Recompensa' : 'Reward';
     const statusText = isUnlocked
-      ? `Desbloqueado · +${def.rewardXp} XP`
-      : 'Por desbloquear';
+      ? `${unlockedLabel} · +${def.rewardXp} XP`
+      : lockedLabel;
     const status = isUnlocked
       ? statusText
-      : `${statusText} · Recompensa: ${def.rewardXp} XP`;
+      : `${statusText} · ${rewardLabel}: ${def.rewardXp} XP`;
 
     setSelectedAchievementDetail({ title, detail, status });
   };
@@ -2965,7 +3181,7 @@ export function App() {
   }, [currentObjective.accentColor]);
 
   const currentIcon = currentObjective.icon || '🎯';
-  const currentCategory = currentObjective.category || 'Objetivo';
+  const currentCategory = currentObjective.category || t.categoryFallback;
 
   // Projected objective progress when user selects an amount
   const projectedObjectiveProgress = useMemo(() => {
@@ -3110,7 +3326,7 @@ export function App() {
                 onClick={() => setCelebration(null)}
                 className="mt-2 px-5 py-2 rounded-[10px] bg-[#604094] text-white font-semibold text-sm hover:bg-[#7549B8] transition"
               >
-                Cerrar
+                {t.closeButton}
               </button>
             )}
           </div>
@@ -3135,12 +3351,14 @@ export function App() {
             setIsHistoryOpen(false);
             setIsNavigationOpen(true);
           }}
-          aria-label="Abrir barra lateral"
-          title="Abrir navegación"
+          aria-label={t.openNavAria}
+          title={t.openNavAria}
           className="lg:hidden fixed left-2.5 bottom-4 z-30 h-11 px-3.5 rounded-full bg-[#242238]/95 border border-[#5B4588] text-[#E6D9FF] shadow-[0_8px_24px_rgba(0,0,0,0.55)] backdrop-blur-md flex items-center gap-2 active:scale-95 transition"
         >
           <span className="text-[18px] leading-none">☰</span>
-          <span className="text-[11px] font-semibold tracking-wide">Menú</span>
+          <span className="text-[11px] font-semibold tracking-wide">
+            {t.floatingMenuBtn}
+          </span>
         </button>
       )}
 
@@ -3163,18 +3381,18 @@ export function App() {
                   className="w-10 h-10 rounded-[13px] object-cover border border-[#B58BFF]/50 shadow-[0_0_16px_rgba(140,92,224,0.35)] shrink-0"
                 />
                 <div className="min-w-0">
-                  <div className="text-[16px] sm:text-[17px] font-extrabold tracking-tight leading-tight">
+                  <div className="text-[16px] sm:text-[17px] font-extrabold tracking-tight leading-tight whitespace-nowrap">
                     <span className="text-[#F4F1FF]">Objective</span>{' '}
                     <span className="text-[#82E59B]">Reacher</span>
                   </div>
-                  <div className="text-[11px] text-[#AAA5BB] leading-tight">
-                    Tu progreso, a tu ritmo
+                  <div className="text-[11px] text-[#AAA5BB] leading-tight whitespace-nowrap">
+                    {t.brandTagline}
                   </div>
                 </div>
               </div>
               <button
                 onClick={() => setIsNavigationOpen(false)}
-                aria-label="Cerrar menú"
+                aria-label={t.closeMenu}
                 className="lg:hidden w-8 h-8 rounded-[10px] bg-[#242238] text-[#D9C9FF] text-sm flex items-center justify-center shrink-0"
               >
                 ✕
@@ -3185,17 +3403,17 @@ export function App() {
               {[
                 {
                   key: 'objective',
-                  label: '🎯   Objetivo actual',
+                  label: t.navObjective,
                   action: () => highlightSection('objective', objectiveRef),
                 },
                 {
                   key: 'entries',
-                  label: '＋   Entradas',
+                  label: `＋   ${t.registerProgress}`,
                   action: () => highlightSection('entries', entriesRef),
                 },
                 {
                   key: 'history',
-                  label: '▤   Historial',
+                  label: `▤   ${t.historyTitle}`,
                   action: () => {
                     setActiveNav('history');
                     setIsNavigationOpen(false);
@@ -3208,27 +3426,27 @@ export function App() {
                 },
                 {
                   key: 'stats',
-                  label: '▥   Estadísticas',
+                  label: t.navStats,
                   action: () => highlightSection('stats', statsRef),
                 },
                 {
                   key: 'achievements',
-                  label: '🏆   Logros',
+                  label: t.navAchievements,
                   action: () => highlightSection('achievements', achievementsRef),
                 },
                 {
                   key: 'asmr_clicker',
-                  label: `🫧   Clicker ASMR & Orbes (${ASMR_TEXTURES.length})`,
+                  label: `🫧   ${t.navAsmr} (${ASMR_TEXTURES.length})`,
                   action: () => openAndScrollToAsmrSanctuary(),
                 },
                 {
                   key: 'indie_shop',
-                  label: `💎   Skins, Buffs & Indie (${gems})`,
+                  label: `💎   ${t.navSanctuary} (${gems})`,
                   action: () => openIndieShop('skins'),
                 },
                 {
                   key: 'settings',
-                  label: '⚙   Ajustes',
+                  label: `⚙   ${t.objectiveSettings}`,
                   action: () => highlightSection('settings', settingsRef),
                 },
               ].map((item) => {
@@ -3253,9 +3471,11 @@ export function App() {
           <div className="space-y-2.5 mt-4 shrink-0">
             <div className="rounded-[14px] border border-[#343046] bg-[#211F30] p-3 space-y-1">
               <div className="flex items-center justify-between text-[12px]">
-                <span className="text-[#FFC45D] font-bold">🔥 Racha activa</span>
+                <span className="text-[#FFC45D] font-bold">
+                  🔥 {t.sidebarActiveStreak}
+                </span>
                 <span className="text-[11px] text-[#82E59B] font-mono-tabular">
-                  🛡️ {streakShields} {streakShields === 1 ? 'escudo' : 'escudos'}
+                  🛡️ {t.shieldsUnit(streakShields)}
                 </span>
               </div>
               <div className="text-[12px] text-[#E4DFED]">{streakText}</div>
@@ -3270,18 +3490,17 @@ export function App() {
               <div className="flex items-center justify-between gap-1">
                 <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#FFD54F]">
                   {isIndieFounder
-                    ? '👑 FUNDADOR INDIE'
+                    ? t.sidebarFounderBadge
                     : supporterTier === 'coffee'
-                    ? '☕ SUPPORTER INDIE'
-                    : '💖 PROYECTO 100% INDIE'}
+                    ? t.sidebarSupporterBadge
+                    : t.sidebarIndieProject}
                 </span>
                 <span className="text-[11px] font-mono-tabular font-bold text-[#9AF0AE]">
                   💎 {gems}
                 </span>
               </div>
               <div className="text-[11px] text-[#E6D9FF] leading-snug">
-                Creado por 1 dev independiente · <strong>0% anuncios</strong>.
-                Explora Skins, Buffs y cómo apoyar.
+                {t.indieDevEmpathySidebar}
               </div>
             </button>
           </div>
@@ -3292,31 +3511,31 @@ export function App() {
           {/* Sticky Header Bar: Relative Full-Width Single-Row Layout with Notch Safe-Area Protection */}
           <div className="sticky top-0 z-20 -mx-2.5 sm:-mx-4 pt-[max(clamp(0.42rem,1.8vw,0.6rem),calc(env(safe-area-inset-top,0px)+0.35rem))] pb-[clamp(0.42rem,1.8vw,0.6rem)] pl-[max(clamp(0.5rem,2.4vw,1rem),calc(env(safe-area-inset-left,0px)+0.35rem))] pr-[max(clamp(0.5rem,2.4vw,1rem),calc(env(safe-area-inset-right,0px)+0.35rem))] bg-[#11121C]/95 backdrop-blur-md border-b border-[#29283C]/85 shadow-[0_6px_20px_rgba(7,8,16,0.45)]">
             <div className="flex flex-nowrap items-center justify-between w-full gap-[clamp(0.35rem,1.6vw,0.65rem)]">
-              {/* Left: Menu Drawer Button + Fluid Brand Emblem & Name */}
-              <div className="flex items-center gap-[clamp(0.28rem,1.3vw,0.5rem)] min-w-0 flex-1 sm:flex-initial">
+              {/* Left: Menu Drawer Button + Fluid Brand Emblem & Name (Never truncated or ellipsized) */}
+              <div className="flex items-center gap-[clamp(0.28rem,1.3vw,0.5rem)] shrink-0">
                 <button
                   onClick={() => {
                     playUiTap(1);
                     setIsHistoryOpen(false);
                     setIsNavigationOpen(true);
                   }}
-                  aria-label="Abrir navegación"
+                  aria-label={t.openNav}
                   className="lg:hidden w-[clamp(1.85rem,8vw,2.2rem)] h-[clamp(1.85rem,8vw,2.2rem)] rounded-[clamp(8px,2.2vw,10px)] bg-[#242238] border border-[#383252] text-[#D9C9FF] text-[clamp(0.8rem,3.5vw,0.95rem)] flex items-center justify-center shrink-0 hover:bg-[#302747] active:scale-95 transition"
                 >
                   ☰
                 </button>
 
-                <div className="h-[clamp(1.85rem,8vw,2.2rem)] inline-flex items-center gap-[clamp(0.3rem,1.4vw,0.5rem)] px-[clamp(0.45rem,2vw,0.75rem)] rounded-[clamp(8px,2.2vw,10px)] bg-[#1A1829] border border-[#453A6B] shadow-[0_2px_10px_rgba(0,0,0,0.3)] min-w-0">
+                <div className="h-[clamp(1.85rem,8vw,2.2rem)] inline-flex items-center gap-[clamp(0.3rem,1.4vw,0.5rem)] px-[clamp(0.45rem,2vw,0.75rem)] rounded-[clamp(8px,2.2vw,10px)] bg-[#1A1829] border border-[#453A6B] shadow-[0_2px_10px_rgba(0,0,0,0.3)] shrink-0 flex-shrink-0 whitespace-nowrap min-w-max">
                   <img
                     src="/pwa-192x192.png"
                     alt="Objective Reacher"
                     className="w-[clamp(1.15rem,5vw,1.4rem)] h-[clamp(1.15rem,5vw,1.4rem)] rounded-[clamp(5px,1.5vw,7px)] object-cover border border-[#B58BFF]/45 shrink-0"
                   />
-                  <div className="flex items-center gap-[clamp(0.2rem,0.9vw,0.35rem)] leading-none min-w-0">
-                    <span className="text-[clamp(0.62rem,2.75vw,0.8rem)] font-black uppercase tracking-[0.04em] sm:tracking-[0.06em] text-[#F4F1FF] truncate">
+                  <div className="flex items-center gap-[clamp(0.2rem,0.9vw,0.35rem)] leading-none shrink-0 whitespace-nowrap">
+                    <span className="text-[clamp(0.66rem,2.8vw,0.82rem)] font-black uppercase tracking-[0.04em] sm:tracking-[0.06em] text-[#F4F1FF] whitespace-nowrap select-none">
                       OBJECTIVE
                     </span>
-                    <span className="text-[clamp(0.62rem,2.75vw,0.8rem)] font-black uppercase tracking-[0.05em] sm:tracking-[0.08em] text-[#82E59B] truncate">
+                    <span className="text-[clamp(0.66rem,2.8vw,0.82rem)] font-black uppercase tracking-[0.05em] sm:tracking-[0.08em] text-[#82E59B] whitespace-nowrap select-none">
                       REACHER
                     </span>
                   </div>
@@ -3330,13 +3549,13 @@ export function App() {
                     borderColor: `${equippedGuardianTitle.color}55`,
                   }}
                   className="hidden md:inline-flex px-2 py-0.5 rounded-full bg-[#1C192B] border text-[9px] font-extrabold hover:brightness-110 transition whitespace-nowrap shrink-0"
-                  title="Cambiar Título de Guardián en el Banco del Santuario"
+                  title={t.guardianTitleTooltip}
                 >
                   {equippedGuardianTitle.emoji} {equippedGuardianTitle.title}
                 </button>
                 {isIndieFounder && (
                   <span className="hidden sm:inline-flex px-1.5 py-0.5 rounded-full bg-[#3A2E14] border border-[#FFD54F]/60 text-[9px] font-extrabold text-[#FFD54F] whitespace-nowrap shrink-0">
-                    👑 FUNDADOR
+                    {t.founderBadge}
                   </span>
                 )}
               </div>
@@ -3345,7 +3564,7 @@ export function App() {
               <div className="flex items-center justify-end gap-[clamp(0.22rem,1.1vw,0.42rem)] shrink-0">
                 <button
                   onClick={() => openIndieShop('skins')}
-                  title={`Abrir Santuario Indie (${gems.toLocaleString()} gemas): Skins, Buffs y Apoyo al Creador`}
+                  title={t.openStoreTooltip(gems)}
                   className="h-[clamp(1.85rem,8vw,2.2rem)] px-[clamp(0.45rem,1.9vw,0.75rem)] rounded-[clamp(8px,2.2vw,10px)] bg-gradient-to-r from-[#2B2144] to-[#212B38] border border-[#65499C] hover:border-[#B58BFF] text-[#F4F1FF] text-[clamp(0.62rem,2.7vw,0.78rem)] font-extrabold flex items-center justify-center gap-[clamp(0.22rem,1vw,0.35rem)] transition shrink-0 shadow-[0_2px_10px_rgba(140,92,224,0.22)] active:scale-95"
                 >
                   <span className="text-[clamp(0.68rem,2.9vw,0.82rem)] leading-none shrink-0">
@@ -3357,16 +3576,24 @@ export function App() {
                       : gems}
                   </span>
                   <span className="hidden sm:inline text-[10px] font-bold text-[#D8C5FF]">
-                    · Tienda
+                    · {t.store}
                   </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => openIndieShop('support')}
+                  title={t.headerSupportDevTooltip}
+                  className="h-[clamp(1.85rem,8vw,2.2rem)] px-[clamp(0.42rem,1.8vw,0.65rem)] rounded-[clamp(8px,2.2vw,10px)] bg-gradient-to-r from-[#3D2554] to-[#251A3B] border border-[#FFD54F]/60 hover:border-[#FFD54F] text-[#FFD54F] text-[clamp(0.62rem,2.7vw,0.78rem)] font-extrabold flex items-center justify-center gap-1 transition shrink-0 shadow-[0_2px_10px_rgba(255,213,79,0.2)] active:scale-95"
+                >
+                  <span className="leading-none text-[clamp(0.68rem,2.9vw,0.82rem)]">💖</span>
+                  <span className="tracking-tight">{t.headerSupportDev}</span>
                 </button>
 
                 <button
                   onClick={toggleAmbientMusic}
                   aria-label={
-                    sensoryPrefs.musicEnabled
-                      ? 'Desactivar música ambiental procedural'
-                      : 'Activar música ambiental procedural'
+                    sensoryPrefs.musicEnabled ? t.ambientMusicTooltipOn(getAmbientMusicStyleName(currentObjective.accentColor)) : t.ambientMusicTooltipOff(getAmbientMusicStyleName(currentObjective.accentColor))
                   }
                   title={
                     sensoryPrefs.musicEnabled
@@ -3389,9 +3616,7 @@ export function App() {
                 <button
                   onClick={toggleSoundAndHaptics}
                   aria-label={
-                    sensoryPrefs.soundEnabled
-                      ? 'Silenciar sonidos y vibración'
-                      : 'Activar sonidos y vibración'
+                    sensoryPrefs.soundEnabled ? t.soundHapticsTooltipOn : t.soundHapticsTooltipOff
                   }
                   title={
                     sensoryPrefs.soundEnabled
@@ -3413,8 +3638,8 @@ export function App() {
                     setIsNavigationOpen(false);
                     setIsHistoryOpen(true);
                   }}
-                  aria-label="Abrir historial de entradas"
-                  title="Ver historial de movimientos"
+                  aria-label={t.openHistory}
+                  title={t.history}
                   className="lg:hidden w-[clamp(1.85rem,8vw,2.2rem)] h-[clamp(1.85rem,8vw,2.2rem)] rounded-[clamp(8px,2.2vw,10px)] bg-[#242238] border border-[#383252] text-[#D9C9FF] text-[clamp(0.78rem,3.4vw,0.92rem)] flex items-center justify-center shrink-0 hover:bg-[#302747] active:scale-95 transition"
                 >
                   ☷
@@ -3436,8 +3661,8 @@ export function App() {
                       behavior: 'smooth',
                     });
                   }}
-                  aria-label="Desplazar objetivos a la izquierda"
-                  title="Desplazar a la izquierda"
+                  aria-label={t.scrollLeft}
+                  title={t.scrollLeft}
                   className="w-7 h-9 rounded-[10px] bg-[#1F1E2E] border border-[#34304B] text-[#D9C9FF] hover:bg-[#2B2740] active:scale-95 transition flex items-center justify-center shrink-0 text-sm font-bold"
                 >
                   ‹
@@ -3510,8 +3735,8 @@ export function App() {
                       behavior: 'smooth',
                     });
                   }}
-                  aria-label="Desplazar objetivos a la derecha"
-                  title="Desplazar a la derecha"
+                  aria-label={t.scrollRight}
+                  title={t.scrollRight}
                   className="w-7 h-9 rounded-[10px] bg-[#1F1E2E] border border-[#34304B] text-[#D9C9FF] hover:bg-[#2B2740] active:scale-95 transition flex items-center justify-center shrink-0 text-sm font-bold"
                 >
                   ›
@@ -3520,41 +3745,43 @@ export function App() {
             </div>
           </div>
 
-          {/* Subheader: Count + Ver todos toggle + Archivados + Nuevo objetivo */}
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="flex items-center gap-2">
-              <span className="text-[12px] text-[#A8A3B8]">
-                {activeObjectives.length}{' '}
-                {activeObjectives.length === 1 ? 'objetivo activo' : 'objetivos activos'}
-              </span>
-              {activeObjectives.length > 2 && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    playUiTap(1);
-                    setIsObjectiveTabsWrapped((prev) => !prev);
-                  }}
-                  className="px-2 py-0.5 rounded-[8px] bg-[#211E32] border border-[#383350] text-[#C7A4FF] text-[11px] font-semibold hover:bg-[#2C2844] transition"
-                >
-                  {isObjectiveTabsWrapped ? '↔ 1 fila' : '☷ Ver todos'}
-                </button>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
+          {/* Subheader: Count + Ver todos toggle + Archivados (left) + Nuevo objetivo (right) */}
+          <div className="w-full space-y-2">
+            {activeObjectives.length > 1 && (
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] text-[#A8A3B8]">
+                  {t.activeObjectivesCount(activeObjectives.length)}
+                </span>
+                {activeObjectives.length > 2 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playUiTap(1);
+                      setIsObjectiveTabsWrapped((prev) => !prev);
+                    }}
+                    className="px-2.5 py-0.5 rounded-[8px] bg-[#211E32] border border-[#383350] text-[#C7A4FF] text-[11px] font-semibold hover:bg-[#2C2844] transition"
+                  >
+                    {isObjectiveTabsWrapped ? t.oneRowToggle : t.viewAllToggle}
+                  </button>
+                )}
+              </div>
+            )}
+
+            <div className="flex items-center justify-between gap-2 w-full">
               <button
                 onClick={() => {
                   if (archivedObjectives.length === 0) {
                     setAlertDialog({
-                      title: 'Archivados',
-                      message: 'No hay objetivos archivados.',
+                      title: t.archived,
+                      message: t.noArchivedGoals,
                     });
                   } else {
                     setIsArchivedModalOpen(true);
                   }
                 }}
-                className="px-2.5 py-1.5 rounded-[10px] bg-[#262338] border border-[#383350] text-[#E2D8FF] text-[12px] hover:bg-[#322D49] transition"
+                className="px-3 py-1.5 rounded-[10px] bg-[#262338] border border-[#383350] text-[#E2D8FF] text-[12px] hover:bg-[#322D49] transition shrink-0"
               >
-                Archivados ({archivedObjectives.length})
+                {t.archivedCount(archivedObjectives.length)}
               </button>
               <button
                 onClick={handleStartNewObjective}
@@ -3563,10 +3790,10 @@ export function App() {
                   color: currentAccentTheme.buttonText,
                   boxShadow: `0 4px 14px -2px ${currentAccentTheme.glow}`,
                 }}
-                className="px-3.5 py-1.5 rounded-[11px] text-[12px] font-extrabold hover:brightness-110 active:scale-95 transition flex items-center gap-1"
+                className="ml-auto px-3.5 py-1.5 rounded-[11px] text-[12px] font-extrabold hover:brightness-110 active:scale-95 transition flex items-center gap-1 shrink-0"
               >
                 <span>＋</span>
-                <span>Nuevo objetivo</span>
+                <span>{t.newObjective}</span>
               </button>
             </div>
           </div>
@@ -3663,10 +3890,10 @@ export function App() {
                         }`}
                       >
                         {objectiveInsights.daysLeft < 0
-                          ? '⌛ Fecha cumplida'
+                          ? t.dateOverdue
                           : objectiveInsights.daysLeft === 0
-                          ? '⏳ ¡Hoy es la fecha meta!'
-                          : `⏳ ${objectiveInsights.daysLeft}d restantes`}
+                          ? t.dateTodayDue
+                          : t.daysRemaining(objectiveInsights.daysLeft)}
                       </span>
                     )}
                   </div>
@@ -3675,7 +3902,7 @@ export function App() {
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button
                       onClick={() => openIndieShop('cards_audio')}
-                      title={`Marco activo: ${equippedCardCosmetic.name} (toca para explorar 48 marcos y 30 sonidos)`}
+                      title={t.activeFrameTooltip(equippedCardCosmetic.name)}
                       style={{
                         backgroundColor: currentAccentTheme.surfaceDark,
                         borderColor:
@@ -3687,11 +3914,11 @@ export function App() {
                       className="px-2.5 py-1.5 rounded-[11px] hover:brightness-110 border backdrop-blur-md text-[11px] font-semibold transition flex items-center gap-1"
                     >
                       <span>{equippedCardCosmetic.cornerCrest || '✨'}</span>
-                      <span className="hidden sm:inline">Marcos & FX</span>
+                      <span className="hidden sm:inline">{t.framesAndFx}</span>
                     </button>
                     <button
                       onClick={() => setIsEditorOpen(true)}
-                      title="Personalizar objetivo"
+                      title={t.customizeObjectiveTooltip}
                       style={{
                         backgroundColor: currentAccentTheme.surfaceDark,
                         borderColor: `${currentAccentTheme.primary}40`,
@@ -3700,11 +3927,13 @@ export function App() {
                       className="px-2.5 py-1.5 rounded-[11px] hover:brightness-110 border backdrop-blur-md text-[11px] font-semibold transition flex items-center gap-1"
                     >
                       <span>🎨</span>
-                      <span className="hidden sm:inline">Personalizar</span>
+                      <span className="hidden sm:inline">
+                        {t.customizeObjective}
+                      </span>
                     </button>
                     <button
                       onClick={() => setIsBannerPickerOpen(true)}
-                      title="Cambiar arte o foto de fondo"
+                      title={t.changeBackgroundTooltip}
                       style={{
                         backgroundColor: currentAccentTheme.surfaceDark,
                         borderColor: `${currentAccentTheme.primary}40`,
@@ -3713,7 +3942,9 @@ export function App() {
                       className="px-2.5 py-1.5 rounded-[11px] hover:brightness-110 border backdrop-blur-md text-[11px] font-semibold transition flex items-center gap-1"
                     >
                       <span>▧</span>
-                      <span className="hidden sm:inline">Fondo</span>
+                      <span className="hidden sm:inline">
+                        {t.changeBackground}
+                      </span>
                     </button>
                   </div>
                 </div>
@@ -3722,7 +3953,7 @@ export function App() {
                 <div className="flex items-start gap-3 min-w-0">
                   <button
                     onClick={() => setIsEditorOpen(true)}
-                    title="Cambiar icono y estilo del objetivo"
+                    title={t.changeIconTooltip}
                     style={{
                       borderColor: `${currentAccentTheme.primary}88`,
                       backgroundColor: currentAccentTheme.surfaceDark,
@@ -3750,7 +3981,7 @@ export function App() {
                         style={{ color: currentAccentTheme.primary }}
                         className="text-[11px] font-semibold hover:underline text-left"
                       >
-                        ＋ Añadir propósito o fecha límite…
+                        {t.addPledgeOrDate}
                       </button>
                     )}
                   </div>
@@ -3771,7 +4002,7 @@ export function App() {
                     style={{ color: currentAccentTheme.primary }}
                     className="text-[10px] sm:text-[11px] font-extrabold tracking-wider uppercase"
                   >
-                    LOGRADO
+                    {t.achievedBadge}
                   </div>
                   <div className="text-[18px] sm:text-[22px] font-extrabold text-white break-words tabular-nums leading-tight select-copyable">
                     {formatObjectiveAmount(
@@ -3860,7 +4091,7 @@ export function App() {
                       style={{ color: currentAccentTheme.textSoft }}
                       className="text-[9px] font-bold mt-0.5"
                     >
-                      {progress >= 1 ? '¡LOGRADO!' : 'AVANCE'}
+                      {progress >= 1 ? t.progressAchieved : t.progressAdvance}
                     </span>
                   </div>
                 </div>
@@ -3877,7 +4108,7 @@ export function App() {
                     style={{ color: currentAccentTheme.textSoft }}
                     className="text-[10px] sm:text-[11px] font-extrabold tracking-wider uppercase"
                   >
-                    META FINAL
+                    {t.finalGoalLabel}
                   </div>
                   <div className="text-[18px] sm:text-[22px] font-extrabold text-white break-words tabular-nums leading-tight select-copyable">
                     {formatObjectiveAmount(
@@ -3890,11 +4121,13 @@ export function App() {
                     className="text-[10px] leading-tight break-words"
                   >
                     {objectiveInsights.remaining > 0
-                      ? `Faltan ${formatObjectiveAmount(
-                          objectiveInsights.remaining,
-                          currentObjective
-                        )}`
-                      : '¡Meta superada! 🏆'}
+                      ? t.remainingToGoal(
+                          formatObjectiveAmount(
+                            objectiveInsights.remaining,
+                            currentObjective
+                          )
+                        )
+                      : t.goalSurpassed}
                   </div>
                 </div>
               </div>
@@ -3949,10 +4182,13 @@ export function App() {
                               ? currentAccentTheme.secondary
                               : currentAccentTheme.surfaceDark,
                           }}
-                          title={`Hito ${pctLabel}: ${formatObjectiveAmount(
-                            currentObjective.goalAmount * m,
-                            currentObjective
-                          )}`}
+                          title={t.milestoneTitle(
+                            pctLabel,
+                            formatObjectiveAmount(
+                              currentObjective.goalAmount * m,
+                              currentObjective
+                            )
+                          )}
                           className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-4 h-4 rounded-full border-2 flex items-center justify-center text-[8px] font-bold transition-all ${
                             reached
                               ? 'text-white scale-110 shadow-[0_0_8px_rgba(255,255,255,0.5)]'
@@ -3972,20 +4208,20 @@ export function App() {
                   >
                     <span className="font-medium leading-snug">
                       {objectiveInsights.nextMilestonePct !== null
-                        ? `Próximo hito (${objectiveInsights.nextMilestonePct}%): a ${formatObjectiveAmount(
-                            objectiveInsights.amountToNextMilestone,
-                            currentObjective
-                          )}`
-                        : '🏆 ¡Todos los hitos de este objetivo completados!'}
+                        ? t.nextMilestone(
+                            objectiveInsights.nextMilestonePct,
+                            formatObjectiveAmount(
+                              objectiveInsights.amountToNextMilestone,
+                              currentObjective
+                            )
+                          )
+                        : t.allMilestonesCompleted}
                     </span>
                     <span
                       style={{ color: currentAccentTheme.textMuted }}
                       className="text-[10px] font-mono-tabular shrink-0"
                     >
-                      {currentObjective.entries.length}{' '}
-                      {currentObjective.entries.length === 1
-                        ? 'registro'
-                        : 'registros'}
+                      {t.entriesCountLabel(currentObjective.entries.length)}
                     </span>
                   </div>
                 </div>
@@ -4005,15 +4241,19 @@ export function App() {
                     <span className="shrink-0">⚡</span>
                     <span className="break-words">
                       {objectiveInsights.dailyPaceNeeded !== null
-                        ? `Ritmo sugerido: ${formatObjectiveAmount(
-                            objectiveInsights.dailyPaceNeeded,
-                            currentObjective
-                          )} / día`
+                        ? t.suggestedPace(
+                            formatObjectiveAmount(
+                              objectiveInsights.dailyPaceNeeded,
+                              currentObjective
+                            )
+                          )
                         : objectiveInsights.bestEntry > 0
-                        ? `Mayor impulso: +${formatObjectiveAmount(
-                            objectiveInsights.bestEntry,
-                            currentObjective
-                          )}`
+                        ? t.highestImpulse(
+                            formatObjectiveAmount(
+                              objectiveInsights.bestEntry,
+                              currentObjective
+                            )
+                          )
                         : remainingText}
                     </span>
                   </div>
@@ -4024,7 +4264,7 @@ export function App() {
                       className="text-[11px] font-bold flex items-start sm:items-center gap-1 leading-snug break-words"
                     >
                       <span className="shrink-0">🎁</span>
-                      <span>Premio: {currentObjective.pledge}</span>
+                      <span>{t.pledgeReward(currentObjective.pledge)}</span>
                     </div>
                   ) : (
                     <button
@@ -4032,7 +4272,7 @@ export function App() {
                       style={{ color: currentAccentTheme.primary }}
                       className="text-[10px] font-bold hover:underline text-left sm:text-right shrink-0"
                     >
-                      ＋ Definir mi premio al lograrlo
+                      {t.definePledge}
                     </button>
                   )}
                 </div>
@@ -4058,7 +4298,7 @@ export function App() {
               className="pointer-events-none absolute -top-14 -right-14 w-36 h-36 rounded-full opacity-10 blur-2xl transition-colors duration-300"
             />
 
-            {/* Header Row with Live XP Pill */}
+            {/* Header Row with Focus Toggle & Goal Impact */}
             <div className="flex items-center justify-between gap-2 flex-wrap relative z-10">
               <div className="flex items-center gap-2.5 min-w-0">
                 <div className="w-8 h-8 rounded-[10px] bg-[#252138] border border-[#3E355B] flex items-center justify-center text-sm shrink-0">
@@ -4066,35 +4306,51 @@ export function App() {
                 </div>
                 <div className="min-w-0">
                   <h3 className="text-[15px] sm:text-[16px] font-bold text-[#F4F1FF] leading-tight">
-                    Registrar Progreso
+                    {t.registerProgress}
                   </h3>
                   <p className="text-[11px] text-[#A8A3B8] leading-snug">
-                    Elige un monto rápido o escribe el tuyo
+                    {t.quickOrWrite}
                   </p>
                 </div>
               </div>
 
-              {liveXpPreview && (
-                <div
-                  className={`text-[10px] sm:text-[11px] font-bold px-2.5 py-1 rounded-full border flex items-center gap-1 transition-all duration-200 shrink-0 ${
-                    liveXpPreview.willLevelUp
-                      ? 'bg-[#2E2519] border-[#FFD54F]/70 text-[#FFD54F] shadow-[0_0_12px_rgba(255,213,79,0.25)]'
-                      : isAddition
-                      ? 'bg-[#182923] border-[#65DB85]/45 text-[#82E59B]'
-                      : 'bg-[#241E36] border-[#4B3F6B] text-[#D8C5FF]'
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={toggleSereneMode}
+                  title={t.sereneFocusSubtitle}
+                  className={`text-[10px] font-bold px-2 py-1 rounded-full border transition-all flex items-center gap-1 ${
+                    isSereneMode
+                      ? 'bg-[#182923] border-[#65DB85]/60 text-[#82E59B]'
+                      : 'bg-[#1E1C2C] border-[#38334E] text-[#A8A3B8] hover:text-[#D8C5FF]'
                   }`}
                 >
-                  <span>
-                    +{liveXpPreview.estimatedXp} XP
-                    {liveXpPreview.bonusTag ? ` · ${liveXpPreview.bonusTag}` : ''}
-                  </span>
-                  {liveXpPreview.willLevelUp && (
-                    <span className="text-[9px] font-extrabold text-[#FFE082]">
-                      · ¡SUBES NV!
+                  <span>{isSereneMode ? '🌱' : '⚡'}</span>
+                  <span>{isSereneMode ? t.sereneFocusMode : 'XP'}</span>
+                </button>
+
+                {!isSereneMode && liveXpPreview && (
+                  <div
+                    className={`text-[10px] sm:text-[11px] font-bold px-2.5 py-1 rounded-full border flex items-center gap-1 transition-all duration-200 shrink-0 ${
+                      liveXpPreview.willLevelUp
+                        ? 'bg-[#2E2519] border-[#FFD54F]/70 text-[#FFD54F] shadow-[0_0_12px_rgba(255,213,79,0.25)]'
+                        : isAddition
+                        ? 'bg-[#182923] border-[#65DB85]/45 text-[#82E59B]'
+                        : 'bg-[#241E36] border-[#4B3F6B] text-[#D8C5FF]'
+                    }`}
+                  >
+                    <span>
+                      +{liveXpPreview.estimatedXp} XP
+                      {liveXpPreview.bonusTag ? ` · ${liveXpPreview.bonusTag}` : ''}
                     </span>
-                  )}
-                </div>
-              )}
+                    {liveXpPreview.willLevelUp && (
+                      <span className="text-[9px] font-extrabold text-[#FFE082]">
+                        {t.levelUpPreview}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Segmented Mode Switcher (+ Sumar / - Restar) */}
@@ -4112,7 +4368,7 @@ export function App() {
                 }`}
               >
                 <span className="text-sm leading-none">＋</span>
-                <span>Sumar avance</span>
+                <span>{t.addAdvance}</span>
               </button>
               <button
                 type="button"
@@ -4127,7 +4383,7 @@ export function App() {
                 }`}
               >
                 <span className="text-sm leading-none">−</span>
-                <span>Restar / Gasto</span>
+                <span>{t.subtractExpense}</span>
               </button>
             </div>
 
@@ -4175,10 +4431,7 @@ export function App() {
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') handleAddEntry();
                   }}
-                  placeholder={`Otro (${formatObjectiveAmount(
-                    selectedAmount,
-                    currentObjective
-                  )})`}
+                  placeholder={t.customPlaceholder(formatObjectiveAmount(selectedAmount, currentObjective))}
                   className="w-full h-[44px] px-3 rounded-[12px] bg-[#141320] text-[#F4F1FF] placeholder-[#8A849E] text-xs sm:text-[13px] font-mono-tabular border border-[#2D2840] focus:outline-none focus:border-[#9B6BFF] transition"
                 />
               </div>
@@ -4190,7 +4443,7 @@ export function App() {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') handleAddEntry();
                 }}
-                placeholder="Nota opcional (ej. Ahorro semanal)"
+                placeholder={t.optionalNotePlaceholder}
                 className="w-full h-[44px] px-3 rounded-[12px] bg-[#141320] text-[#F4F1FF] placeholder-[#8A849E] text-xs sm:text-[13px] border border-[#2D2840] focus:outline-none focus:border-[#9B6BFF] transition"
               />
 
@@ -4215,13 +4468,40 @@ export function App() {
               >
                 <span>{isAddition ? '＋' : '−'}</span>
                 <span>
-                  Registrar{' '}
-                  {hasValidSelectedAmount
-                    ? formatObjectiveAmount(selectedAmount, currentObjective)
-                    : ''}
+                  {t.registerButton(
+                    hasValidSelectedAmount
+                      ? formatObjectiveAmount(selectedAmount, currentObjective)
+                      : ''
+                  )}
                 </span>
               </button>
             </div>
+
+            {/* Live Goal Impact Feedback */}
+            {projectedGoalProgress && (
+              <div className="flex items-center justify-between text-[11px] px-1 text-[#C8C2D8] relative z-10 pt-1 border-t border-[#2B263D]/70">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-[#82E59B]"></span>
+                  <span className="font-semibold text-[#82E59B]">
+                    {t.projectedRemaining(
+                      projectedGoalProgress.nextRemainingFormatted,
+                      projectedGoalProgress.nextPct
+                    )}
+                  </span>
+                </span>
+                <span className="font-mono-tabular font-bold text-[#F4F1FF]">
+                  {formatObjectiveAmount(
+                    projectedGoalProgress.nextAmount,
+                    currentObjective
+                  )}{' '}
+                  /{' '}
+                  {formatObjectiveAmount(
+                    currentObjective.goalAmount,
+                    currentObjective
+                  )}
+                </span>
+              </div>
+            )}
 
             {persistenceMessage && (
               <div className="text-[11px] text-[#FF9EAB] bg-[#291520] border border-[#542A38] px-3 py-1.5 rounded-[10px]">
@@ -4247,7 +4527,7 @@ export function App() {
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <h3 className="text-[15px] sm:text-[16px] font-bold text-[#F4F1FF] leading-tight">
-                      Logros
+                      {t.achievementsSectionTitle}
                     </h3>
                     <span className="px-2 py-0.5 rounded-full bg-[#252138] border border-[#3E355B] text-[10px] font-mono-tabular font-bold text-[#D8C5FF]">
                       {currentObjective.unlockedAchievementIds.length}/
@@ -4255,7 +4535,7 @@ export function App() {
                     </span>
                   </div>
                   <p className="text-[11px] text-[#A8A3B8] leading-snug">
-                    Medallas e hitos desbloqueados en este objetivo
+                    {t.achievementsSectionSubtitle}
                   </p>
                 </div>
               </div>
@@ -4263,7 +4543,7 @@ export function App() {
                 onClick={() => setIsAllAchievementsOpen(true)}
                 className="text-[10px] font-bold text-[#C7A4FF] hover:text-white hover:underline transition shrink-0"
               >
-                VER TODOS →
+                {t.viewAllAchievements}
               </button>
             </div>
 
@@ -4275,7 +4555,7 @@ export function App() {
                 const isUnlocked =
                   currentObjective.unlockedAchievementIds.includes(ach.id);
                 const title =
-                  ach.isSecret && !isUnlocked ? 'Logro misterioso' : ach.title;
+                  ach.isSecret && !isUnlocked ? t.secretAchievement : ach.title;
                 const icon = ach.isSecret && !isUnlocked ? '❔' : ach.icon;
 
                 return (
@@ -4366,8 +4646,8 @@ export function App() {
                   onClick={handlePetMascot}
                   title={
                     !hasPettedToday
-                      ? '¡Acaricia a tu guardián para ganar +15 XP hoy!'
-                      : 'Toca para interactuar con tu mascota'
+                      ? t.petMascotTooltipUnclaimed
+                      : t.petMascotTooltipPetted
                   }
                   className="relative group focus:outline-none"
                 >
@@ -4403,7 +4683,9 @@ export function App() {
                         : 'bg-[#262238] text-[#D8C5FF] border-[#51436C]'
                     }`}
                   >
-                    {!hasPettedToday ? '👋 +15 XP' : '💖 Vínculo'}
+                    {!hasPettedToday
+                      ? t.petMascotRewardUnclaimed
+                      : t.petMascotRewardPetted}
                   </span>
                 </button>
               </div>
@@ -4460,7 +4742,7 @@ export function App() {
                       className="text-[10px] font-extrabold px-2.5 py-1 rounded-full bg-gradient-to-r from-[#17363E] via-[#1E2E4A] to-[#2B2046] border border-[#64D8FF] text-[#E0F7FA] hover:border-[#FFD54F] hover:scale-105 active:scale-95 transition shadow-[0_0_12px_rgba(100,216,255,0.3)] flex items-center gap-1"
                     >
                       <span>{activeAsmrTextureObj.emoji}</span>
-                      <span>JUGAR CLICKER ASMR ✨</span>
+                      <span>{t.playAsmrCta}</span>
                     </button>
                     <button
                       onClick={() => {
@@ -4470,7 +4752,7 @@ export function App() {
                       }}
                       className="text-[10px] font-bold text-[#C7A4FF] hover:text-white hover:underline transition"
                     >
-                      CÓDICE (1–200) →
+                      {t.codexLink}
                     </button>
                   </div>
                 </div>
@@ -4482,14 +4764,15 @@ export function App() {
                     onClick={() => openIndieShop('skins')}
                     className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-[#1C192B] border border-[#3B3356] text-[#D8C5FF] hover:border-[#B58BFF] transition"
                   >
-                    {equippedSkin.emoji} Aura: {equippedSkin.name}
+                    {equippedSkin.emoji} {t.auraLabel}: {equippedSkin.name}
                   </button>
                   <button
                     type="button"
                     onClick={() => openIndieShop('buffs')}
+                    title={t.streakShieldTooltip}
                     className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-[#18262F] border border-[#355A6E] text-[#90E0FF] hover:border-[#64D8FF] transition"
                   >
-                    🛡️ {streakShields} {streakShields === 1 ? 'Escudo' : 'Escudos'}
+                    🛡️ {t.streakShieldCount(streakShields)}
                   </button>
                   {isXpBoostActive && (
                     <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full bg-[#2D1F42] border border-[#B58BFF]/60 text-[#E6D9FF]">
@@ -4503,7 +4786,7 @@ export function App() {
                   )}
                   {isIndieFounder && (
                     <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full bg-[#362B14] border border-[#FFD54F]/60 text-[#FFD54F]">
-                      👑 +20% XP Fundador
+                      {t.founderBonusBadge}
                     </span>
                   )}
                 </div>
@@ -4515,12 +4798,12 @@ export function App() {
               <div className="flex-1 min-w-0 space-y-1">
                 <div className="flex items-center justify-between gap-1.5 flex-wrap text-[10px] text-[#A8A3B8]">
                   <span className="font-semibold text-[#D8C5FF]">
-                    Etapa {mascotTier + 1}/20 · Evolución {currentSubLevelIndex + 1}/10
+                    {t.stageEvolutionTrack(mascotTier + 1, currentSubLevelIndex + 1)}
                   </span>
                   <span className="text-[#9AF0AE] font-mono-tabular">
                     {mascotTier < 19
-                      ? `Próxima especie en ${levelsToNextSpecies} nv.`
-                      : 'Etapa Suprema Desbloqueada'}
+                      ? t.nextSpeciesIn(levelsToNextSpecies)
+                      : t.supremeStageUnlocked}
                   </span>
                 </div>
 
@@ -4537,7 +4820,7 @@ export function App() {
                           setMascotGalleryStartLevel(nodeLevel);
                           setIsMascotGalleryOpen(true);
                         }}
-                        title={`Ver Nivel ${nodeLevel} en el Códice`}
+                        title={t.viewLevelInCodex(nodeLevel)}
                         className={`h-[7px] flex-1 rounded-full transition-all ${
                           isCurrent
                             ? 'bg-gradient-to-r from-[#FFD54F] to-[#82E59B] shadow-[0_0_8px_rgba(255,213,79,0.65)] scale-y-125'
@@ -4558,7 +4841,7 @@ export function App() {
                     setMascotGalleryStartLevel(nextSpeciesLevel);
                     setIsMascotGalleryOpen(true);
                   }}
-                  title={`Espiar silueta de Nivel ${nextSpeciesLevel}: ${MASCOT_STAGE_HINTS[nextSpeciesTier]}`}
+                  title={t.spyLevelSilhouette(nextSpeciesLevel, t.mascotStageHints[nextSpeciesTier])}
                   className="shrink-0 flex items-center gap-1.5 pl-2 pr-2.5 py-1 rounded-[12px] bg-[#221E33] border border-[#4D3E73] hover:border-[#C7A4FF] transition group animate-mystery-beacon"
                 >
                   <div className="relative">
@@ -4616,36 +4899,8 @@ export function App() {
                   </div>
                 </div>
 
-                {/* Action Buttons: Prominent ASMR Clicker + Daily Quests */}
+                {/* Toggle Daily Quests Button */}
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      playUiTap(2);
-                      setIsAsmrSanctuaryOpen((prev) => !prev);
-                    }}
-                    className={`px-3 py-1.5 rounded-[10px] text-[10px] sm:text-[11px] font-extrabold border flex items-center gap-1.5 transition ${
-                      isAsmrSanctuaryOpen
-                        ? 'bg-gradient-to-r from-[#1F3A42] to-[#2B2248] border-[#64D8FF] text-[#E0F7FA] shadow-[0_0_14px_rgba(100,216,255,0.35)]'
-                        : 'bg-gradient-to-r from-[#1A2D38] to-[#231D3A] border-[#64D8FF]/75 text-[#E0F7FA] hover:border-[#FFD54F] shadow-[0_0_10px_rgba(100,216,255,0.2)]'
-                    }`}
-                  >
-                    <span>{activeAsmrTextureObj.emoji} Clicker ASMR & Orbes (16)</span>
-                    {asmrTotalTaps === 0 ? (
-                      <span className="px-1.5 py-0.2 rounded-full bg-[#FFD54F] text-[#1A1305] text-[9px] font-extrabold animate-pulse">
-                        ¡PRUÉBALO! 🎧
-                      </span>
-                    ) : (
-                      <span className="px-1.5 py-0.2 rounded-full bg-[#13252C] text-[#64D8FF] text-[9px] font-mono-tabular font-extrabold">
-                        {asmrCycleProgress}/{ASMR_CYCLE_TAPS}
-                      </span>
-                    )}
-                    <span className="text-[9px] opacity-85">
-                      {isAsmrSanctuaryOpen ? '▲' : '▼'}
-                    </span>
-                  </button>
-
-                  {/* Toggle Daily Quests Button */}
                   <button
                     onClick={() => setIsDailyRitualOpen((prev) => !prev)}
                     className={`px-2.5 py-1.5 rounded-[10px] text-[10px] sm:text-[11px] font-bold border flex items-center gap-1.5 transition ${
@@ -4655,11 +4910,11 @@ export function App() {
                     }`}
                   >
                     <span>
-                      🎯 Misiones hoy ({completedQuestsCount}/{dailyQuests.length})
+                      {t.dailyQuestsHeader(completedQuestsCount, dailyQuests.length)}
                     </span>
                     {(unclaimedReadyQuestsCount > 0 || canClaimAllDailyBonus) && (
                       <span className="px-1.5 py-0.2 rounded-full bg-[#FFD54F] text-[#1A162B] text-[9px] font-extrabold">
-                        ¡RECLAMAR!
+                        {t.claimButton}
                       </span>
                     )}
                     <span className="text-[9px] opacity-80">
@@ -4669,372 +4924,29 @@ export function App() {
                 </div>
               </div>
 
-              {/* Expandable ASMR Clicker Mini-Game Sanctuary (16 Scrollable & Unlockable Styles + Anti-Exploit Cap) */}
-              {isAsmrSanctuaryOpen && (
-                <div
-                  ref={asmrSanctuaryRef}
-                  className="p-3 sm:p-4 rounded-[18px] bg-gradient-to-b from-[#161B2E] via-[#141526] to-[#11101C] border border-[#446088] space-y-3 relative overflow-hidden shadow-[0_8px_26px_rgba(8,12,26,0.65)] animate-in fade-in duration-150"
-                >
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#64D8FF]">
-                          🫧 SANTUARIO ASMR & CLICKER DEL GUARDIÁN
-                        </span>
-                        <span className="px-2 py-0.5 rounded-full bg-[#1C2A38] border border-[#64D8FF]/40 text-[9px] font-mono-tabular font-bold text-[#9AF0AE]">
-                          Toques totales: {asmrTotalTaps}
-                        </span>
-                        <span
-                          title="Tope diario anti-exploit de Gemas en el Clicker. Al llegar a 12/12 sigues ganando XP Zen y desbloqueando orbes por toques."
-                          className={`px-2 py-0.5 rounded-full border text-[9px] font-mono-tabular font-extrabold ${
-                            asmrRemainingDailyGems > 0
-                              ? 'bg-[#231F38] border-[#FFD54F]/50 text-[#FFE082]'
-                              : 'bg-[#1D3028] border-[#82E59B]/50 text-[#9AF0AE]'
-                          }`}
-                        >
-                          💎 Hoy: {asmrGemsEarnedToday}/{DAILY_ASMR_GEM_CAP}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-[#C8C2D8] leading-snug">
-                        Explora <strong>16 Orbes ASMR</strong> (4 iniciales como Burbuja y Bambú, 4 desbloqueables gratis por toques y 8 Skins de Orbe).
-                      </p>
-                    </div>
-
-                    {/* Procedural Ambient Music Quick Switch inside ASMR Corner */}
-                    <button
-                      type="button"
-                      onClick={toggleAmbientMusic}
-                      className={`px-2.5 py-1.5 rounded-[10px] border text-[10px] font-extrabold shrink-0 flex items-center gap-1.5 transition ${
-                        sensoryPrefs.musicEnabled
-                          ? 'bg-[#1D352E] border-[#82E59B]/60 text-[#9AF0AE]'
-                          : 'bg-[#1E1B2E] border-[#383252] text-[#C8C2D8] hover:text-white'
-                      }`}
-                    >
-                      <span>🎵</span>
-                      <span>
-                        {sensoryPrefs.musicEnabled
-                          ? `Ambiental: ${getAmbientMusicStyleName(
-                              currentObjective.accentColor
-                            )} (ON)`
-                          : 'Música Ambiental'}
-                      </span>
-                    </button>
-                  </div>
-
-                  {/* Filter Tabs + Horizontal Scroll Controls for the 16 ASMR Styles */}
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <div className="flex items-center gap-1 flex-wrap">
-                      {[
-                        { id: 'all', label: `Todos (${ASMR_TEXTURES.length})` },
-                        {
-                          id: 'unlocked',
-                          label: `✓ Mis Orbes (${
-                            ASMR_TEXTURES.filter((t) => isAsmrStyleUnlocked(t))
-                              .length
-                          })`,
-                        },
-                        { id: 'taps', label: '🎯 Por Toques (4)' },
-                        { id: 'skins', label: '💎 Skins Orbe (8)' },
-                      ].map((tab) => {
-                        const active = asmrFilterCategory === tab.id;
-                        return (
-                          <button
-                            key={tab.id}
-                            type="button"
-                            onClick={() => {
-                              playUiTap(1);
-                              setAsmrFilterCategory(
-                                tab.id as 'all' | 'unlocked' | 'taps' | 'skins'
-                              );
-                            }}
-                            className={`px-2 py-1 rounded-[8px] text-[10px] font-bold border transition ${
-                              active
-                                ? 'bg-[#24344D] border-[#64D8FF] text-white'
-                                : 'bg-[#171625] border-[#2C2840] text-[#A8A3B8] hover:text-white'
-                            }`}
-                          >
-                            {tab.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    <div className="flex items-center gap-1 shrink-0">
-                      <span className="text-[9px] text-[#9E97B0] hidden sm:inline mr-1">
-                        Desliza estilos →
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => scrollAsmrCarousel('left')}
-                        aria-label="Desplazar estilos ASMR a la izquierda"
-                        className="w-7 h-7 rounded-[8px] bg-[#1D1B2E] border border-[#383252] text-[#D8C5FF] hover:bg-[#2A2642] text-xs flex items-center justify-center transition"
-                      >
-                        ◀
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => scrollAsmrCarousel('right')}
-                        aria-label="Desplazar estilos ASMR a la derecha"
-                        className="w-7 h-7 rounded-[8px] bg-[#1D1B2E] border border-[#383252] text-[#D8C5FF] hover:bg-[#2A2642] text-xs flex items-center justify-center transition"
-                      >
-                        ▶
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Scrollable 16 ASMR Orb Style Cards */}
-                  <div
-                    ref={asmrSkinsScrollRef}
-                    className="flex items-stretch gap-2 overflow-x-auto pb-1.5 pt-0.5 scroll-smooth"
-                  >
-                    {ASMR_TEXTURES.filter((tex) => {
-                      if (asmrFilterCategory === 'unlocked')
-                        return isAsmrStyleUnlocked(tex);
-                      if (asmrFilterCategory === 'taps')
-                        return tex.unlockKind === 'taps';
-                      if (asmrFilterCategory === 'skins')
-                        return tex.unlockKind === 'gems';
-                      return true;
-                    }).map((tex) => {
-                      const unlocked = isAsmrStyleUnlocked(tex);
-                      const isSelected = asmrPreferredTexture === tex.id;
-                      const tapProgPct =
-                        tex.unlockKind === 'taps' && tex.requiredTaps > 0
-                          ? Math.min(
-                              100,
-                              Math.floor((asmrTotalTaps / tex.requiredTaps) * 100)
-                            )
-                          : 100;
-
-                      return (
-                        <button
-                          key={tex.id}
-                          type="button"
-                          onClick={() => handleSelectAsmrTexture(tex)}
-                          style={
-                            isSelected
-                              ? {
-                                  borderColor: tex.accentColor,
-                                  boxShadow: `0 0 16px -3px ${tex.secondaryColor}`,
-                                }
-                              : undefined
-                          }
-                          className={`min-w-[148px] max-w-[164px] p-2.5 rounded-[13px] border text-left shrink-0 transition flex flex-col justify-between gap-1.5 ${
-                            isSelected
-                              ? 'bg-[#1D253A] text-white scale-[1.02]'
-                              : unlocked
-                              ? 'bg-[#171625] border-[#2F2B46] text-[#E6E0F2] hover:border-[#64D8FF]/60'
-                              : 'bg-[#13121E]/90 border-[#28243C] text-[#A8A3B8] hover:border-[#FFD54F]/60'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-1.5">
-                            {/* Mini Orb Skin Preview */}
-                            <div
-                              style={{
-                                background: tex.orbGradient,
-                                borderColor: tex.accentColor,
-                                boxShadow: `0 0 10px ${tex.secondaryColor}`,
-                              }}
-                              className={`w-8 h-8 rounded-full border flex items-center justify-center text-sm shrink-0 ${
-                                tex.ringStyle === 'dashed'
-                                  ? 'border-dashed'
-                                  : tex.ringStyle === 'double'
-                                  ? 'border-2'
-                                  : ''
-                              }`}
-                            >
-                              {tex.emoji}
-                            </div>
-
-                            {isSelected ? (
-                              <span
-                                style={{
-                                  color: tex.accentColor,
-                                  borderColor: `${tex.accentColor}66`,
-                                }}
-                                className="px-1.5 py-0.5 rounded-full bg-black/40 border text-[8px] font-extrabold uppercase"
-                              >
-                                ✓ EN USO
-                              </span>
-                            ) : unlocked ? (
-                              <span className="px-1.5 py-0.5 rounded-full bg-[#1C3329] text-[#82E59B] text-[8px] font-extrabold">
-                                ✓ LISTO
-                              </span>
-                            ) : tex.unlockKind === 'taps' ? (
-                              <span className="px-1.5 py-0.5 rounded-full bg-[#242038] border border-[#64D8FF]/40 text-[#90E0FF] text-[8px] font-mono-tabular font-extrabold">
-                                🎯 {asmrTotalTaps}/{tex.requiredTaps}
-                              </span>
-                            ) : (
-                              <span className="px-1.5 py-0.5 rounded-full bg-[#2B223C] border border-[#FFD54F]/50 text-[#FFD54F] text-[8px] font-mono-tabular font-extrabold">
-                                💎 {tex.gemCost}
-                              </span>
-                            )}
-                          </div>
-
-                          <div>
-                            <div className="text-[11px] font-extrabold leading-tight break-words">
-                              {tex.name}
-                            </div>
-                            <div className="text-[9px] text-[#9E97B0] leading-tight mt-0.5 break-words">
-                              {tex.subtitle}
-                            </div>
-                          </div>
-
-                          {!unlocked && tex.unlockKind === 'taps' && (
-                            <div className="w-full h-1.5 rounded-full bg-[#221F33] overflow-hidden">
-                              <div
-                                style={{
-                                  width: `${tapProgPct}%`,
-                                  backgroundColor: tex.accentColor,
-                                }}
-                                className="h-full rounded-full transition-all"
-                              />
-                            </div>
-                          )}
-
-                          {!unlocked && tex.unlockKind === 'gems' && (
-                            <div className="text-[8px] font-bold text-[#FFD54F] flex items-center justify-between pt-0.5 border-t border-white/5">
-                              <span>🔊 Toca para probar</span>
-                              <span>Desbloquear →</span>
-                            </div>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Interactive ASMR Clicker Stage + Harmony Progress */}
-                  <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] items-center gap-3.5 p-3 rounded-[16px] bg-[#100F1A]/95 border border-[#2B2842]">
-                    <div className="relative flex justify-center py-1">
-                      {/* Floating ASMR Sparks */}
-                      {asmrFloatingSparks.map((sp) => (
-                        <span
-                          key={sp.id}
-                          style={{
-                            color: sp.color,
-                            transform: `translateX(${sp.xOffset}px)`,
-                          }}
-                          className="pointer-events-none absolute -top-3 z-20 text-[11px] font-extrabold drop-shadow animate-xp-float whitespace-nowrap"
-                        >
-                          {sp.text}
-                        </span>
-                      ))}
-
-                      <button
-                        type="button"
-                        onClick={handleAsmrClick}
-                        style={{
-                          background: activeAsmrTextureObj.orbGradient,
-                          borderColor: activeAsmrTextureObj.accentColor,
-                          boxShadow: `0 0 28px -2px ${activeAsmrTextureObj.secondaryColor}`,
-                        }}
-                        className={`w-28 h-28 sm:w-24 sm:h-24 rounded-full border-2 flex flex-col items-center justify-center gap-0.5 active:scale-90 hover:scale-105 transition select-none cursor-pointer relative ${
-                          activeAsmrTextureObj.ringStyle === 'dashed'
-                            ? 'border-dashed'
-                            : activeAsmrTextureObj.ringStyle === 'double'
-                            ? 'ring-2 ring-white/25'
-                            : ''
-                        }`}
-                      >
-                        <span className="text-3xl leading-none drop-shadow">
-                          {activeAsmrTextureObj.emoji}
-                        </span>
-                        <span className="text-[10px] font-extrabold text-white tracking-wide drop-shadow">
-                          TOCAR ORBE
-                        </span>
-                        <span
-                          style={{ color: activeAsmrTextureObj.accentColor }}
-                          className="text-[8px] font-extrabold uppercase tracking-wider bg-black/45 px-1.5 py-0.2 rounded-full"
-                        >
-                          {activeAsmrTextureObj.name}
-                        </span>
-                      </button>
-                    </div>
-
-                    <div className="space-y-2 min-w-0">
-                      <div className="flex items-center justify-between gap-2 text-[11px] flex-wrap">
-                        <span className="font-bold text-[#E6E0F2]">
-                          ✨ Cofre de Armonía ({asmrCycleProgress}/{ASMR_CYCLE_TAPS})
-                        </span>
-                        <span className="text-[10px] font-mono-tabular text-[#FFD54F]">
-                          Faltan {ASMR_CYCLE_TAPS - asmrCycleProgress} toques
-                        </span>
-                      </div>
-
-                      <div className="w-full h-2.5 rounded-full bg-[#232036] overflow-hidden border border-white/5">
-                        <div
-                          style={{
-                            width: `${(asmrCycleProgress / ASMR_CYCLE_TAPS) * 100}%`,
-                            background: `linear-gradient(90deg, ${activeAsmrTextureObj.accentColor}, #FFD54F)`,
-                          }}
-                          className="h-full transition-all duration-150 rounded-full"
-                        />
-                      </div>
-
-                      {/* Next Tap-Milestone Skin Progress Indicator */}
-                      {(() => {
-                        const nextTapSkin = ASMR_TEXTURES.find(
-                          (t) =>
-                            t.unlockKind === 'taps' &&
-                            t.requiredTaps > asmrTotalTaps
-                        );
-                        if (!nextTapSkin) return null;
-                        return (
-                          <div className="flex items-center justify-between text-[10px] text-[#90E0FF] bg-[#161F30] px-2.5 py-1 rounded-[8px] border border-[#64D8FF]/25">
-                            <span>
-                              🎯 Próximo Orbe gratis: <strong>{nextTapSkin.emoji} {nextTapSkin.name}</strong>
-                            </span>
-                            <span className="font-mono-tabular font-bold">
-                              {asmrTotalTaps}/{nextTapSkin.requiredTaps} toques
-                            </span>
-                          </div>
-                        );
-                      })()}
-
-                      {lastAsmrPrizeNotice ? (
-                        <div className="px-2.5 py-1.5 rounded-[9px] bg-[#242038] border border-[#FFD54F]/50 text-[10px] font-bold text-[#FFE082] flex items-center justify-between gap-2">
-                          <span>{lastAsmrPrizeNotice}</span>
-                          <button
-                            type="button"
-                            onClick={() => setLastAsmrPrizeNotice(null)}
-                            className="text-xs opacity-75 hover:opacity-100"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="text-[10px] text-[#9E97B0] leading-snug">
-                          💡 Cada 50 toques recibes +2 💎 y +10 XP (hasta {DAILY_ASMR_GEM_CAP} 💎/día para cuidar el equilibrio del juego; luego modo Zen +XP infinito).
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-
               {/* Collapsible Daily Quests Drawer (Auto-highlights if unclaimed rewards or opened) */}
               {(isDailyRitualOpen ||
                 unclaimedReadyQuestsCount > 0 ||
                 canClaimAllDailyBonus) && (
                 <div className="p-2.5 rounded-[14px] bg-[#141320]/90 border border-[#2E2942] space-y-2 animate-in fade-in duration-150">
-                  <div className="flex items-center justify-between text-[10px] text-[#A8A3B8]">
-                    <span>
-                      Completa las 3 misiones diarias para el Cofre de Sello (+40 XP)
+                  <div className="flex items-center justify-between flex-wrap gap-1.5 text-[10px] text-[#A8A3B8]">
+                    <span className="leading-snug">
+                      {t.dailySealBonusNotice}
                     </span>
                     {isAllDailyBonusClaimed ? (
-                      <span className="text-[#82E59B] font-bold">
-                        👑 Sello diario completado
+                      <span className="text-[#82E59B] font-bold shrink-0">
+                        {t.dailySealCompleted}
                       </span>
                     ) : canClaimAllDailyBonus ? (
                       <button
                         onClick={handleClaimAllDailyBonus}
-                        className="px-2.5 py-0.5 rounded-[7px] bg-gradient-to-r from-[#E5B945] to-[#FFD54F] text-[#1A162B] font-extrabold text-[10px] hover:brightness-110 active:scale-95 transition shadow"
+                        className="px-2.5 py-1 rounded-[7px] bg-gradient-to-r from-[#E5B945] to-[#FFD54F] text-[#1A162B] font-extrabold text-[10px] hover:brightness-110 active:scale-95 transition shadow shrink-0"
                       >
-                        🎁 Reclamar Cofre +40 XP
+                        {t.claimChestBonus}
                       </button>
                     ) : (
-                      <span className="text-[#FFD54F] font-mono-tabular">
-                        Cofre: {completedQuestsCount}/3
+                      <span className="text-[#FFD54F] font-mono-tabular shrink-0">
+                        {t.dailyChestLabel(completedQuestsCount)}
                       </span>
                     )}
                   </div>
@@ -5098,6 +5010,397 @@ export function App() {
             </div>
           </div>
 
+          {/* Dedicated Standalone ASMR Sanctuary Bento Card (Placed right below Mascot & before Boost Stats) */}
+          <div
+            ref={asmrSanctuaryRef}
+            className={`p-3.5 sm:p-4 rounded-[20px] bg-gradient-to-b from-[#181C2C] via-[#141525] to-[#12121E] space-y-3.5 relative overflow-hidden shadow-[0_8px_28px_rgba(10,9,20,0.45)] transition-all ${
+              highlightedSection === 'asmr' || highlightedSection === 'asmr_clicker'
+                ? 'border-[2px] border-[#64D8FF]'
+                : 'border border-[#2D334D]'
+            }`}
+          >
+            {/* Header: Title, Taps Counter, Daily Gems Badge, Ambient Music Toggle */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="w-8 h-8 rounded-[10px] bg-[#1E263A] border border-[#3E527D] flex items-center justify-center text-sm shrink-0">
+                    🫧
+                  </div>
+                  <div>
+                    <h3 className="text-[14px] sm:text-[15px] font-extrabold uppercase tracking-wider text-[#64D8FF] leading-tight">
+                      {t.asmrTitle}
+                    </h3>
+                    <p className="text-[11px] text-[#C8C2D8] leading-tight">
+                      {t.asmrSubtitle}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 flex-wrap shrink-0">
+                <span className="px-2.5 py-1 rounded-full bg-[#1C2A38] border border-[#64D8FF]/40 text-[10px] font-mono-tabular font-bold text-[#9AF0AE]">
+                  {t.totalTaps}: {asmrTotalTaps}
+                </span>
+                <span
+                  title={t.dailyGemsTooltip}
+                  className={`px-2.5 py-1 rounded-full border text-[10px] font-mono-tabular font-extrabold ${
+                    asmrRemainingDailyGems > 0
+                      ? 'bg-[#231F38] border-[#FFD54F]/50 text-[#FFE082]'
+                      : 'bg-[#1D3028] border-[#82E59B]/50 text-[#9AF0AE]'
+                  }`}
+                >
+                  {t.dailyGemsCap(asmrGemsEarnedToday, DAILY_ASMR_GEM_CAP)}
+                </span>
+                <button
+                  type="button"
+                  onClick={toggleAmbientMusic}
+                  title={
+                    sensoryPrefs.musicEnabled
+                      ? t.ambientMusicTooltipOn(
+                          getAmbientMusicStyleName(currentObjective.accentColor)
+                        )
+                      : t.ambientMusicTooltipOff(
+                          getAmbientMusicStyleName(currentObjective.accentColor)
+                        )
+                  }
+                  className={`px-2.5 py-1 rounded-[10px] border text-[10px] font-extrabold shrink-0 flex items-center gap-1.5 transition ${
+                    sensoryPrefs.musicEnabled
+                      ? 'bg-[#1D352E] border-[#82E59B]/60 text-[#9AF0AE]'
+                      : 'bg-[#1E1B2E] border-[#383252] text-[#C8C2D8] hover:text-white'
+                  }`}
+                >
+                  <span>🎵</span>
+                  <span>
+                    {sensoryPrefs.musicEnabled
+                      ? t.ambientMusicOn(
+                          getAmbientMusicStyleName(currentObjective.accentColor)
+                        )
+                      : t.ambientMusicOff}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {/* Filter Tabs + Carousel Scroll Controls */}
+            <div className="flex items-center justify-between gap-2 flex-wrap pt-1 border-t border-[#262A3E]">
+              <div className="flex items-center gap-1 flex-wrap">
+                {[
+                  { id: 'all', label: `${t.filterAll} (${ASMR_TEXTURES.length})` },
+                  {
+                    id: 'unlocked',
+                    label: `${t.filterMyOrbs} (${
+                      ASMR_TEXTURES.filter((tex) => isAsmrStyleUnlocked(tex)).length
+                    })`,
+                  },
+                  { id: 'taps', label: `${t.filterTaps} (4)` },
+                  { id: 'skins', label: `${t.filterSkins} (8)` },
+                ].map((tab) => {
+                  const active = asmrFilterCategory === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => {
+                        playUiTap(1);
+                        setAsmrFilterCategory(
+                          tab.id as 'all' | 'unlocked' | 'taps' | 'skins'
+                        );
+                      }}
+                      className={`px-2.5 py-1 rounded-[8px] text-[10px] font-bold border transition ${
+                        active
+                          ? 'bg-[#24344D] border-[#64D8FF] text-white'
+                          : 'bg-[#171625] border-[#2C2840] text-[#A8A3B8] hover:text-white'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="flex items-center gap-1 shrink-0">
+                <span className="text-[9px] text-[#9E97B0] hidden sm:inline mr-1">
+                  {t.slideStylesHint}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => scrollAsmrCarousel('left')}
+                  aria-label={t.scrollAsmrLeft}
+                  className="w-7 h-7 rounded-[8px] bg-[#1D1B2E] border border-[#383252] text-[#D8C5FF] hover:bg-[#2A2642] text-xs flex items-center justify-center transition"
+                >
+                  ◀
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scrollAsmrCarousel('right')}
+                  aria-label={t.scrollAsmrRight}
+                  className="w-7 h-7 rounded-[8px] bg-[#1D1B2E] border border-[#383252] text-[#D8C5FF] hover:bg-[#2A2642] text-xs flex items-center justify-center transition"
+                >
+                  ▶
+                </button>
+              </div>
+            </div>
+
+            {/* Scrollable 16 ASMR Orb Style Cards */}
+            <div
+              ref={asmrSkinsScrollRef}
+              {...getHorizontalScrollProps()}
+              className="flex items-stretch gap-2 overflow-x-auto px-1.5 py-1.5 scroll-smooth horizontal-scroll-strip cursor-grab active:cursor-grabbing"
+            >
+              {ASMR_TEXTURES.filter((tex) => {
+                if (asmrFilterCategory === 'unlocked')
+                  return isAsmrStyleUnlocked(tex);
+                if (asmrFilterCategory === 'taps')
+                  return tex.unlockKind === 'taps';
+                if (asmrFilterCategory === 'skins')
+                  return tex.unlockKind === 'gems';
+                return true;
+              }).map((tex) => {
+                const unlocked = isAsmrStyleUnlocked(tex);
+                const isSelected = asmrPreferredTexture === tex.id;
+                const tapProgPct =
+                  tex.unlockKind === 'taps' && tex.requiredTaps > 0
+                    ? Math.min(
+                        100,
+                        Math.floor((asmrTotalTaps / tex.requiredTaps) * 100)
+                      )
+                    : 100;
+
+                return (
+                  <button
+                    key={tex.id}
+                    type="button"
+                    onClick={() => handleSelectAsmrTexture(tex)}
+                    style={
+                      isSelected
+                        ? {
+                            borderColor: tex.accentColor,
+                            boxShadow: `0 0 12px -2px ${tex.secondaryColor}`,
+                          }
+                        : undefined
+                    }
+                    className={`min-w-[122px] max-w-[134px] p-2 rounded-[12px] border text-left shrink-0 transition flex flex-col justify-between gap-1 ${
+                      isSelected
+                        ? 'bg-[#1D253A] text-white'
+                        : unlocked
+                        ? 'bg-[#171625] border-[#2F2B46] text-[#E6E0F2] hover:border-[#64D8FF]/60'
+                        : 'bg-[#13121E]/90 border-[#28243C] text-[#A8A3B8] hover:border-[#FFD54F]/60'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <div
+                        style={{
+                          background: tex.orbGradient,
+                          borderColor: tex.accentColor,
+                          boxShadow: `0 0 8px ${tex.secondaryColor}`,
+                        }}
+                        className={`w-7 h-7 rounded-full border flex items-center justify-center text-xs shrink-0 ${
+                          tex.ringStyle === 'dashed'
+                            ? 'border-dashed'
+                            : tex.ringStyle === 'double'
+                            ? 'border-2'
+                            : ''
+                        }`}
+                      >
+                        {tex.emoji}
+                      </div>
+
+                      {isSelected ? (
+                        <span
+                          style={{
+                            color: tex.accentColor,
+                            borderColor: `${tex.accentColor}66`,
+                          }}
+                          className="px-1.5 py-0.5 rounded-full bg-black/40 border text-[8px] font-extrabold uppercase"
+                        >
+                          ✓ {t.inUse}
+                        </span>
+                      ) : unlocked ? (
+                        <span className="px-1.5 py-0.5 rounded-full bg-[#1C3329] text-[#82E59B] text-[8px] font-extrabold">
+                          ✓ {t.ready}
+                        </span>
+                      ) : tex.unlockKind === 'taps' ? (
+                        <span className="px-1.5 py-0.5 rounded-full bg-[#242038] border border-[#64D8FF]/40 text-[#90E0FF] text-[8px] font-mono-tabular font-extrabold">
+                          🎯 {asmrTotalTaps}/{tex.requiredTaps}
+                        </span>
+                      ) : (
+                        <span className="px-1.5 py-0.5 rounded-full bg-[#2B223C] border border-[#FFD54F]/50 text-[#FFD54F] text-[8px] font-mono-tabular font-extrabold">
+                          💎 {tex.gemCost}
+                        </span>
+                      )}
+                    </div>
+
+                    <div>
+                      <div className="text-[10.5px] font-extrabold leading-tight break-words">
+                        {tex.name}
+                      </div>
+                      <div className="text-[8.5px] text-[#9E97B0] leading-tight mt-0.5 break-words line-clamp-2">
+                        {tex.subtitle}
+                      </div>
+                    </div>
+
+                    {!unlocked && tex.unlockKind === 'taps' && (
+                      <div className="w-full h-1 rounded-full bg-[#221F33] overflow-hidden">
+                        <div
+                          style={{
+                            width: `${tapProgPct}%`,
+                            backgroundColor: tex.accentColor,
+                          }}
+                          className="h-full rounded-full transition-all"
+                        />
+                      </div>
+                    )}
+
+                    {!unlocked && tex.unlockKind === 'gems' && (
+                      <div className="text-[8px] font-bold text-[#FFD54F] flex items-center justify-between pt-0.5 border-t border-white/5">
+                        <span>{t.trySound}</span>
+                        <span>{t.openArrow}</span>
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Interactive ASMR Clicker Stage + Harmony Progress */}
+            <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] items-center gap-3.5 p-3 rounded-[16px] bg-[#100F1A]/95 border border-[#2B2842]">
+              <div className="relative flex justify-center py-2">
+                {/* Floating ASMR Sparks with dedicated lane positioning so sparks never overlap */}
+                {asmrFloatingSparks.map((sp) => (
+                  <div
+                    key={sp.id}
+                    style={{
+                      left: `calc(50% + ${sp.xOffset}px)`,
+                      top: `${-16 + (sp.yOffset ?? 0)}px`,
+                      transform: `translateX(-50%) rotate(${sp.rotDeg ?? 0}deg)`,
+                    }}
+                    className="pointer-events-none absolute z-20"
+                  >
+                    <span
+                      style={{ color: sp.color }}
+                      className="inline-block text-[11px] font-extrabold drop-shadow animate-asmr-spark whitespace-nowrap select-none"
+                    >
+                      {sp.text}
+                    </span>
+                  </div>
+                ))}
+
+                <button
+                  type="button"
+                  onClick={handleClickOrb}
+                  onMouseDown={handleStartAsmrHold}
+                  onMouseUp={handleStopAsmrHold}
+                  onMouseLeave={handleStopAsmrHold}
+                  onTouchStart={(e) => {
+                    e.preventDefault();
+                    handleStartAsmrHold();
+                  }}
+                  onTouchEnd={handleStopAsmrHold}
+                  onTouchCancel={handleStopAsmrHold}
+                  title={t.holdToStreamHint}
+                  aria-label={`${t.tapOrbButton}: ${activeAsmrTextureObj.name}`}
+                  style={{
+                    background: activeAsmrTextureObj.orbGradient,
+                    borderColor: activeAsmrTextureObj.accentColor,
+                    boxShadow: isAsmrHolding
+                      ? `0 0 42px 6px ${activeAsmrTextureObj.secondaryColor}, 0 0 20px #FFD54F`
+                      : `0 0 28px -2px ${activeAsmrTextureObj.secondaryColor}`,
+                  }}
+                  className={`w-28 h-28 sm:w-24 sm:h-24 rounded-full border-2 flex flex-col items-center justify-center gap-0.5 select-none cursor-pointer relative transition-transform ${
+                    isAsmrHolding
+                      ? 'scale-95 ring-4 ring-[#FFD54F]/70'
+                      : 'hover:scale-105 active:scale-95'
+                  } ${
+                    activeAsmrTextureObj.ringStyle === 'dashed'
+                      ? 'border-dashed'
+                      : activeAsmrTextureObj.ringStyle === 'double'
+                      ? 'ring-2 ring-white/25'
+                      : ''
+                  }`}
+                >
+                  <span className={`text-3xl leading-none drop-shadow ${isAsmrHolding ? 'animate-pulse' : ''}`}>
+                    {activeAsmrTextureObj.emoji}
+                  </span>
+                  <span className="text-[10px] font-extrabold text-white tracking-wide drop-shadow">
+                    {isAsmrHolding ? t.asmrFlowing : t.tapOrbButton}
+                  </span>
+                  <span
+                    style={{ color: activeAsmrTextureObj.accentColor }}
+                    className="text-[8px] font-extrabold uppercase tracking-wider bg-black/45 px-1.5 py-0.2 rounded-full"
+                  >
+                    {activeAsmrTextureObj.name}
+                  </span>
+                </button>
+              </div>
+
+              <div className="space-y-2 min-w-0">
+                <div className="flex items-center justify-between gap-2 text-[11px] flex-wrap">
+                  <span className="font-bold text-[#E6E0F2]">
+                    {t.harmonyChest(asmrCycleProgress, ASMR_CYCLE_TAPS)}
+                  </span>
+                  <span className="text-[10px] font-mono-tabular text-[#FFD54F]">
+                    {t.tapsRemaining(ASMR_CYCLE_TAPS - asmrCycleProgress)}
+                  </span>
+                </div>
+
+                <div className="w-full h-2.5 rounded-full bg-[#232036] overflow-hidden border border-white/5">
+                  <div
+                    style={{
+                      width: `${(asmrCycleProgress / ASMR_CYCLE_TAPS) * 100}%`,
+                      background: `linear-gradient(90deg, ${activeAsmrTextureObj.accentColor}, #FFD54F)`,
+                    }}
+                    className="h-full transition-all duration-150 rounded-full"
+                  />
+                </div>
+
+                {/* Next Tap-Milestone Skin Progress Indicator */}
+                {(() => {
+                  for (const tx of ASMR_TEXTURES) {
+                    if (
+                      tx.unlockKind === 'taps' &&
+                      typeof tx.requiredTaps === 'number' &&
+                      tx.requiredTaps > asmrTotalTaps
+                    ) {
+                      return (
+                        <div className="flex items-center justify-between flex-wrap gap-1.5 text-[10px] text-[#90E0FF] bg-[#161F30] px-2.5 py-1.5 rounded-[8px] border border-[#64D8FF]/25">
+                          <span>
+                            {t.nextFreeOrb(
+                              tx.name,
+                              tx.emoji,
+                              asmrTotalTaps,
+                              tx.requiredTaps
+                            )}
+                          </span>
+                          <span className="font-mono-tabular font-bold shrink-0">
+                            {asmrTotalTaps}/{tx.requiredTaps}
+                          </span>
+                        </div>
+                      );
+                    }
+                  }
+                  return null;
+                })()}
+
+                {lastAsmrPrizeNotice ? (
+                  <div className="px-2.5 py-1.5 rounded-[9px] bg-[#242038] border border-[#FFD54F]/50 text-[10px] font-bold text-[#FFE082] flex items-center justify-between gap-2">
+                    <span>{lastAsmrPrizeNotice}</span>
+                    <button
+                      type="button"
+                      onClick={() => setLastAsmrPrizeNotice(null)}
+                      className="text-xs opacity-75 hover:opacity-100"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-[10px] text-[#9E97B0] leading-snug">
+                    {t.asmrZenRule(DAILY_ASMR_GEM_CAP)}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
           {/* Statistics Section (Unified Sanctuary Bento Grid) */}
           <div
             ref={statsRef}
@@ -5114,10 +5417,10 @@ export function App() {
                 </div>
                 <div>
                   <h3 className="text-[15px] sm:text-[16px] font-bold text-[#F4F1FF] leading-tight">
-                    Estadísticas de Impulso
+                    {t.statsTitle}
                   </h3>
                   <p className="text-[11px] text-[#A8A3B8]">
-                    Resumen claro de tu constancia y progreso
+                    {t.statsSubtitle}
                   </p>
                 </div>
               </div>
@@ -5126,33 +5429,33 @@ export function App() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <div className="p-2.5 rounded-[14px] bg-[#141320]/90 border border-[#2B273D] space-y-0.5">
                 <div className="flex items-center justify-between text-[10px] text-[#A8A3B8]">
-                  <span>MOVIMIENTOS</span>
+                  <span>{t.statMovementsLabel}</span>
                   <span>📝</span>
                 </div>
                 <div className="text-[17px] font-extrabold font-mono-tabular text-[#F4F1FF]">
                   {totalEntryCount}
                 </div>
                 <div className="text-[10px] text-[#8F89A3] leading-tight break-words">
-                  {currentObjective.entries.length} en este objetivo
+                  {t.statInGoal(currentObjective.entries.length)}
                 </div>
               </div>
 
               <div className="p-2.5 rounded-[14px] bg-[#141320]/90 border border-[#2B273D] space-y-0.5">
                 <div className="flex items-center justify-between text-[10px] text-[#A8A3B8]">
-                  <span>RACHA ACTIVA</span>
+                  <span>{t.activeStreak.toUpperCase()}</span>
                   <span>🔥</span>
                 </div>
                 <div className="text-[17px] font-extrabold font-mono-tabular text-[#FFC45D]">
-                  {streakDays} {streakDays === 1 ? 'día' : 'días'}
+                  {streakDays} {streakDays === 1 ? t.streakDaysUnit : t.streakDaysPlural}
                 </div>
                 <div className="text-[10px] text-[#8F89A3] leading-tight break-words">
-                  {streakDays > 0 ? '¡Sigue sumando hoy!' : 'Registra hoy para iniciar'}
+                  {streakDays > 0 ? t.streakIgnitePrompt : t.activeStreak}
                 </div>
               </div>
 
               <div className="p-2.5 rounded-[14px] bg-[#141320]/90 border border-[#2B273D] space-y-0.5">
                 <div className="flex items-center justify-between text-[10px] text-[#A8A3B8]">
-                  <span>MAYOR IMPULSO</span>
+                  <span>{t.statBestLabel}</span>
                   <span>🚀</span>
                 </div>
                 <div
@@ -5167,20 +5470,20 @@ export function App() {
                     : '—'}
                 </div>
                 <div className="text-[10px] text-[#8F89A3] leading-tight break-words">
-                  Mejor aporte único
+                  {t.statSingle}
                 </div>
               </div>
 
               <div className="p-2.5 rounded-[14px] bg-[#141320]/90 border border-[#2B273D] space-y-0.5">
                 <div className="flex items-center justify-between text-[10px] text-[#A8A3B8]">
-                  <span>NIVEL GUARDIÁN</span>
+                  <span>{t.statGuardianLabel}</span>
                   <span>✨</span>
                 </div>
                 <div className="text-[17px] font-extrabold font-mono-tabular text-[#D8C5FF]">
-                  Nv. {level}
+                  {t.mascotLevelLabel(level)}
                 </div>
                 <div className="text-[10px] text-[#8F89A3] font-mono-tabular leading-tight break-words">
-                  {state.gamification.totalXp} XP acumulados
+                  {state.gamification.totalXp} XP · {t.statTotalGems(gems)}
                 </div>
               </div>
             </div>
@@ -5211,9 +5514,44 @@ export function App() {
               </div>
 
               <div className="flex items-center gap-1.5 flex-wrap">
+                {/* Language Picker in Settings Panel */}
+                <div className="flex items-center gap-1 p-0.5 rounded-[10px] bg-[#141222] border border-[#3B3258]">
+                  <span className="text-[10px] text-[#A8A3B8] px-1.5 font-bold hidden sm:inline">
+                    {t.languageLabel}:
+                  </span>
+                  {[
+                    { code: 'es', label: '🇪🇸 ES' },
+                    { code: 'en', label: '🇺🇸 EN' },
+                    { code: 'pt', label: '🇧🇷 PT' },
+                  ].map((l) => (
+                    <button
+                      key={l.code}
+                      type="button"
+                      onClick={() => changeLanguage(l.code as AppLanguage)}
+                      title={`Cambiar idioma a ${l.label}`}
+                      className={`px-2 py-1 rounded-[7px] text-[10px] font-extrabold transition ${
+                        appLanguage === l.code
+                          ? 'bg-[#653CA6] text-white shadow-sm'
+                          : 'text-[#A8A3B8] hover:text-white'
+                      }`}
+                    >
+                      {l.label}
+                    </button>
+                  ))}
+                </div>
+
                 <button
                   type="button"
                   onClick={toggleAmbientMusic}
+                  title={
+                    sensoryPrefs.musicEnabled
+                      ? t.ambientMusicTooltipOn(
+                          getAmbientMusicStyleName(currentObjective.accentColor)
+                        )
+                      : t.ambientMusicTooltipOff(
+                          getAmbientMusicStyleName(currentObjective.accentColor)
+                        )
+                  }
                   className={`px-3 py-1.5 rounded-[11px] border text-[11px] font-bold flex items-center gap-1.5 transition ${
                     sensoryPrefs.musicEnabled
                       ? 'bg-[#1F2D2B] border-[#65DB85]/45 text-[#9AF0AE]'
@@ -5223,16 +5561,21 @@ export function App() {
                   <span>🎵</span>
                   <span>
                     {sensoryPrefs.musicEnabled
-                      ? `Música (${getAmbientMusicStyleName(
-                          currentObjective.accentColor
-                        )}): ON`
-                      : 'Música Ambiental: OFF'}
+                      ? t.ambientMusicOn(
+                          getAmbientMusicStyleName(currentObjective.accentColor)
+                        )
+                      : t.ambientMusicOff}
                   </span>
                 </button>
 
                 <button
                   type="button"
                   onClick={toggleSoundAndHaptics}
+                  title={
+                    sensoryPrefs.soundEnabled
+                      ? t.soundHapticsTooltipOn
+                      : t.soundHapticsTooltipOff
+                  }
                   className={`px-3 py-1.5 rounded-[11px] border text-[11px] font-bold flex items-center gap-1.5 transition ${
                     sensoryPrefs.soundEnabled
                       ? 'bg-[#1F2D2B] border-[#65DB85]/45 text-[#9AF0AE]'
@@ -5242,8 +5585,8 @@ export function App() {
                   <span>{sensoryPrefs.soundEnabled ? '🔊' : '🔇'}</span>
                   <span>
                     {sensoryPrefs.soundEnabled
-                      ? 'Sonido y Haptic: ON'
-                      : 'Sonido y Haptic: OFF'}
+                      ? t.soundHapticsOn
+                      : t.soundHapticsOff}
                   </span>
                 </button>
               </div>
@@ -5262,10 +5605,10 @@ export function App() {
                 </div>
                 <div className="min-w-0">
                   <div className="text-xs sm:text-[13px] font-bold text-[#F4F1FF] leading-snug break-words">
-                    Personalizar objetivo
+                    {t.settingsEditGoalTitle}
                   </div>
                   <div className="text-[10px] text-[#9E97B0] leading-snug break-words">
-                    Nombre, meta, icono, fecha y premio
+                    {t.settingsEditGoalSubtitle}
                   </div>
                 </div>
               </button>
@@ -5282,10 +5625,10 @@ export function App() {
                 </div>
                 <div className="min-w-0">
                   <div className="text-xs sm:text-[13px] font-bold text-[#F4F1FF] leading-snug break-words">
-                    Fondo y encuadre
+                    {t.settingsBackgroundTitle}
                   </div>
                   <div className="text-[10px] text-[#9E97B0] leading-snug break-words">
-                    Cambiar paisaje o subir imagen
+                    {t.settingsBackgroundSubtitle}
                   </div>
                 </div>
               </button>
@@ -5302,10 +5645,10 @@ export function App() {
                 </div>
                 <div className="min-w-0">
                   <div className="text-xs sm:text-[13px] font-bold text-[#F4F1FF] leading-snug break-words">
-                    Archivar en el baúl
+                    {t.settingsArchiveTitle}
                   </div>
                   <div className="text-[10px] text-[#9E97B0] leading-snug break-words">
-                    Guardar sin perder su progreso
+                    {t.settingsArchiveSubtitle}
                   </div>
                 </div>
               </button>
@@ -5322,10 +5665,10 @@ export function App() {
                 </div>
                 <div className="min-w-0">
                   <div className="text-xs sm:text-[13px] font-bold text-[#FFB8C2] leading-snug break-words">
-                    Eliminar objetivo
+                    {t.settingsDeleteTitle}
                   </div>
                   <div className="text-[10px] text-[#C48B96] leading-snug break-words">
-                    Borrar permanentemente
+                    {t.settingsDeleteSubtitle}
                   </div>
                 </div>
               </button>
@@ -5335,10 +5678,10 @@ export function App() {
             <div className="p-3 rounded-[15px] bg-gradient-to-r from-[#241D38] via-[#1E2235] to-[#1A2926] border border-[#4A3B6E] flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
               <div className="space-y-0.5 min-w-0">
                 <div className="text-xs font-extrabold text-[#F4F1FF] flex items-center gap-1.5 flex-wrap">
-                  <span>💖 Creado por un Desarrollador Indie</span>
+                  <span>{t.settingsIndieCardTitle}</span>
                 </div>
                 <p className="text-[11px] text-[#C6C0D6] leading-snug break-words">
-                  Personaliza las 200 mascotas con Skins, equipa Marcos y Sonidos o activa Buffs con tus Gemas (💎 {gems}).
+                  {t.settingsIndieCardSub(gems)}
                 </p>
               </div>
               <div className="flex items-center gap-2 flex-wrap shrink-0">
@@ -5347,14 +5690,14 @@ export function App() {
                   onClick={() => openIndieShop('skins')}
                   className="px-3 py-2 rounded-[11px] bg-gradient-to-r from-[#7549B8] to-[#9B6BFF] text-white text-[11px] font-extrabold hover:brightness-110 active:scale-95 transition shadow"
                 >
-                  💎 Skins & Buffs
+                  {t.settingsSkinsBuffsBtn}
                 </button>
                 <button
                   type="button"
                   onClick={() => openIndieShop('support')}
                   className="px-3 py-2 rounded-[11px] bg-[#252138] border border-[#4A3E6D] text-[#E6D9FF] text-[11px] font-bold hover:bg-[#312B4B] transition"
                 >
-                  💖 Apoyar al Dev
+                  {t.settingsSupportDevBtn}
                 </button>
               </div>
             </div>
@@ -5372,10 +5715,10 @@ export function App() {
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
               <h3 className="text-[17px] font-bold text-[#F4F1FF]">
-                Registro de entradas
+                {t.historyTitle}
               </h3>
               <div className="text-[12px] text-[#A8A3B8]">
-                Saldo actual:{' '}
+                {t.currentBalanceLabel}{' '}
                 {formatObjectiveAmount(
                   currentObjective.currentAmount,
                   currentObjective
@@ -5384,7 +5727,7 @@ export function App() {
             </div>
             <button
               onClick={() => setIsHistoryOpen(false)}
-              aria-label="Cerrar historial"
+              aria-label={t.closeHistory}
               className="lg:hidden w-[42px] h-[42px] rounded-[12px] bg-[#242238] text-[#F4F1FF] text-[22px] flex items-center justify-center"
             >
               ×
@@ -5394,9 +5737,9 @@ export function App() {
           {/* Filter Tabs */}
           <div className="p-1 rounded-[12px] bg-[#12111C] border border-[#2B263D] grid grid-cols-3 gap-1">
             {[
-              { id: 'all', label: 'Todas' },
-              { id: 'add', label: 'Sumas' },
-              { id: 'subtract', label: 'Restas' },
+              { id: 'all', label: t.historyFilterAll },
+              { id: 'add', label: t.historyFilterAdd },
+              { id: 'subtract', label: t.historyFilterSubtract },
             ].map((tab) => {
               const isSelected = historyFilter === tab.id;
               return (
@@ -5516,6 +5859,8 @@ export function App() {
       {/* Modal: Indie Sanctuary Emporium (216-Item Vault: Skins, Card FX, Sound Packs, Buffs & Indie Support) */}
       {isIndieShopOpen && (
         <IndieEmporiumModal
+          t={t}
+          launchTimeLeft={launchTimeLeft}
           initialTab={indieShopInitialTab}
           currentObjective={currentObjective}
           level={level}
@@ -5558,29 +5903,37 @@ export function App() {
 
       {/* Modal: AchievementsPage */}
       {isAllAchievementsOpen && (
-        <div className="fixed inset-0 z-50 bg-[#0D0E17]/95 backdrop-blur-md flex flex-col p-4 sm:p-6 overflow-hidden">
-          <div className="max-w-4xl w-full mx-auto flex-1 flex flex-col gap-4 min-h-0">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-[12px] bg-[#252138] border border-[#3E355B] flex items-center justify-center text-lg">
+        <div className="fixed inset-0 z-50 bg-[#0D0E17]/95 backdrop-blur-md flex flex-col pt-[max(0.875rem,calc(env(safe-area-inset-top,0px)+0.4rem))] pb-[max(0.875rem,calc(env(safe-area-inset-bottom,0px)+0.4rem))] px-3.5 sm:p-6 overflow-hidden">
+          <div className="max-w-4xl w-full mx-auto flex-1 flex flex-col gap-3.5 min-h-0">
+            <div className="space-y-1.5 shrink-0">
+              <div className="flex items-center justify-between gap-2">
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#1B182B] border border-[#3E355B] text-[10px] font-extrabold uppercase tracking-wider text-[#C7A4FF]">
+                  <span>🎯</span>
+                  <span>OBJECTIVE</span>
+                  <span className="text-[#82E59B]">REACHER</span>
+                  <span className="text-[#FFD54F]">· LOGROS</span>
+                </div>
+                <button
+                  onClick={() => setIsAllAchievementsOpen(false)}
+                  className="px-3.5 py-1.5 rounded-[10px] bg-[#252138] border border-[#3E355B] text-[#F4F1FF] text-xs sm:text-sm font-bold hover:bg-[#322C4B] transition shrink-0"
+                >
+                  ← Volver
+                </button>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-[11px] bg-[#252138] border border-[#3E355B] flex items-center justify-center text-base shrink-0">
                   🏆
                 </div>
-                <div>
-                  <h2 className="text-[18px] sm:text-[21px] font-bold text-[#F4F1FF]">
+                <div className="min-w-0">
+                  <h2 className="text-[16px] sm:text-[20px] font-extrabold text-[#F4F1FF] leading-tight">
                     Todos los Logros ({currentObjective.unlockedAchievementIds.length}/
                     {ACHIEVEMENT_CATALOG.length})
                   </h2>
-                  <p className="text-[12px] text-[#A8A3B8]">
+                  <p className="text-[11px] sm:text-[12px] text-[#A8A3B8] leading-snug">
                     Toca cualquier medalla para conocer su historia o pista secreta
                   </p>
                 </div>
               </div>
-              <button
-                onClick={() => setIsAllAchievementsOpen(false)}
-                className="px-4 py-2 rounded-[11px] bg-[#252138] border border-[#3E355B] text-[#F4F1FF] text-xs sm:text-sm font-bold hover:bg-[#322C4B] transition"
-              >
-                ← Volver
-              </button>
             </div>
 
             <div className="flex-1 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-2.5 pr-1">
@@ -5949,41 +6302,47 @@ function MascotGalleryModal({
   const activeSkin = findMascotSkin(skinId);
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#11121C] flex flex-col p-3 sm:p-[18px] overflow-hidden">
-      <div className="max-w-5xl w-full mx-auto flex-1 flex flex-col gap-3 min-h-0">
-        {/* Header */}
-        <div className="flex items-center justify-between gap-2">
-          <div className="space-y-0.5 min-w-0">
-            <div className="text-[10px] font-extrabold uppercase tracking-widest text-[#C7A4FF]">
-              🎯 OBJECTIVE REACHER · SANTUARIO
+    <div className="fixed inset-0 z-50 bg-[#11121C] flex flex-col pt-[max(0.75rem,calc(env(safe-area-inset-top,0px)+0.4rem))] pb-[max(0.75rem,calc(env(safe-area-inset-bottom,0px)+0.4rem))] px-3 sm:p-[18px] overflow-hidden">
+      <div className="max-w-5xl w-full mx-auto flex-1 flex flex-col gap-2.5 sm:gap-3 min-h-0">
+        {/* Header — Responsive 2-Row Structure so Buttons Never Crush Title on Mobile Portrait */}
+        <div className="space-y-1.5 shrink-0">
+          <div className="flex items-center justify-between gap-2">
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#1A182B] border border-[#3B3258] text-[10px] font-extrabold uppercase tracking-wider">
+              <span>🎯</span>
+              <span className="text-[#F4F1FF]">OBJECTIVE</span>
+              <span className="text-[#82E59B]">REACHER</span>
+              <span className="text-[#C7A4FF]">· CÓDICE</span>
             </div>
-            <h2 className="text-[16px] sm:text-[20px] font-bold text-[#F4F1FF] leading-snug break-words">
+            <div className="flex items-center gap-1.5 shrink-0">
+              {onOpenSkins && (
+                <button
+                  onClick={onOpenSkins}
+                  className="px-2.5 py-1.5 rounded-[10px] bg-[#28203F] border border-[#65499C] text-[#E6D9FF] text-xs font-extrabold hover:border-[#FFD54F] transition"
+                >
+                  {activeSkin.emoji} Skins
+                </button>
+              )}
+              <button
+                onClick={onClose}
+                className="px-3.5 py-1.5 rounded-[10px] bg-[#302747] text-[#F4F1FF] text-xs sm:text-sm font-bold hover:bg-[#3e335c] shrink-0"
+              >
+                ← Volver
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-0.5 sm:gap-2">
+            <h2 className="text-[16px] sm:text-[20px] font-extrabold text-[#F4F1FF] leading-tight">
               🐾 Códice de Mascotas (1–200)
             </h2>
             <p className="text-[11px] sm:text-[12px] text-[#A8A3B8] leading-snug">
-              Arrastra la barra del 1 al 200 o toca una criatura para escuchar su voz.
+              Desbloqueado hasta <strong>Nv. {unlockedLevel}</strong> · Toca una criatura desbloqueada para escuchar su voz.
             </p>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            {onOpenSkins && (
-              <button
-                onClick={onOpenSkins}
-                className="px-3 py-2 rounded-[10px] bg-[#28203F] border border-[#65499C] text-[#E6D9FF] text-xs font-extrabold hover:border-[#FFD54F] transition"
-              >
-                {activeSkin.emoji} Skins
-              </button>
-            )}
-            <button
-              onClick={onClose}
-              className="px-4 py-2 rounded-[10px] bg-[#302747] text-[#F4F1FF] text-sm font-medium hover:bg-[#3e335c] shrink-0"
-            >
-              ← Volver
-            </button>
           </div>
         </div>
 
-        {/* Interactive Slider Preview (Portrait-friendly wrapping) */}
-        <div className="p-3 sm:p-3.5 rounded-[18px] border border-[#342D4B] bg-gradient-to-b from-[#1E1C2E] to-[#171624] flex items-center gap-3 sm:gap-4 shrink-0">
+        {/* Interactive Slider Preview (Portrait-friendly layout) */}
+        <div className="p-2.5 sm:p-3.5 rounded-[18px] border border-[#342D4B] bg-gradient-to-b from-[#1E1C2E] to-[#171624] flex items-center gap-2.5 sm:gap-4 shrink-0">
           <button
             type="button"
             onClick={() => {
@@ -5995,7 +6354,7 @@ function MascotGalleryModal({
             }}
             title={
               isPreviewLocked
-                ? 'Criatura aún bloqueada'
+                ? t.creatureLockedYet
                 : 'Toca para escuchar la voz sintetizada de esta especie'
             }
             className="shrink-0 relative group focus:outline-none"
@@ -6003,7 +6362,7 @@ function MascotGalleryModal({
             <div className="animate-mascot-float">
               <MascotAvatarSvg
                 level={previewLevel}
-                size={80}
+                size={68}
                 isLocked={isPreviewLocked}
                 skinId={skinId}
               />
@@ -6014,19 +6373,19 @@ function MascotGalleryModal({
               </span>
             )}
           </button>
-          <div className="flex-1 min-w-0 space-y-1.5">
+          <div className="flex-1 min-w-0 space-y-1">
             <div className="flex items-center justify-between gap-1.5 flex-wrap">
-              <div className="text-[13px] sm:text-[16px] font-bold text-[#D8C5FF] leading-snug break-words">
+              <div className="text-[13px] sm:text-[16px] font-bold text-[#D8C5FF] leading-tight break-words">
                 {isPreviewLocked
                   ? `🔒 Nivel ${previewLevel} · Criatura Misteriosa`
                   : `✨ Nivel ${previewLevel} · ${MASCOT_STAGE_NAMES[tier]}`}
               </div>
-              <span className="text-[10px] sm:text-[11px] px-2 py-0.5 rounded-full bg-[#302747] text-[#E6D9FF] whitespace-nowrap shrink-0">
+              <span className="text-[9px] sm:text-[11px] px-2 py-0.5 rounded-full bg-[#302747] text-[#E6D9FF] whitespace-nowrap shrink-0">
                 Etapa {tier + 1}/20 · Evol. {subLevel}/10{' '}
                 {isPreviewLocked ? '🔒' : '✓'}
               </span>
             </div>
-            <div className="text-[11px] text-[#C7A4FF] leading-snug break-words">
+            <div className="text-[10.5px] sm:text-[11px] text-[#C7A4FF] leading-snug break-words">
               {isPreviewLocked
                 ? `Pista (Nv. ${previewLevel}): ${MASCOT_STAGE_HINTS[tier]}`
                 : MASCOT_STAGE_HINTS[tier]}
@@ -6045,7 +6404,7 @@ function MascotGalleryModal({
                   setPreviewLevel(Number((e.target as HTMLInputElement).value))
                 }
                 onChange={(e) => setPreviewLevel(Number(e.target.value))}
-                className="w-full h-6 accent-[#B58BFF] cursor-grab active:cursor-grabbing touch-none"
+                className="w-full h-5 accent-[#B58BFF] cursor-grab active:cursor-grabbing touch-none"
               />
               <span className="text-[10px] font-mono-tabular text-[#88839E] shrink-0">
                 200
@@ -6232,7 +6591,7 @@ function MascotAvatarSvg({
     >
       {/* 1. Medallion */}
       <circle cx={cx} cy={cy} r={radius} fill={glow} />
-      {!isLocked && activeSkin.id !== 'default' && (
+      {activeSkin.id !== 'default' && (
         <>
           <circle
             cx={cx}
@@ -6242,7 +6601,7 @@ function MascotAvatarSvg({
             stroke={activeSkin.auraRingColor}
             strokeWidth={1.5}
             strokeDasharray="3.5 2.5"
-            opacity={0.85}
+            opacity={isLocked ? 0.65 : 0.85}
           />
           <circle
             cx={cx}
@@ -6251,7 +6610,7 @@ function MascotAvatarSvg({
             fill="none"
             stroke={activeSkin.auraSecondaryColor}
             strokeWidth={0.9}
-            opacity={0.55}
+            opacity={isLocked ? 0.4 : 0.55}
           />
         </>
       )}
@@ -7687,16 +8046,12 @@ function ObjectiveEditorModal({
     }
     const parsed = Number(goalAmountText.replace(',', '.'));
     if (Number.isNaN(parsed) || parsed <= 0) {
-      onAlert(
-        'Monto no válido',
-        'El monto objetivo debe ser un número mayor que cero.'
-      );
+      onAlert(t.invalidGoalAmountAlert, t.invalidGoalAmountDesc);
       return;
     }
     if (parsed > MAX_SAFE_AMOUNT) {
       setGoalAmountText(String(MAX_SAFE_AMOUNT));
-      onAlert(
-        'Meta máxima alcanzada',
+      onAlert(t.maxGoalAmountReachedAlert,
         `Por seguridad visual y diseño responsive, la meta máxima es ${MAX_SAFE_AMOUNT.toLocaleString(
           'es-ES'
         )}.`
@@ -7736,7 +8091,7 @@ function ObjectiveEditorModal({
             ? `Cambiaste «${objective.title}» (${oldUnitLabel || 'unidad anterior'}) por «${title.trim()}» (${newUnitLabel || 'nueva unidad'}).`
             : unitChanged
             ? `Cambiaste la unidad de «${oldUnitLabel}» a «${newUnitLabel}» en una tarjeta que ya tiene registros.`
-            : `Cambiaste el objetivo «${objective.title}» por «${title.trim()}», una meta distinta.`;
+            : t.changedGoalNameProtection(objective.title, title.trim());
 
         setIdentityShiftPrompt({ reason, payload });
         return;
@@ -7762,12 +8117,10 @@ function ObjectiveEditorModal({
         <div className="flex items-center justify-between gap-2">
           <div>
             <h2 className="text-[20px] sm:text-[24px] font-extrabold text-[#F4F1FF] flex items-center gap-2">
-              <span>{isNewDraft ? '＋ Crear Nuevo Objetivo' : '🎨 Personalizar Objetivo'}</span>
+              <span>{isNewDraft ? t.createGoalModalTitle : t.editGoalModalTitle}</span>
             </h2>
             <p className="text-[12px] text-[#A8A3B8]">
-              {isNewDraft
-                ? 'Elige una plantilla prediseñada o crea tu meta a medida con sintonía total de color.'
-                : 'Personaliza colores, fondo, fecha meta o premio. Si cambias de meta, protegemos tu historial.'}
+              {isNewDraft ? t.createGoalModalSub : t.editGoalModalSub}
             </p>
           </div>
           <button
@@ -7845,7 +8198,7 @@ function ObjectiveEditorModal({
               <div className="flex items-start justify-between gap-2">
                 <div className="space-y-0.5">
                   <div className="text-xs font-extrabold text-[#FFD54F] flex items-center gap-1.5">
-                    <span>💡 ¿Estás queriendo crear un Nuevo Objetivo en realidad?</span>
+                    <span>{t.startCleanGoalPrompt}</span>
                   </div>
                   <p className="text-[11px] text-[#E6E0F2] leading-snug">
                     Tu tarjeta actual <strong>«{objective.title}»</strong> ya tiene{' '}
@@ -8020,7 +8373,7 @@ function ObjectiveEditorModal({
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="Ej. Viaje a Japón, Fondo de Paz…"
+              placeholder={t.placeholderGoalTitle}
               className="w-full h-10 px-3 rounded-[10px] bg-[#11111C] text-[#F4F1FF] text-sm border border-[#2E2C44] focus:outline-none focus:border-[#9B6BFF]"
             />
           </div>
@@ -8036,7 +8389,7 @@ function ObjectiveEditorModal({
               type="text"
               value={category}
               onChange={(e) => setCategory(e.target.value)}
-              placeholder="Finanzas, Aventura, Salud, Hábito…"
+              placeholder={t.placeholderGoalCategory}
               className="w-full h-10 px-3 rounded-[10px] bg-[#11111C] text-[#F4F1FF] text-sm border border-[#2E2C44] focus:outline-none focus:border-[#9B6BFF]"
             />
           </div>
@@ -8152,7 +8505,7 @@ function ObjectiveEditorModal({
               type="text"
               value={pledge}
               onChange={(e) => setPledge(e.target.value)}
-              placeholder="Ej. Cena especial, día libre, festejar…"
+              placeholder={t.placeholderGoalPledge}
               className="w-full h-10 px-3 rounded-[10px] bg-[#11111C] text-[#F4F1FF] text-sm border border-[#2E2C44] focus:outline-none focus:border-[#FFD54F]"
             />
           </div>
@@ -8221,7 +8574,7 @@ function ObjectiveEditorModal({
                 style={{ color: previewAccentTheme.primary }}
                 className="text-[11px] font-bold flex items-center justify-between"
               >
-                <span>COLOR DE ENERGÍA (SINTONÍA TOTAL)</span>
+                <span>{t.goalAccentThemeLabel}</span>
                 <span className="text-[10px] opacity-90">
                   {previewAccentTheme.name}
                 </span>
@@ -8318,12 +8671,12 @@ function ObjectiveEditorModal({
                 onClick={() =>
                   onSave(identityShiftPrompt.payload, 'create_new')
                 }
-                className="w-full py-2.5 px-3 rounded-[11px] bg-gradient-to-r from-[#E5B945] to-[#FFD54F] text-[#1A1305] text-xs font-extrabold hover:brightness-110 active:scale-95 transition shadow text-left flex items-center justify-between"
+                className="w-full py-2.5 px-3 rounded-[11px] bg-gradient-to-r from-[#E5B945] to-[#FFD54F] text-[#1A1305] text-xs font-extrabold hover:brightness-110 active:scale-95 transition shadow text-left flex flex-col sm:flex-row sm:items-center justify-between gap-1"
               >
                 <span>
                   ✨ Sí, crear «{identityShiftPrompt.payload.title.trim()}» como Nuevo Objetivo
                 </span>
-                <span className="text-[10px] px-2 py-0.5 rounded bg-black/15">
+                <span className="text-[10px] px-2 py-0.5 rounded bg-black/15 self-start sm:self-auto shrink-0">
                   Conservar «{objective.title}» intacto
                 </span>
               </button>
@@ -8333,12 +8686,12 @@ function ObjectiveEditorModal({
                 onClick={() =>
                   onSave(identityShiftPrompt.payload, 'overwrite_reset')
                 }
-                className="w-full py-2.5 px-3 rounded-[11px] bg-[#33223A] border border-[#FF8A65]/50 text-[#FFD8CC] text-xs font-bold hover:bg-[#422B4B] transition text-left flex items-center justify-between"
+                className="w-full py-2.5 px-3 rounded-[11px] bg-[#33223A] border border-[#FF8A65]/50 text-[#FFD8CC] text-xs font-bold hover:bg-[#422B4B] transition text-left flex flex-col sm:flex-row sm:items-center justify-between gap-1"
               >
                 <span>
                   🧹 Transformar esta tarjeta y reiniciar su historial a 0
                 </span>
-                <span className="text-[10px] opacity-80">Empezar limpio</span>
+                <span className="text-[10px] opacity-80 shrink-0">Empezar limpio</span>
               </button>
 
               <button
@@ -8374,7 +8727,7 @@ function ObjectiveEditorModal({
             }}
             className="h-11 rounded-[12px] font-extrabold hover:brightness-110 active:scale-95 transition"
           >
-            {isNewDraft ? '🚀 Crear Objetivo' : '✓ Guardar Cambios'}
+            {isNewDraft ? t.createGoalSubmit : t.saveGoalChangesSubmit}
           </button>
         </div>
       </div>
@@ -8520,7 +8873,7 @@ function BannerPickerModal({
               />
             ) : (
               <div className="text-center text-[13px] text-[#E7E1F0] px-4 whitespace-pre-line">
-                {'Selecciona una foto para encuadrarla aquí\narrastra para moverla'}
+                {t.cropImageHint}
               </div>
             )}
           </div>
@@ -8591,7 +8944,7 @@ function EditEntryModal({
   const handleSave = () => {
     const parsed = Number(amountText.replace(',', '.'));
     if (Number.isNaN(parsed) || parsed <= 0) {
-      onAlert('Importe no válido', 'Escribe un importe mayor que cero.');
+      onAlert(t.invalidAmountAlert, t.invalidAmountDesc);
       return;
     }
     if (parsed > MAX_SAFE_AMOUNT) {
@@ -8686,6 +9039,8 @@ function IndieEmporiumModal({
   onRedeemLicenseCode,
   onJumpToBoard,
   onClose,
+  t,
+  launchTimeLeft,
 }: {
   initialTab: 'skins' | 'cards_audio' | 'buffs' | 'support';
   currentObjective: Objective;
@@ -8708,6 +9063,13 @@ function IndieEmporiumModal({
   isIndieFounder: boolean;
   supporterTier: 'none' | 'coffee' | 'founder';
   lastIssuedLicenseCode: string;
+  t: TranslationDictionary;
+  launchTimeLeft: {
+    days: number;
+    hours: number;
+    minutes: number;
+    seconds: number;
+  };
   onSelectSkin: (skin: MascotSkinDefinition) => void;
   onSelectCardCosmetic: (cosmetic: CardCosmeticDefinition) => void;
   onSelectSoundPack: (pack: SoundPackCatalogItem) => void;
@@ -8792,10 +9154,12 @@ function IndieEmporiumModal({
     setPreviewSkinId(equippedSkinId);
   }, [equippedSkinId]);
 
+  const unlockedLevel = Math.max(1, level);
   const previewSkin = findMascotSkin(previewSkinId);
   const previewTier = Math.floor(
     (Math.min(200, Math.max(1, previewMascotLevel)) - 1) / 10
   );
+  const isPreviewLevelLocked = previewMascotLevel > unlockedLevel;
 
   // Live Card & Audio Stage derived state
   const liveAccentTheme = useMemo(
@@ -8935,107 +9299,110 @@ function IndieEmporiumModal({
 
   return (
     <div className="fixed inset-0 z-50 bg-[#0D0E17]/96 backdrop-blur-md flex flex-col overflow-hidden">
-      {/* Pinned Top Header + Navigation Bar */}
-      <div className="w-full bg-[#131221]/95 border-b border-[#2C2742] px-3 sm:px-5 pt-3 pb-2.5 shrink-0">
-        <div className="max-w-5xl w-full mx-auto space-y-2.5">
-          <div className="flex items-start sm:items-center justify-between gap-2.5">
-            <div className="space-y-0.5 min-w-0">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="inline-flex items-center gap-1 text-[10px] font-extrabold uppercase tracking-widest">
-                  <span className="text-xs leading-none">🎯</span>
-                  <span className="text-[#F4F1FF]">OBJECTIVE</span>{' '}
-                  <span className="text-[#82E59B]">REACHER</span>{' '}
-                  <span className="text-[#FFD54F]">· BANCO DEL SANTUARIO</span>
-                </span>
-                <span className="px-2 py-0.5 rounded-full bg-[#1E1A32] border border-[#65499C]/60 text-[9px] font-extrabold text-[#E2D4FF]">
-                  ✨ {VAULT_STATS.totalItems} COLECCIONABLES EN EL SANTUARIO
-                </span>
-              </div>
-              <h2 className="text-[16px] sm:text-[20px] font-extrabold text-[#F4F1FF] leading-snug break-words">
-                💎 Cosméticos, Tarjetas, Sintetizador & Apoyo Indie
-              </h2>
+      {/* Pinned Top Header + Navigation Bar — Portrait-First Layout so Brand & Title Never Collide with Buttons */}
+      <div className="w-full bg-[#131221]/95 border-b border-[#2C2742] px-3 sm:px-5 pt-[max(0.65rem,calc(env(safe-area-inset-top,0px)+0.35rem))] pb-2.5 shrink-0">
+        <div className="max-w-5xl w-full mx-auto space-y-2">
+          {/* Row 1: Brand Pill on Left + Gems & Back Button on Right */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#1C1830] border border-[#3E335C] text-[9.5px] sm:text-[10px] font-extrabold uppercase tracking-wider shrink-0 whitespace-nowrap">
+              <span className="text-xs leading-none shrink-0">🎯</span>
+              <span className="text-[#F4F1FF] shrink-0 whitespace-nowrap">OBJECTIVE</span>
+              <span className="text-[#82E59B] shrink-0 whitespace-nowrap">REACHER</span>
+              <span className="text-[#FFD54F] shrink-0 whitespace-nowrap">· SANTUARIO</span>
             </div>
 
-            <div className="flex items-center gap-2 shrink-0">
-              <div
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              <button
+                type="button"
                 onClick={() => {
                   playUiTap(1);
                   setActiveTab('support');
                 }}
-                title="Tus Gemas Astrales (toca para obtener más o enviar propina)"
-                className="px-3 py-1.5 rounded-[11px] bg-[#1F1C30] border border-[#53417D] hover:border-[#B58BFF] cursor-pointer flex items-center gap-1.5 transition"
+                title={t.astralGemsTooltip}
+                className="h-8 px-2.5 sm:px-3 rounded-[10px] bg-[#1F1C30] border border-[#53417D] hover:border-[#B58BFF] cursor-pointer flex items-center gap-1.5 transition"
               >
-                <span className="text-sm">💎</span>
+                <span className="text-xs sm:text-sm leading-none">💎</span>
                 <span className="text-xs sm:text-sm font-mono-tabular font-extrabold text-[#9AF0AE]">
                   {gems}
                 </span>
-              </div>
+              </button>
               <button
+                type="button"
                 onClick={onClose}
-                className="px-3.5 py-2 rounded-[11px] bg-[#2D2644] text-[#F4F1FF] text-xs sm:text-sm font-bold hover:bg-[#3B3258] transition"
+                className="h-8 px-3 sm:px-3.5 rounded-[10px] bg-[#2D2644] text-[#F4F1FF] text-xs sm:text-sm font-bold hover:bg-[#3B3258] transition shrink-0"
               >
-                ← Volver
+                ← {t.backButton}
               </button>
             </div>
           </div>
 
-          {/* 4 Primary Navigation Tabs */}
-          <div className="p-1 rounded-[13px] bg-[#0E0D18] border border-[#29243D] grid grid-cols-2 sm:grid-cols-4 gap-1">
+          {/* Row 2: Full-Width Title + Total Collectibles Pill */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-2">
+            <h2 className="text-[15px] sm:text-[19px] font-extrabold text-[#F4F1FF] leading-tight">
+              {t.shopMainTitle}
+            </h2>
+            <span className="self-start sm:self-auto px-2 py-0.5 rounded-full bg-[#1E1A32] border border-[#65499C]/60 text-[9px] font-extrabold text-[#E2D4FF] shrink-0">
+              {t.shopCollectiblesBadge(VAULT_STATS.totalItems)}
+            </span>
+          </div>
+
+          {/* Row 3: 4 Primary Navigation Tabs */}
+          <div className="p-1 rounded-[12px] bg-[#0E0D18] border border-[#29243D] grid grid-cols-2 sm:grid-cols-4 gap-1">
             {[
-              { id: 'skins', label: `🎨 Skins (${MASCOT_SKINS.length})` },
+              { id: 'skins', label: t.tabSkins(MASCOT_SKINS.length) },
               {
                 id: 'cards_audio',
-                label: `✨ Tarjetas & Audio (${
+                label: t.tabCardsAudio(
                   CARD_COSMETICS.length +
-                  SOUND_PACKS.length +
-                  CARD_STYLE_VAULT.length +
-                  GUARDIAN_TITLES.length
-                })`,
+                    SOUND_PACKS.length +
+                    CARD_STYLE_VAULT.length +
+                    GUARDIAN_TITLES.length
+                ),
               },
-              { id: 'buffs', label: `🧪 Buffs & Reliquias (${SANCTUARY_BUFFS.length})` },
-              { id: 'support', label: '💖 Apoyar al Dev' },
-            ].map((t) => {
-              const isSelected = activeTab === t.id;
+              { id: 'buffs', label: t.tabBuffs(SANCTUARY_BUFFS.length) },
+              { id: 'support', label: `💖 ${t.tabSupport} (${t.supportTabPromoBadge})` },
+            ].map((tabItem) => {
+              const isSelected = activeTab === tabItem.id;
               return (
                 <button
-                  key={t.id}
+                  key={tabItem.id}
                   type="button"
                   onClick={() => {
                     playUiTap(1);
                     setActiveTab(
-                      t.id as 'skins' | 'cards_audio' | 'buffs' | 'support'
+                      tabItem.id as 'skins' | 'cards_audio' | 'buffs' | 'support'
                     );
                   }}
-                  className={`h-[36px] px-2 rounded-[9px] text-[11px] sm:text-xs font-extrabold transition truncate ${
+                  className={`h-[33px] sm:h-[36px] px-2 rounded-[9px] text-[11px] sm:text-xs font-extrabold transition truncate ${
                     isSelected
                       ? 'bg-gradient-to-r from-[#593596] to-[#7A4FD1] text-white border border-[#B58BFF]/60 shadow'
                       : 'text-[#A8A3B8] hover:text-[#F4F1FF] hover:bg-[#1A182B]'
                   }`}
                 >
-                  {t.label}
+                  {tabItem.label}
                 </button>
               );
             })}
           </div>
 
-          {/* Filter & Search Bar for Content Vault Tabs (Skins, Cards/Audio, Buffs) */}
+          {/* Row 4: Filter & Search Bar for Content Vault Tabs (Skins, Cards/Audio, Buffs) */}
           {(activeTab === 'skins' ||
             activeTab === 'cards_audio' ||
             activeTab === 'buffs') && (
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 pt-0.5">
-              <div className="flex items-center gap-1 bg-[#0E0D18] p-1 rounded-[10px] border border-[#262238]">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-1.5">
+              <div className="grid grid-cols-3 sm:flex items-center gap-1 bg-[#0E0D18] p-1 rounded-[10px] border border-[#262238]">
                 {[
                   {
                     id: 'all',
-                    label: `Todos (${VAULT_STATS.totalItems})`,
+                    label: t.filterAll(VAULT_STATS.totalItems),
                   },
                   {
                     id: 'free',
-                    label: `🎁 Gratis (${VAULT_STATS.freeItems})`,
+                    label: t.filterFree(VAULT_STATS.freeItems),
                   },
                   {
                     id: 'premium',
-                    label: `💎 Con Gemas (${VAULT_STATS.premiumItems})`,
+                    label: t.filterPremium(VAULT_STATS.premiumItems),
                   },
                 ].map((f) => {
                   const active = tierFilter === f.id;
@@ -9047,7 +9414,7 @@ function IndieEmporiumModal({
                         playUiTap(1);
                         setTierFilter(f.id as 'all' | 'free' | 'premium');
                       }}
-                      className={`px-2.5 py-1 rounded-[7px] text-[10px] sm:text-[11px] font-bold transition ${
+                      className={`px-2 py-1 rounded-[7px] text-[10px] sm:text-[11px] font-bold transition truncate text-center ${
                         active
                           ? 'bg-[#2E2546] text-[#FFD54F] border border-[#FFD54F]/45'
                           : 'text-[#A8A3B8] hover:text-white'
@@ -9059,13 +9426,13 @@ function IndieEmporiumModal({
                 })}
               </div>
 
-              <div className="relative flex-1 max-w-xs">
+              <div className="relative flex-1 sm:max-w-xs">
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="🔍 Buscar skin, marco, sonido, reliquia..."
-                  className="w-full h-[32px] pl-3 pr-7 rounded-[9px] bg-[#0E0D18] border border-[#2C2742] text-[11px] text-[#F4F1FF] placeholder-[#7D7894] focus:outline-none focus:border-[#B58BFF]"
+                  placeholder={t.searchPlaceholder}
+                  className="w-full h-[31px] pl-3 pr-7 rounded-[9px] bg-[#0E0D18] border border-[#2C2742] text-[11px] text-[#F4F1FF] placeholder-[#7D7894] focus:outline-none focus:border-[#B58BFF]"
                 />
                 {searchQuery && (
                   <button
@@ -9083,25 +9450,35 @@ function IndieEmporiumModal({
       </div>
 
       {/* Full-Width Scrollable Viewport Body (Right-edge native scrollbar controls this directly) */}
-      <div className="flex-1 w-full overflow-y-scroll overscroll-contain px-3 sm:px-5 py-4">
+      <div className="flex-1 w-full overflow-y-scroll overscroll-contain px-3 sm:px-5 py-3.5 sm:py-4">
         <div className="max-w-5xl w-full mx-auto space-y-4 pb-10">
-          {/* TAB 1: 36 MASCOT SKINS & AURAS */}
+          {/* TAB 1: 36 MASCOT SKINS & AURAS (With Anti-Spoiler Protection for Locked Species) */}
           {activeTab === 'skins' && (
             <div className="space-y-3.5">
               {/* Interactive Mascot Skin & Evolution Stage Preview */}
-              <div className="p-3.5 sm:p-4 rounded-[20px] border border-[#443868] bg-gradient-to-b from-[#211D34] to-[#161524] space-y-3 shadow-lg">
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-                  <div className="flex items-center gap-3.5 min-w-0">
+              <div className="p-3 sm:p-4 rounded-[20px] border border-[#443868] bg-gradient-to-b from-[#211D34] to-[#161524] space-y-3 shadow-lg">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
                     <button
                       type="button"
-                      onClick={() => playMascotVoice(previewMascotLevel, false)}
+                      onClick={() => {
+                        if (!isPreviewLevelLocked) {
+                          playMascotVoice(previewMascotLevel, false);
+                        } else {
+                          playUiTap(0);
+                        }
+                      }}
                       className="relative shrink-0 group focus:outline-none"
-                      title="Toca para escuchar la voz bio-acústica de esta especie"
+                      title={
+                        isPreviewLevelLocked
+                          ? t.reachLevelToUnlockSpecies(previewMascotLevel) : t.tapToHearBioVoice
+                      }
                     >
                       <div className="animate-mascot-float">
                         <MascotAvatarSvg
                           level={previewMascotLevel}
-                          size={82}
+                          size={76}
+                          isLocked={isPreviewLevelLocked}
                           skinId={previewSkin.id}
                         />
                       </div>
@@ -9117,15 +9494,25 @@ function IndieEmporiumModal({
                         >
                           {previewSkin.badge}
                         </span>
-                        <span className="text-[11px] text-[#C8C2D8] font-semibold">
-                          Probando en Nv. {previewMascotLevel} ({MASCOT_STAGE_NAMES[previewTier]})
+                        <span
+                          className={`text-[10.5px] font-semibold ${
+                            isPreviewLevelLocked
+                              ? 'text-[#FFD54F]'
+                              : 'text-[#C8C2D8]'
+                          }`}
+                        >
+                          {isPreviewLevelLocked
+                            ? `🔒 Nv. ${previewMascotLevel} · Especie Misteriosa (Tu Nv.: ${unlockedLevel})`
+                            : `✓ Probando en Nv. ${previewMascotLevel} (${MASCOT_STAGE_NAMES[previewTier]})`}
                         </span>
                       </div>
-                      <div className="text-[16px] sm:text-[18px] font-extrabold text-white leading-snug break-words">
+                      <div className="text-[15px] sm:text-[18px] font-extrabold text-white leading-snug break-words">
                         {previewSkin.emoji} {previewSkin.name}
                       </div>
                       <div className="text-[11px] text-[#C8C2D8] leading-snug break-words">
-                        {previewSkin.subtitle}
+                        {isPreviewLevelLocked
+                          ? `🔒 Sube a Nivel ${previewMascotLevel} para desbloquear esta especie sin spoilers. Puedes apreciar el anillo exterior de «${previewSkin.name}» sobre su silueta.`
+                          : previewSkin.subtitle}
                       </div>
                     </div>
                   </div>
@@ -9147,12 +9534,15 @@ function IndieEmporiumModal({
                   </div>
                 </div>
 
-                {/* Evolution Slider to test the skin across all 200 levels */}
+                {/* Evolution Slider with Anti-Spoiler Protection above user's current level */}
                 <div className="pt-2 border-t border-[#322B4B] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <span className="text-[11px] text-[#A8A3B8]">
-                    🎚️ Desliza para probar cómo luce <strong>{previewSkin.name}</strong> en las 20 especies (Nv. 1–200):
+                  <span className="text-[11px] text-[#A8A3B8] leading-snug">
+                    🎚️ Prueba <strong>{previewSkin.name}</strong> en tus niveles desbloqueados (1–{unlockedLevel}){' '}
+                    <span className="text-[#9E97B0]">
+                      · Nv. {Math.min(200, unlockedLevel + 1)}–200 protegidos contra spoilers 🔒
+                    </span>
                   </span>
-                  <div className="flex items-center gap-2 flex-1 max-w-sm">
+                  <div className="flex items-center gap-2 flex-1 sm:max-w-sm">
                     <input
                       type="range"
                       min={1}
@@ -9163,10 +9553,14 @@ function IndieEmporiumModal({
                     />
                     <button
                       type="button"
-                      onClick={() => setPreviewMascotLevel(level)}
-                      className="px-2 py-1 rounded bg-[#2B2540] text-[10px] font-bold text-[#D8C5FF] hover:text-white shrink-0"
+                      onClick={() => setPreviewMascotLevel(unlockedLevel)}
+                      className={`px-2.5 py-1 rounded text-[10px] font-bold transition shrink-0 ${
+                        previewMascotLevel === unlockedLevel
+                          ? 'bg-[#3C2F5A] text-[#FFD54F] border border-[#FFD54F]/40'
+                          : 'bg-[#2B2540] text-[#D8C5FF] hover:text-white'
+                      }`}
                     >
-                      Mi Nv. ({level})
+                      Mi Nv. ({unlockedLevel})
                     </button>
                   </div>
                 </div>
@@ -9201,6 +9595,7 @@ function IndieEmporiumModal({
                         <MascotAvatarSvg
                           level={previewMascotLevel}
                           size={54}
+                          isLocked={isPreviewLevelLocked}
                           skinId={skin.id}
                         />
                         <div className="min-w-0 flex-1 space-y-0.5">
@@ -9479,16 +9874,16 @@ function IndieEmporiumModal({
                   {
                     id: 'sounds',
                     label: `🎵 Packs de 5 Sonidos (${SOUND_PACKS.length})`,
-                    desc: '11 motores acústicos',
+                    desc: t.acousticEnginesBadge(11),
                   },
                   {
                     id: 'styles',
-                    label: `🌈 Sintonías (${CARD_STYLE_VAULT.length})`,
+                    label: t.tabThemesVault(CARD_STYLE_VAULT.length),
                     desc: 'Temas y paisajes',
                   },
                   {
                     id: 'titles',
-                    label: `🏅 Títulos (${GUARDIAN_TITLES.length})`,
+                    label: t.tabTitlesVault(GUARDIAN_TITLES.length),
                     desc: 'Emblemas de perfil',
                   },
                 ].map((sub) => {
@@ -9589,8 +9984,8 @@ function IndieEmporiumModal({
                               setLiveEquippedNotice({
                                 id: Date.now(),
                                 emoji: frame.emoji,
-                                title: `¡Marco "${frame.name}" equipado en vivo!`,
-                                subtitle: `Míralo aplicado arriba en tu tarjeta «${currentObjective.title}»`,
+                                title: t.equippedFrameNotice(frame.name),
+                                subtitle: t.equippedFrameCardSub(currentObjective.title),
                                 color: frame.borderColor,
                               });
                             }
@@ -9685,23 +10080,17 @@ function IndieEmporiumModal({
 
                             {/* 5 Direct Sound Audition Pads inside every Sound Pack Card */}
                             <div className="pt-1 grid grid-cols-5 gap-1">
-                              {[
-                                { idx: 0, short: '1·Toque' },
-                                { idx: 1, short: '2·+Suma' },
-                                { idx: 2, short: '3·−Resta' },
-                                { idx: 3, short: '4·Misión' },
-                                { idx: 4, short: '5·Logro' },
-                              ].map((pad) => {
+                              {t.soundPackPads.map((padShort, padIdx) => {
                                 const isPadActive =
-                                  auditionState?.stepIndex === pad.idx;
+                                  auditionState?.stepIndex === padIdx;
                                 return (
                                   <button
-                                    key={pad.idx}
+                                    key={padIdx}
                                     type="button"
                                     onClick={() =>
-                                      handleAuditionSoundPack(snd.id, pad.idx)
+                                      handleAuditionSoundPack(snd.id, padIdx)
                                     }
-                                    title={`Escuchar ${SOUND_PACK_STEP_LABELS[pad.idx]} de ${snd.name}`}
+                                    title={t.soundPackAuditionTooltip(t.soundPackSteps[padIdx], snd.name)}
                                     style={
                                       isPadActive
                                         ? {
@@ -9716,7 +10105,7 @@ function IndieEmporiumModal({
                                         : 'bg-[#12111D] border-[#29253C] text-[#9E97B0] hover:text-white hover:border-[#4A416A]'
                                     }`}
                                   >
-                                    {pad.short}
+                                    {padShort}
                                   </button>
                                 );
                               })}
@@ -9731,7 +10120,7 @@ function IndieEmporiumModal({
                                 setLiveEquippedNotice({
                                   id: Date.now(),
                                   emoji: snd.emoji,
-                                  title: `¡Pack de 5 Sonidos "${snd.name}" activado!`,
+                                  title: t.soundPackActivatedNotice(snd.name),
                                   subtitle: `Motor ${snd.synthEngineLabel || snd.scaleName} activo en toda la app`,
                                   color: snd.accentColor,
                                 });
@@ -9845,7 +10234,7 @@ function IndieEmporiumModal({
                                 id: Date.now(),
                                 emoji: st.emoji,
                                 title: `¡Estilo "${st.name}" aplicado en vivo!`,
-                                subtitle: `Tu tarjeta «${currentObjective.title}» ya luce esta sintonía arriba y en el tablero`,
+                                subtitle: t.themeAppliedNotice(currentObjective.title),
                                 color: st.accentColor,
                               });
                             }
@@ -10046,7 +10435,7 @@ function IndieEmporiumModal({
                             ? '✓ Reliquia en tu Santuario'
                             : '✓ Bendición Reclamada'
                           : levelLocked
-                          ? `🔒 Requiere Guardián Nv. ${buff.requiredLevel}`
+                          ? t.requiresGuardianLevel(buff.requiredLevel)
                           : buff.gemCost === 0
                           ? `🎁 Reclamar Gratis (${buff.subtitle})`
                           : `Activar · 💎 ${buff.gemCost}`}
@@ -10061,6 +10450,83 @@ function IndieEmporiumModal({
           {/* TAB 4: APOYAR AL DEV INDIE (ARQUITECTURA DUAL: MERCADO PAGO + PAYPAL / GOOGLE PAY + LICENCIAS PRO) */}
           {activeTab === 'support' && (
             <div className="space-y-4">
+              {/* 🚀 BANNER DE LANZAMIENTO GLOBAL v1.0 CON TEMPORIZADOR EN VIVO Y BADGES */}
+              <div className="p-4 sm:p-5 rounded-[22px] bg-gradient-to-br from-[#2D1B4E] via-[#20183A] to-[#121024] border-2 border-[#FFD54F]/70 shadow-[0_10px_35px_rgba(255,213,79,0.22)] relative overflow-hidden space-y-3.5">
+                {/* Glow decorativo de fondo */}
+                <div className="absolute -top-16 -right-16 w-48 h-48 bg-[#FFD54F]/10 rounded-full blur-3xl pointer-events-none" />
+                <div className="absolute -bottom-16 -left-16 w-48 h-48 bg-[#9B6BFF]/15 rounded-full blur-3xl pointer-events-none" />
+
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 relative z-10">
+                  <div className="space-y-1.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="px-2.5 py-1 rounded-full bg-[#FFD54F] text-[#191124] text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shadow-sm">
+                        <span>🚀</span>
+                        <span>{t.launchOfferBannerBadge}</span>
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full bg-[#FF477E]/25 border border-[#FF477E]/60 text-[#FF85A1] text-[10px] font-black flex items-center gap-1 animate-pulse">
+                        <span>🔥</span>
+                        <span>{t.launchMaxDiscount}</span>
+                      </span>
+                    </div>
+                    <h3 className="text-base sm:text-xl font-black text-white tracking-tight flex items-center gap-2">
+                      {t.launchOfferBannerTitle}
+                    </h3>
+                    <p className="text-[11px] sm:text-[12px] text-[#DDD6EE] max-w-2xl leading-relaxed">
+                      {t.launchOfferBannerSub}
+                    </p>
+                  </div>
+
+                  {/* Reloj de Cuenta Regresiva en Vivo */}
+                  <div className="p-2.5 sm:p-3 rounded-[16px] bg-[#141026]/90 border border-[#FFD54F]/40 shadow-inner flex flex-col items-center sm:items-end shrink-0">
+                    <div className="text-[10px] font-black text-[#FFD54F] uppercase tracking-wider flex items-center gap-1.5 mb-1.5">
+                      <span className="w-2 h-2 rounded-full bg-[#65DB85] animate-ping" />
+                      <span>{t.launchTimerLabel}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-center font-mono-tabular">
+                      <div className="px-2 py-1 rounded-[8px] bg-[#241B3D] border border-white/10 min-w-[38px]">
+                        <div className="text-sm sm:text-base font-black text-white">{String(launchTimeLeft.days).padStart(2, '0')}</div>
+                        <div className="text-[9px] text-[#A8A3B8] font-bold">{t.daysShort}</div>
+                      </div>
+                      <span className="text-[#FFD54F] font-bold text-xs">:</span>
+                      <div className="px-2 py-1 rounded-[8px] bg-[#241B3D] border border-white/10 min-w-[38px]">
+                        <div className="text-sm sm:text-base font-black text-white">{String(launchTimeLeft.hours).padStart(2, '0')}</div>
+                        <div className="text-[9px] text-[#A8A3B8] font-bold">{t.hoursShort}</div>
+                      </div>
+                      <span className="text-[#FFD54F] font-bold text-xs">:</span>
+                      <div className="px-2 py-1 rounded-[8px] bg-[#241B3D] border border-white/10 min-w-[38px]">
+                        <div className="text-sm sm:text-base font-black text-white">{String(launchTimeLeft.minutes).padStart(2, '0')}</div>
+                        <div className="text-[9px] text-[#A8A3B8] font-bold">{t.minsShort}</div>
+                      </div>
+                      <span className="text-[#FFD54F] font-bold text-xs">:</span>
+                      <div className="px-2 py-1 rounded-[8px] bg-[#241B3D] border border-white/10 min-w-[38px]">
+                        <div className="text-sm sm:text-base font-black text-[#FFD54F]">{String(launchTimeLeft.seconds).padStart(2, '0')}</div>
+                        <div className="text-[9px] text-[#A8A3B8] font-bold">{t.secsShort}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Ticker de beneficios del lanzamiento */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 border-t border-white/10 text-[10px] sm:text-[11px] text-[#CFC7E5] font-semibold">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[#65DB85]">✓</span>
+                    <span>{t.launchPerk1}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[#FFD54F]">✓</span>
+                    <span>{t.launchPerk2}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[#64D8FF]">✓</span>
+                    <span>{t.launchPerk3}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[#FF85A1]">✓</span>
+                    <span>{t.launchPerk4}</span>
+                  </div>
+                </div>
+              </div>
+
               {/* Empathy Note from the Solo Indie Developer */}
               <div className="p-3.5 rounded-[18px] bg-gradient-to-r from-[#241D38] via-[#1E1B30] to-[#1A2826] border border-[#56447E] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-start gap-3 min-w-0">
@@ -10167,44 +10633,41 @@ function IndieEmporiumModal({
               </div>
 
               {/* PedidosYa-Style Editable Tip / Donation Card */}
-              <div className="p-4 sm:p-5 rounded-[20px] bg-gradient-to-b from-[#231D38] to-[#171526] border-2 border-[#8C5CE0] shadow-[0_8px_28px_rgba(140,92,224,0.2)] space-y-3.5">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="p-3.5 sm:p-5 rounded-[20px] bg-gradient-to-b from-[#231D38] to-[#171526] border-2 border-[#8C5CE0] shadow-[0_8px_28px_rgba(140,92,224,0.2)] space-y-3.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                   <div>
                     <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#352656] text-[#FFD54F] border border-[#FFD54F]/40">
-                      💖 PROPINA LIBRE · TÚ ELIGES EL MONTO
+                      {t.freeTipTag}
                     </span>
-                    <h3 className="text-[16px] sm:text-[18px] font-extrabold text-white mt-1">
-                      ☕ Propina al Desarrollador (Editable al instante)
+                    <h3 className="text-[15px] sm:text-[18px] font-extrabold text-white mt-1 leading-snug">
+                      {t.tipCardTitle}
                     </h3>
-                    <p className="text-[11px] text-[#C8C2D8]">
-                      Elige un botón rápido o edita manualmente la cantidad exacta que quieras aportar:
+                    <p className="text-[11px] text-[#C8C2D8] leading-snug">
+                      {t.tipCardSubtitle}
                     </p>
                   </div>
 
-                  {/* Live Reward Pill */}
-                  <div className="px-3 py-2 rounded-[13px] bg-[#141222] border border-[#493A6E] text-right shrink-0">
+                  {/* Live Reward Pill — Full width balanced row on mobile, right-aligned box on desktop */}
+                  <div className="w-full sm:w-auto px-3 py-2 rounded-[13px] bg-[#141222] border border-[#493A6E] flex sm:block items-center justify-between gap-2 text-left sm:text-right shrink-0">
                     <div className="text-[10px] text-[#A8A3B8]">
-                      Recompensa de agradecimiento:
+                      {t.tipGratitudeReward}
                     </div>
-                    <div className="text-xs sm:text-sm font-mono-tabular font-extrabold text-[#9AF0AE]">
-                      +{tipRewardGems} 💎 · +{tipRewardShields} 🛡️
-                    </div>
-                    {tipUnlocksFounder && (
-                      <div className="text-[10px] font-extrabold text-[#FFD54F]">
-                        👑 ¡Incluye Pase Fundador Indie!
+                    <div>
+                      <div className="text-xs sm:text-sm font-mono-tabular font-extrabold text-[#9AF0AE]">
+                        +{tipRewardGems} 💎 · +{tipRewardShields} 🛡️
                       </div>
-                    )}
+                      {tipUnlocksFounder && (
+                        <div className="text-[10px] font-extrabold text-[#FFD54F]">
+                          {t.tipFounderIncluded}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
                 {/* Quick Tip Pills (PedidosYa style) */}
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                  {[
-                    { amount: '1.00', label: '$1 USD', tag: '🧉 Un Mate' },
-                    { amount: '2.00', label: '$2 USD', tag: '☕ Café Indie' },
-                    { amount: '5.00', label: '$5 USD', tag: '👑 Pase Fundador' },
-                    { amount: '10.00', label: '$10 USD', tag: '🚀 Impulso Épico' },
-                  ].map((preset) => {
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {t.tipPresets.map((preset) => {
                     const isSelected =
                       !isCustomTipEditing &&
                       Math.abs(parsedTipUsd - Number(preset.amount)) < 0.01;
@@ -10217,13 +10680,13 @@ function IndieEmporiumModal({
                           setIsCustomTipEditing(false);
                           setTipAmountText(preset.amount);
                         }}
-                        className={`p-2.5 rounded-[12px] border text-center transition ${
+                        className={`p-3 rounded-[14px] border text-center transition active:scale-95 flex flex-col items-center justify-center gap-0.5 ${
                           isSelected
-                            ? 'bg-[#3A2B60] border-[#FFD54F] text-white shadow'
+                            ? 'bg-[#3A2B60] border-[#FFD54F] text-white shadow-[0_0_14px_rgba(255,213,79,0.25)]'
                             : 'bg-[#161524] border-[#2E2946] text-[#C8C2D8] hover:border-[#65499C]'
                         }`}
                       >
-                        <div className="text-xs sm:text-sm font-mono-tabular font-extrabold text-white">
+                        <div className="text-sm font-mono-tabular font-extrabold text-white">
                           {preset.label}
                         </div>
                         <div className="text-[10px] text-[#FFD54F] font-semibold">
@@ -10243,32 +10706,32 @@ function IndieEmporiumModal({
                         tipCustomInputRef.current?.select();
                       }, 40);
                     }}
-                    className={`p-2.5 rounded-[12px] border text-center transition ${
+                    className={`col-span-2 sm:col-span-4 p-2.5 rounded-[12px] border text-center transition ${
                       isCustomTipEditing
                         ? 'bg-[#3A2B60] border-[#82E59B] text-white shadow'
                         : 'bg-[#161524] border-[#2E2946] text-[#C8C2D8] hover:border-[#82E59B]'
                     }`}
                   >
                     <div className="text-xs sm:text-sm font-extrabold text-[#82E59B]">
-                      ✏️ Otro monto
+                      {t.tipCustomAmountBtn}
                     </div>
                     <div className="text-[10px] text-[#A8A3B8]">
-                      Editar libremente
+                      {t.tipCustomAmountSub}
                     </div>
                   </button>
                 </div>
 
                 {/* Interactive Stepper + Direct Editable Input */}
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 p-2.5 rounded-[14px] bg-[#12111E] border border-[#2F2947]">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-between sm:justify-start gap-2">
                     <button
                       type="button"
                       onClick={() => adjustTipBy(-0.5)}
-                      className="w-10 h-10 rounded-[10px] bg-[#25203B] hover:bg-[#332C50] text-white font-extrabold text-base border border-[#443968] transition"
+                      className="w-10 h-10 rounded-[10px] bg-[#25203B] hover:bg-[#332C50] text-white font-extrabold text-base border border-[#443968] transition shrink-0"
                     >
                       −
                     </button>
-                    <div className="relative flex items-center">
+                    <div className="relative flex items-center flex-1 sm:flex-initial">
                       <span className="absolute left-3 text-sm font-extrabold text-[#FFD54F]">
                         $
                       </span>
@@ -10281,8 +10744,8 @@ function IndieEmporiumModal({
                         value={tipAmountText}
                         onFocus={() => setIsCustomTipEditing(true)}
                         onChange={(e) => setTipAmountText(e.target.value)}
-                        aria-label="Monto de propina en USD"
-                        className="w-[125px] h-10 pl-7 pr-11 rounded-[10px] bg-[#1B182C] border border-[#65499C] text-white font-mono-tabular font-extrabold text-sm focus:outline-none focus:border-[#FFD54F]"
+                        aria-label={t.tipInputAria}
+                        className="w-full sm:w-[130px] h-10 pl-7 pr-11 rounded-[10px] bg-[#1B182C] border border-[#65499C] text-white font-mono-tabular font-extrabold text-sm text-center sm:text-left focus:outline-none focus:border-[#FFD54F]"
                       />
                       <span className="absolute right-2.5 text-[10px] font-bold text-[#A8A3B8]">
                         USD
@@ -10291,7 +10754,7 @@ function IndieEmporiumModal({
                     <button
                       type="button"
                       onClick={() => adjustTipBy(0.5)}
-                      className="w-10 h-10 rounded-[10px] bg-[#25203B] hover:bg-[#332C50] text-white font-extrabold text-base border border-[#443968] transition"
+                      className="w-10 h-10 rounded-[10px] bg-[#25203B] hover:bg-[#332C50] text-white font-extrabold text-base border border-[#443968] transition shrink-0"
                     >
                       ＋
                     </button>
@@ -10305,7 +10768,7 @@ function IndieEmporiumModal({
                         selectedGateway
                       )
                     }
-                    className={`flex-1 h-[42px] px-4 rounded-[11px] text-xs sm:text-sm font-extrabold hover:brightness-110 active:scale-95 transition shadow flex items-center justify-center gap-2 ${
+                    className={`flex-1 min-h-[44px] py-2 px-3.5 rounded-[11px] text-xs sm:text-sm font-extrabold hover:brightness-110 active:scale-95 transition shadow flex items-center justify-center flex-wrap gap-1.5 text-center leading-tight ${
                       selectedGateway === 'mercadopago'
                         ? 'bg-gradient-to-r from-[#009EE3] to-[#00C4FF] text-[#051824]'
                         : 'bg-gradient-to-r from-[#65DB85] to-[#26E6A6] text-[#0D2116]'
@@ -10313,28 +10776,31 @@ function IndieEmporiumModal({
                   >
                     <span>
                       {selectedGateway === 'mercadopago'
-                        ? `🤝 Aportar con Mercado Pago ($${Math.max(
-                            0.5,
-                            parsedTipUsd
-                          ).toFixed(2)} USD · ~$${Math.round(
-                            Math.max(0.5, parsedTipUsd) * mpArsRate
-                          ).toLocaleString('es-AR')} ARS)`
-                        : `🌍 Aportar con PayPal / GPay ($${Math.max(
-                            0.5,
-                            parsedTipUsd
-                          ).toFixed(2)} USD)`}
+                        ? t.payMpTipBtn(
+                            Math.max(0.5, parsedTipUsd).toFixed(2),
+                            Math.round(Math.max(0.5, parsedTipUsd) * mpArsRate).toLocaleString(
+                              appLanguage === 'es' ? 'es-AR' : 'en-US'
+                            ),
+                            tipRewardGems
+                          )
+                        : t.payPaypalTipBtn(
+                            Math.max(0.5, parsedTipUsd).toFixed(2),
+                            tipRewardGems
+                          )}
                     </span>
-                    <span className="px-2 py-0.5 rounded-full bg-black/20 text-[11px] font-mono-tabular">
+                    <span className="px-2 py-0.5 rounded-full bg-black/20 text-[11px] font-mono-tabular shrink-0">
                       +{tipRewardGems} 💎
                     </span>
                   </button>
                 </div>
               </div>
 
-              {/* 3 Structured Support Packs */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+              {/* 4 Structured Support Packs with Launch Discounts and Urgency */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
                 {INDIE_SUPPORT_PACKS.map((pack) => {
-                  const isFounderPack = pack.id === 'pack_founder';
+                  const isFounderPack =
+                    pack.id === 'pack_founder' ||
+                    pack.id === 'pack_bundle_ultimate';
                   const alreadyFounder = isFounderPack && isIndieFounder;
                   const estimatedArs = Math.round(
                     pack.usdNumeric * mpArsRate
@@ -10348,38 +10814,60 @@ function IndieEmporiumModal({
                           ? '#FFD54F'
                           : `${pack.highlightColor}66`,
                       }}
-                      className={`p-4 rounded-[18px] border flex flex-col justify-between gap-3 relative overflow-hidden ${
+                      className={`p-4 rounded-[18px] border flex flex-col justify-between gap-3 relative overflow-hidden transition-all ${
                         isFounderPack
                           ? 'bg-gradient-to-b from-[#2A223A] via-[#1F1A30] to-[#181526] shadow-[0_8px_26px_rgba(255,213,79,0.16)]'
                           : 'bg-[#171625]'
                       }`}
                     >
                       <div className="space-y-2">
-                        <div className="flex items-center justify-between gap-2">
+                        {/* Badges & Discount Pill */}
+                        <div className="flex items-start justify-between gap-1.5">
                           <span
                             style={{ color: pack.highlightColor }}
-                            className="text-[10px] font-extrabold uppercase tracking-wider"
+                            className="text-[10px] font-black uppercase tracking-wider leading-tight"
                           >
                             {pack.badge}
                           </span>
-                          <span className="text-xs font-mono-tabular font-extrabold text-white px-2 py-0.5 rounded-md bg-black/40 border border-white/10">
-                            {pack.usdPrice}
-                          </span>
+                          {pack.discountPct && (
+                            <span className="px-1.5 py-0.5 rounded-full bg-[#FF477E]/25 border border-[#FF477E]/60 text-[#FF85A1] text-[9px] font-black shrink-0">
+                              -{pack.discountPct}%
+                            </span>
+                          )}
                         </div>
 
-                        <div className="flex items-center gap-2.5">
-                          <span className="text-2xl">{pack.emoji}</span>
-                          <div>
-                            <h4 className="text-[15px] font-extrabold text-white leading-snug">
+                        {/* Title, Emoji & Dual Pricing (Strike-through regular + launch offer) */}
+                        <div className="flex items-start gap-2.5">
+                          <span className="text-2xl shrink-0 mt-0.5">{pack.emoji}</span>
+                          <div className="min-w-0">
+                            <h4 className="text-[14px] font-black text-white leading-snug">
                               {pack.title}
                             </h4>
-                            <p className="text-[10px] text-[#9AF0AE] font-semibold">
+                            <div className="flex items-baseline gap-1.5 mt-0.5 flex-wrap">
+                              {pack.regularUsdPrice && (
+                                <span className="text-[11px] line-through text-[#9A93AA] font-mono-tabular">
+                                  {pack.regularUsdPrice}
+                                </span>
+                              )}
+                              <span className="text-xs font-mono-tabular font-black text-[#FFD54F]">
+                                {pack.usdPrice}
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-[#9AF0AE] font-semibold mt-0.5">
                               {selectedGateway === 'mercadopago'
                                 ? `Mercado Pago: ~$${estimatedArs} ARS`
-                                : 'PayPal · Google Pay · Tarjeta Global'}
+                                : 'PayPal · Google Pay · Tarjetas'}
                             </p>
                           </div>
                         </div>
+
+                        {/* Explicit Savings Pill */}
+                        {pack.savingsUsd && (
+                          <div className="px-2 py-1 rounded-[8px] bg-[#142A1E] border border-[#65DB85]/30 text-[10px] font-extrabold text-[#82E59B] flex items-center gap-1">
+                            <span>💸</span>
+                            <span>{pack.savingsUsd}</span>
+                          </div>
+                        )}
 
                         <p className="text-[11px] text-[#D8D1E5] leading-snug">
                           {pack.subtitle}
@@ -10415,13 +10903,13 @@ function IndieEmporiumModal({
                             ? '#191324'
                             : '#FFFFFF',
                         }}
-                        className="w-full h-[42px] rounded-[12px] text-xs font-extrabold hover:brightness-110 active:scale-95 disabled:opacity-70 transition shadow"
+                        className="w-full min-h-[42px] py-2 px-3 rounded-[12px] text-xs font-black hover:brightness-110 active:scale-95 disabled:opacity-70 transition shadow leading-tight cursor-pointer"
                       >
                         {alreadyFounder
-                          ? '👑 Pase Fundador Activo'
+                          ? t.activeFounderBtn
                           : selectedGateway === 'mercadopago'
-                          ? `🤝 Pagar con Mercado Pago (${pack.usdPrice})`
-                          : `🌍 Pagar con PayPal / GPay (${pack.usdPrice})`}
+                          ? t.payWithMercadoPago(pack.usdPrice)
+                          : t.payWithPaypal(pack.usdPrice)}
                       </button>
                     </div>
                   );
@@ -10463,7 +10951,7 @@ function IndieEmporiumModal({
                       }}
                       className="px-3 py-1.5 rounded-[9px] bg-[#2B4238] text-[#9AF0AE] text-[11px] font-extrabold hover:brightness-110 shrink-0"
                     >
-                      {copiedCodeNotice ? '✓ Copiado' : '📋 Copiar Código'}
+                      {copiedCodeNotice ? t.codeCopiedBtn : t.copyCodeBtn}
                     </button>
                   </div>
                 )}
@@ -10476,7 +10964,7 @@ function IndieEmporiumModal({
                       setLicenseInputText(e.target.value);
                       setLicenseFeedback(null);
                     }}
-                    placeholder="Pega aquí tu código OR-PRO-..."
+                    placeholder={t.licenseInputPlaceholder}
                     className="flex-1 h-10 px-3 rounded-[10px] bg-[#0E0D18] border border-[#2F2947] text-xs text-white font-mono-tabular placeholder-[#6E6885] focus:outline-none focus:border-[#FFD54F]"
                   />
                   <button

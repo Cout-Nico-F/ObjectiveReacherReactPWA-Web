@@ -135,29 +135,38 @@ function verifySignedLicenseCode(code: string): {
 
 // Catálogo base en servidor para evitar manipulación de precios desde el cliente
 function resolvePackRewards(packId: string, customUsdAmount?: number) {
+  if (packId === 'pack_bundle_ultimate') {
+    return {
+      title: 'Super Pack Fundador Supremo v1.0 — Objective Reacher',
+      usdAmount: 6.99,
+      gems: 1500,
+      shields: 5,
+      unlocksFounder: true,
+    };
+  }
   if (packId === 'pack_founder') {
     return {
-      title: 'Pase Fundador Indie — Objective Reacher',
+      title: 'Pase Fundador Indie (Edición Estreno) — Objective Reacher',
       usdAmount: 4.99,
-      gems: 750,
+      gems: 850,
       shields: 3,
       unlocksFounder: true,
     };
   }
   if (packId === 'pack_gem_chest') {
     return {
-      title: 'Cofre de 500 Gemas Astrales — Objective Reacher',
+      title: 'Cofre Astral de 600 Gemas (Bonus Estreno) — Objective Reacher',
       usdAmount: 2.99,
-      gems: 500,
-      shields: 1,
+      gems: 600,
+      shields: 2,
       unlocksFounder: false,
     };
   }
   if (packId === 'pack_coffee') {
     return {
-      title: 'Invítame un Café Indie — Objective Reacher',
+      title: 'Invítame un Café Indie (Pack Bienvenida) — Objective Reacher',
       usdAmount: 1.99,
-      gems: 280,
+      gems: 350,
       shields: 1,
       unlocksFounder: false,
     };

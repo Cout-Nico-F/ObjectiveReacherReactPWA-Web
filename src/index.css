@@ -130,8 +130,31 @@
   animation: mascotPop 0.34s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
+@keyframes asmrFloatUp {
+  0% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.88);
+  }
+  10% {
+    opacity: 1;
+    transform: translateY(0px) scale(1.06);
+  }
+  70% {
+    opacity: 0.95;
+    transform: translateY(-56px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-84px) scale(0.9);
+  }
+}
+
 .animate-xp-float {
   animation: xpFloatUp 1.65s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.animate-asmr-spark {
+  animation: asmrFloatUp 2.8s cubic-bezier(0.18, 0.89, 0.32, 1) forwards;
 }
 
 .animate-shimmer {
@@ -142,6 +165,7 @@
   .animate-mascot-float,
   .animate-mascot-pop,
   .animate-xp-float,
+  .animate-asmr-spark,
   .animate-shimmer {
     animation: none !important;
   }

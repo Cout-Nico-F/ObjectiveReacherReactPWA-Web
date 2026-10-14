@@ -1,4 +1,4 @@
-const CACHE_NAME = 'objective-reacher-v1';
+const CACHE_NAME = 'objective-reacher-v1.0.2';
 const PRECACHE_URLS = [
   '/',
   '/index.html',
@@ -31,6 +31,9 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+  const reqUrl = new URL(event.request.url);
+  if (reqUrl.pathname.startsWith('/api/')) return;
+
   event.respondWith(
     fetch(event.request)
       .then((response) => {

@@ -383,30 +383,42 @@ function triggerPackArchitectureVoice(
 
   switch (prof.arch) {
     case 'chiptune_8bit': {
-      // Authentic 8-bit console: crisp dry square wave + rapid octave duty trill on accents
+      // Authentic 8-bit console: fast dry square wave pulse + rapid chiptune arpeggio on accents (0 reverb)
       playRichVoice({
         freq,
-        endFreq: isAccent ? freq * 1.5 : freq,
+        endFreq: isAccent ? freq * 1.25 : freq,
         type: 'square',
         startTime,
-        duration: Math.min(duration, 0.19),
-        gain: gain * 0.72,
-        attack: 0.002,
-        filterFreq: 3800,
-        reverbSend: 0.08,
+        duration: Math.min(duration, 0.16),
+        gain: gain * 0.68,
+        attack: 0.001,
+        filterFreq: 4500,
+        reverbSend: 0.0, // Authentic crisp dry 8-bit arcade
         pan,
+      });
+      // Instant arpeggio flourish (note + minor/major third + fifth)
+      playRichVoice({
+        freq: freq * (isAccent ? 1.5 : 1.25),
+        type: 'square',
+        startTime: startTime + 0.024,
+        duration: 0.08,
+        gain: gain * 0.52,
+        attack: 0.001,
+        filterFreq: 4800,
+        reverbSend: 0.0,
+        pan: pan * 0.5,
       });
       if (isAccent) {
         playRichVoice({
           freq: freq * 2,
           type: 'square',
-          startTime: startTime + 0.032,
-          duration: 0.11,
-          gain: gain * 0.55,
-          attack: 0.002,
-          filterFreq: 4200,
-          reverbSend: 0.1,
-          pan,
+          startTime: startTime + 0.048,
+          duration: 0.1,
+          gain: gain * 0.58,
+          attack: 0.001,
+          filterFreq: 5000,
+          reverbSend: 0.0,
+          pan: -pan * 0.5,
         });
       }
       break;
@@ -416,14 +428,14 @@ function triggerPackArchitectureVoice(
       // Hydro-acoustic droplet cavitation: upward pitch bend + echoed ripple droplet
       playRichVoice({
         freq: freq * 0.68,
-        endFreq: freq * 1.42,
+        endFreq: freq * 1.48,
         type: 'sine',
         startTime,
         duration: Math.min(duration, 0.16),
         gain: gain * 1.05,
-        attack: 0.004,
-        filterFreq: 3400,
-        reverbSend: 1.35,
+        attack: 0.003,
+        filterFreq: 3800,
+        reverbSend: 1.45,
         pan,
       });
       playRichVoice({
@@ -620,31 +632,45 @@ function triggerPackArchitectureVoice(
     }
 
     case 'chime_crystal': {
-      // High-purity quartz / wind-chime / celesta with shimmering upper partial
+      // High-purity quartz / wind-chime / celesta with ethereal FM harmonics and dual shimmer
       playRichVoice({
         freq,
         type: 'sine',
         startTime,
-        duration: duration * 1.3,
+        duration: duration * 1.4,
         gain: gain * 0.95,
-        attack: 0.004,
+        attack: 0.003,
         detuneCents: prof.detune,
-        fmRatio: prof.fmRatio,
-        fmDepth: freq * prof.fmDepthMult,
-        woodClick: prof.woodClick,
-        reverbSend: 1.45,
+        fmRatio: prof.fmRatio || 3.1415,
+        fmDepth: freq * (prof.fmDepthMult || 0.85),
+        woodClick: false,
+        reverbSend: 1.55,
         pan,
       });
+      // Shimmering crystalline overtone
       playRichVoice({
         freq: freq * 2.756,
         type: 'sine',
-        startTime: startTime + 0.018,
-        duration: duration * 0.65,
-        gain: gain * 0.28,
-        attack: 0.003,
-        reverbSend: 1.5,
+        startTime: startTime + 0.015,
+        duration: duration * 0.75,
+        gain: gain * 0.35,
+        attack: 0.002,
+        reverbSend: 1.6,
         pan: -pan * 0.8,
       });
+      // Higher harmonic sparkle
+      if (isAccent) {
+        playRichVoice({
+          freq: freq * 4.236,
+          type: 'sine',
+          startTime: startTime + 0.03,
+          duration: duration * 0.5,
+          gain: gain * 0.22,
+          attack: 0.002,
+          reverbSend: 1.65,
+          pan: pan * 0.7,
+        });
+      }
       break;
     }
 
@@ -682,24 +708,36 @@ function triggerPackArchitectureVoice(
 
     case 'kalimba_mallet':
     default: {
-      // Organic Wooden Kalimba / Marimba / Bamboo / Steel Drum
+      // Organic Wooden Kalimba / Marimba / Bamboo / Steel Drum with tactile physical transient
       playRichVoice({
         freq,
-        endFreq: freq * 1.015,
+        endFreq: freq * 1.012,
         type: prof.wave,
         startTime,
         duration,
         gain: gain * 1.05,
-        attack: 0.003,
+        attack: 0.002,
         detuneCents: prof.detune,
         fmRatio: prof.fmRatio,
         fmDepth: freq * prof.fmDepthMult,
         vibratoHz: prof.vibratoHz,
         vibratoCents: prof.vibratoCents,
-        woodClick: prof.woodClick,
-        filterFreq: 4800,
+        woodClick: true, // Distinct organic mallet knock
+        filterFreq: 4600,
         reverbSend: Math.min(1.3, 0.55 * prof.reverbBoost),
         pan,
+      });
+      // Warm woody hollow body resonance
+      playRichVoice({
+        freq: freq * 0.5,
+        type: 'sine',
+        startTime: startTime + 0.004,
+        duration: duration * 0.45,
+        gain: gain * 0.38,
+        attack: 0.004,
+        filterFreq: 850,
+        reverbSend: 0.35,
+        pan: pan * 0.3,
       });
       break;
     }
@@ -1693,6 +1731,8 @@ export const ASMR_TEXTURES: AsmrTextureOption[] = [
   },
 ];
 
+let internalAsmrTapCounter = 0;
+
 export function playAsmrClickSound(
   textureId: string = 'bubbles',
   comboCount = 0,
@@ -1702,13 +1742,16 @@ export function playAsmrClickSound(
   const eng = getEngine();
   if (!eng) return;
 
+  internalAsmrTapCounter += 1;
+  const effectiveCount = comboCount > 0 ? comboCount : internalAsmrTapCounter;
+
   const now = eng.ctx.currentTime;
-  const pan = ((comboCount % 5) - 2) * 0.22 + (Math.random() * 0.16 - 0.08);
+  const pan = ((effectiveCount % 5) - 2) * 0.22 + (Math.random() * 0.16 - 0.08);
   const pentatonic = [1, 1.122, 1.26, 1.498, 1.682, 2.0];
   const oriental = [1, 1.059, 1.335, 1.498, 1.587, 2.0];
-  const scaleRatio = pentatonic[comboCount % pentatonic.length];
-  const orientalRatio = oriental[comboCount % oriental.length];
-  const microJitter = 0.985 + Math.random() * 0.03;
+  const scaleRatio = pentatonic[effectiveCount % pentatonic.length];
+  const orientalRatio = oriental[effectiveCount % oriental.length];
+  const microJitter = 0.982 + Math.random() * 0.036;
 
   switch (textureId) {
     case 'wood': {
@@ -1732,7 +1775,7 @@ export function playAsmrClickSound(
       break;
     }
     case 'purr': {
-      const subFreq = 110 * microJitter;
+      const subFreq = 110 * (0.94 + (effectiveCount % 5) * 0.025) * microJitter;
       playRichVoice({
         freq: subFreq,
         endFreq: subFreq * 1.18,
@@ -1799,7 +1842,7 @@ export function playAsmrClickSound(
     }
     case 'velvet_switch': {
       // Creamy mechanical keyboard switch "thock" (downstroke + upstroke)
-      const thockFreq = 215 * microJitter;
+      const thockFreq = (195 + (effectiveCount % 7) * 8) * microJitter;
       playRichVoice({
         freq: thockFreq * 1.6,
         endFreq: thockFreq * 0.72,
@@ -1814,7 +1857,7 @@ export function playAsmrClickSound(
         pan,
       });
       playRichVoice({
-        freq: thockFreq * 1.25 * (0.95 + (comboCount % 4) * 0.04),
+        freq: thockFreq * 1.25 * (0.95 + (effectiveCount % 4) * 0.04),
         endFreq: thockFreq * 0.88,
         type: 'sine',
         startTime: now + 0.036,
@@ -2112,7 +2155,7 @@ export function playAsmrClickSound(
       const popFreq = 440 * scaleRatio * microJitter;
       playRichVoice({
         freq: popFreq * 0.55,
-        endFreq: popFreq * 1.65,
+        endFreq: popFreq * (1.42 + (effectiveCount % 4) * 0.1),
         type: 'sine',
         startTime: now,
         duration: 0.095,

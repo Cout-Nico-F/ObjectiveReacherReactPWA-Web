@@ -912,3 +912,85 @@ export const OBJECTIVE_TEMPLATES: ObjectiveTemplate[] = [
     pledge: '',
   },
 ];
+
+export function getLocalizedTemplate(
+  template: (typeof OBJECTIVE_TEMPLATES)[number],
+  lang: 'es' | 'en' | 'pt'
+): (typeof OBJECTIVE_TEMPLATES)[number] {
+  if (lang === 'es') return template;
+
+  const enMap: Record<string, { label: string; title: string; description: string; category: string; customUnitLabel?: string }> = {
+    emergency_fund: { label: '🛡️ Peace Fund', title: 'Emergency Peace Fund', description: 'Financial tranquility for unpredictable times', category: 'Finances' },
+    japan_trip: { label: '✈️ Dream Trip', title: 'My Journey Abroad', description: 'Savings for plane tickets, hotels and memories', category: 'Travel' },
+    fitness: { label: '🏃 Health & Fitness', title: 'Vital Energy Challenge', description: 'Active days, mindful nutrition and endurance', category: 'Health', customUnitLabel: 'workouts' },
+    reading: { label: '📚 Reading Habit', title: 'Annual Reading Goal', description: 'A chapter every night to broaden the mind', category: 'Growth', customUnitLabel: 'pages' },
+    vehicle: { label: '🚗 Car / Motorcycle', title: 'My Next Vehicle', description: 'Freedom to explore new paths at my own pace', category: 'Assets' },
+    home: { label: '🏠 My Home Project', title: 'My Own Home', description: 'Savings for moving, renovating or down payment', category: 'Home' },
+    mastery: { label: '🎓 Language / Course', title: 'Master New Language', description: 'Deliberate practice and real conversation', category: 'Education', customUnitLabel: 'hours' },
+    music_art: { label: '🎸 Art / Music', title: 'Musical Mastery', description: 'Focused rehearsals with my instrument', category: 'Passion', customUnitLabel: 'sessions' },
+    mindfulness: { label: '🧘 Peace & Zen', title: 'Inner Sanctuary (60 Days)', description: 'Daily meditation, breath and calm presence', category: 'Wellness', customUnitLabel: 'days' },
+    custom: { label: '✨ Custom Goal', title: '', description: '', category: 'Personal' },
+  };
+
+  const ptMap: Record<string, { label: string; title: string; description: string; category: string; customUnitLabel?: string }> = {
+    emergency_fund: { label: '🛡️ Fundo de Paz', title: 'Reserva de Emergência', description: 'Tranquilidade financeira para imprevistos', category: 'Finanças' },
+    japan_trip: { label: '✈️ Viagem dos Sonhos', title: 'Minha Viagem', description: 'Economia para passagens, hospedagem e memórias', category: 'Viagem' },
+    fitness: { label: '🏃 Saúde e Treino', title: 'Desafio Vida Ativa', description: 'Dias de movimento, alimentação e constância', category: 'Saúde', customUnitLabel: 'treinos' },
+    reading: { label: '📚 Hábito de Leitura', title: 'Meta de Leitura Anual', description: 'Um capítulo por noite para expandir a mente', category: 'Crescimento', customUnitLabel: 'páginas' },
+    vehicle: { label: '🚗 Carro / Moto', title: 'Meu Próximo Veículo', description: 'Liberdade para novos caminhos no meu ritmo', category: 'Patrimônio' },
+    home: { label: '🏠 Meu Lar', title: 'Projeto Meu Lar', description: 'Economia para mudança, reforma ou entrada', category: 'Lar' },
+    mastery: { label: '🎓 Idioma / Curso', title: 'Dominar Novo Idioma', description: 'Prática deliberada e conversação real', category: 'Educação', customUnitLabel: 'horas' },
+    music_art: { label: '🎸 Arte e Música', title: 'Maestria Musical', description: 'Ensaios focados com meu instrumento favorito', category: 'Paixão', customUnitLabel: 'ensaios' },
+    mindfulness: { label: '🧘 Paz e Zen', title: 'Retiro Interior (60 Dias)', description: 'Meditação, respiração e presença diária', category: 'Bem-estar', customUnitLabel: 'dias' },
+    custom: { label: '✨ Sob Medida', title: '', description: '', category: 'Pessoal' },
+  };
+
+  const data = lang === 'pt' ? ptMap[template.id] : enMap[template.id];
+  if (!data) return template;
+
+  return {
+    ...template,
+    label: data.label,
+    title: data.title || template.title,
+    description: data.description || template.description,
+    category: data.category || template.category,
+    customUnitLabel: data.customUnitLabel ?? template.customUnitLabel,
+  };
+}
+
+export function getLocalizedAchievement(
+  ach: AchievementDefinition,
+  lang: 'es' | 'en' | 'pt'
+): AchievementDefinition {
+  if (lang === 'es') return ach;
+
+  const enAch: Record<string, { title: string; desc: string }> = {
+    [ACHIEVEMENT_IDS.FirstEntry]: { title: 'First step', desc: 'Log your first entry' },
+    [ACHIEVEMENT_IDS.ThreeDayStreak]: { title: 'In motion', desc: '3 consecutive days' },
+    [ACHIEVEMENT_IDS.SevenDayStreak]: { title: 'Consistent', desc: '7 consecutive days' },
+    [ACHIEVEMENT_IDS.Progress25]: { title: 'One quarter', desc: 'Reach 25% of your goal' },
+    [ACHIEVEMENT_IDS.Progress50]: { title: 'Halfway there', desc: 'Reach 50% of your goal' },
+    [ACHIEVEMENT_IDS.Progress100]: { title: 'Full power', desc: 'Reach 100% of your goal' },
+    [ACHIEVEMENT_IDS.GoalComplete]: { title: 'Goal achieved', desc: 'Complete your objective' },
+  };
+
+  const ptAch: Record<string, { title: string; desc: string }> = {
+    [ACHIEVEMENT_IDS.FirstEntry]: { title: 'Primeiro passo', desc: 'Registre sua primeira entrada' },
+    [ACHIEVEMENT_IDS.ThreeDayStreak]: { title: 'Em movimento', desc: '3 dias consecutivos' },
+    [ACHIEVEMENT_IDS.SevenDayStreak]: { title: 'Constante', desc: '7 dias consecutivos' },
+    [ACHIEVEMENT_IDS.Progress25]: { title: 'Um quarto', desc: 'Alcance 25% da sua meta' },
+    [ACHIEVEMENT_IDS.Progress50]: { title: 'Metade do caminho', desc: 'Alcance 50% da sua meta' },
+    [ACHIEVEMENT_IDS.Progress100]: { title: 'No máximo', desc: 'Alcance 100% da sua meta' },
+    [ACHIEVEMENT_IDS.GoalComplete]: { title: 'Meta cumprida', desc: 'Conclua seu objetivo' },
+  };
+
+  const item = lang === 'pt' ? ptAch[ach.id] : enAch[ach.id];
+  if (!item) return ach;
+
+  return {
+    ...ach,
+    title: item.title,
+    description: item.desc,
+  };
+}
+
