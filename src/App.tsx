@@ -2437,9 +2437,7 @@ export function App() {
         );
 
   const hasValidSelectedAmount = useMemo(() => {
-    if (selectedQuickAmount !== null) return true;
-    const parsed = Number(customAmountText.replace(',', '.'));
-    return !Number.isNaN(parsed) && parsed > 0;
+    return true;
   }, [selectedQuickAmount, customAmountText]);
 
   const projectedGoalProgress = useMemo(() => {
@@ -2522,13 +2520,14 @@ export function App() {
     message: string,
     emoji: string,
     color: string,
-    requiresDismissal = false
+    requiresDismissal = false,
+    quote?: string
   ) => {
     if (celebrationTimerRef.current) {
       window.clearTimeout(celebrationTimerRef.current);
       celebrationTimerRef.current = null;
     }
-    setCelebration({ title, message, emoji, color, requiresDismissal });
+    setCelebration({ title, message, quote, emoji, color, requiresDismissal });
     if (!requiresDismissal) {
       celebrationTimerRef.current = window.setTimeout(() => {
         setCelebration(null);
@@ -2578,14 +2577,15 @@ export function App() {
   };
 
   const handleAddEntry = () => {
-    if (!hasValidSelectedAmount) {
-      setPersistenceMessage(
-        'Escribe un importe mayor que cero o selecciona un acceso rápido.'
-      );
-      return;
+    let parsedCustom = NaN;
+    if (customAmountText.trim() !== '') {
+      parsedCustom = Number(customAmountText.replace(',', '.'));
     }
+    const effectiveAmount = !Number.isNaN(parsedCustom) && parsedCustom > 0
+      ? parsedCustom
+      : (selectedAmount > 0 ? selectedAmount : (quickPresetAmounts[0] || 1));
 
-    const safeSelected = clampSafeAmount(selectedAmount, 0, MAX_SAFE_AMOUNT);
+    const safeSelected = clampSafeAmount(effectiveAmount, 0, MAX_SAFE_AMOUNT);
     if (safeSelected <= 0) {
       setPersistenceMessage('Escribe un importe válido mayor que cero.');
       return;
@@ -2689,7 +2689,7 @@ export function App() {
     nextGamification.gems = (state.gamification.gems ?? 0) + earnedGems;
     const nextTier = Math.floor((Math.min(200, Math.max(1, nextLevel)) - 1) / 10);
     const nextMascotEmoji = mascotEmojis[nextTier] || '🪐';
-    const nextMascotMessage = mascotMessages[nextTier] || mascotMessages[0];
+    const nextMascotMessage = t.mascotMessages[nextTier] || t.mascotMessages[0];
     const nextExperienceText = `Nivel ${nextLevel} · ${nextGamification.totalXp} XP`;
     const newProgress =
       updatedObj.goalAmount <= 0
@@ -2709,11 +2709,15 @@ export function App() {
       leveledUp: nextLevel > previousLevel,
     });
 
+    const remainingAmount = Math.max(0, updatedObj.goalAmount - updatedObj.currentAmount);
+    const remainingFormatted = formatObjectiveAmount(remainingAmount, updatedObj);
+    const percentCompleted = Math.min(100, Math.round(newProgress * 100));
+
     if (amount > 0 && previousProgress < 1 && newProgress >= 1) {
       playCelebrationFanfare('goal');
       triggerCelebration(
-        '¡Objetivo completado!',
-        `¡Lo lograste! +${totalGainedXp} XP · ${nextExperienceText}`,
+        '¡Felicitaciones! ¡Objetivo cumplido!',
+        `Has alcanzado el 100% de tu meta. ¡Un logro excepcional de constancia y dedicación!`,
         '🏆',
         '#E5B945',
         true
@@ -2721,8 +2725,8 @@ export function App() {
     } else if (nextTier > previousTier) {
       playCelebrationFanfare('species');
       triggerCelebration(
-        '¡Nueva especie desbloqueada!',
-        `Nivel ${nextLevel} · +${totalGainedXp} XP · ${nextMascotMessage}`,
+        '¡Gran avance en tu camino!',
+        `${percentCompleted}% completado · Quedan ${remainingFormatted} para la meta. ¡Nueva etapa alcanzada!`,
         nextMascotEmoji,
         '#FFD54F',
         true
@@ -2730,11 +2734,11 @@ export function App() {
     } else if (nextLevel > previousLevel) {
       playCelebrationFanfare('levelUp');
       triggerCelebration(
-        `¡Subiste al Nivel ${nextLevel}!`,
-        `+${totalGainedXp} XP · ${
+        `¡Excelente constancia (${percentCompleted}% completado)!`,
+        `Quedan ${remainingFormatted} para tu meta. ${
           newlyUnlocked.length > 0
-            ? 'Logro: ' + newlyUnlocked.join(' · ')
-            : 'Tu mascota sigue evolucionando'
+            ? 'Hito: ' + newlyUnlocked.join(' · ')
+            : 'Cada paso te acerca más a tu objetivo.'
         }`,
         nextMascotEmoji,
         '#B58BFF'
@@ -2742,8 +2746,8 @@ export function App() {
     } else if (newlyUnlocked.length > 0) {
       playCelebrationFanfare('levelUp');
       triggerCelebration(
-        '¡Nuevo logro!',
-        `${newlyUnlocked.join(' · ')} (+${totalGainedXp} XP)`,
+        '¡Nuevo hito alcanzado!',
+        `${newlyUnlocked.join(' · ')} · ${percentCompleted}% completado (${remainingFormatted} restantes)`,
         '🏅',
         '#B58BFF'
       );
@@ -2753,11 +2757,23 @@ export function App() {
       } else {
         playSubtractEntrySound();
       }
+      const motivationalQuotes = [
+        'Cada pequeño esfuerzo cuenta y suma para tu meta.',
+        'La constancia es la clave del éxito.',
+        'Paso a paso, estás construyendo grandes resultados.',
+        '¡Muy buen avance! Sigue con ese ritmo.',
+        'Un día a la vez, más cerca de tu sueño.',
+      ];
+      const randomQuote = motivationalQuotes[Math.floor(Math.abs(amount * 17) % motivationalQuotes.length)];
       triggerCelebration(
-        amount > 0 ? '¡Gran impulso!' : 'Registro actualizado',
-        `+${totalGainedXp} XP · ${nextExperienceText}`,
+        amount > 0 ? '¡Avance registrado!' : 'Registro actualizado',
+        amount > 0 
+          ? `${percentCompleted}% completado · Quedan ${remainingFormatted} para la meta.`
+          : `Saldo ajustado · Quedan ${remainingFormatted} para la meta.`,
         amount > 0 ? '✨' : '📝',
-        '#65DB85'
+        '#65DB85',
+        false,
+        amount > 0 ? randomQuote : undefined
       );
     }
   };
@@ -3313,12 +3329,17 @@ export function App() {
             </div>
             <div className="text-[54px] leading-none">{celebration.emoji}</div>
             <div
-              className="text-[20px] sm:text-[22px] font-bold leading-snug break-words"
+              className="text-[19px] sm:text-[21px] font-bold leading-snug break-words"
               style={{ color: celebration.color }}
             >
               {celebration.title}
             </div>
-            <div className="text-[13px] text-[#E6E0F2] leading-relaxed break-words">
+            {celebration.quote && (
+              <div className="w-full bg-[#2A2438] border border-[#7252A0]/70 text-[#F5EDFF] rounded-[14px] p-3 text-[14px] sm:text-[15px] italic font-medium leading-relaxed shadow-inner my-1">
+                “{celebration.quote}”
+              </div>
+            )}
+            <div className="text-[12px] sm:text-[13px] text-[#B8AFCE] leading-relaxed break-words">
               {celebration.message}
             </div>
             {celebration.requiresDismissal && (
@@ -3436,12 +3457,12 @@ export function App() {
                 },
                 {
                   key: 'asmr_clicker',
-                  label: `🫧   ${t.navAsmr} (${ASMR_TEXTURES.length})`,
+                  label: t.navAsmr,
                   action: () => openAndScrollToAsmrSanctuary(),
                 },
                 {
                   key: 'indie_shop',
-                  label: `💎   ${t.navSanctuary} (${gems})`,
+                  label: t.navSanctuary,
                   action: () => openIndieShop('skins'),
                 },
                 {
@@ -4450,7 +4471,6 @@ export function App() {
               <button
                 type="button"
                 onClick={handleAddEntry}
-                disabled={!hasValidSelectedAmount}
                 style={
                   isAddition
                     ? {
@@ -6291,6 +6311,7 @@ function MascotGalleryModal({
   onOpenSkins?: () => void;
   onClose: () => void;
 }) {
+  const t = TRANSLATIONS[loadAppLanguage()] || TRANSLATIONS.es;
   const unlockedLevel = Math.max(1, initialLevel);
   const [previewLevel, setPreviewLevel] = useState<number>(() =>
     Math.min(200, Math.max(1, initialPreviewLevel ?? unlockedLevel))
@@ -7868,6 +7889,7 @@ function ObjectiveEditorModal({
   ) => void;
   onAlert: (title: string, message: string) => void;
 }) {
+  const t = TRANSLATIONS[loadAppLanguage()] || TRANSLATIONS.es;
   const [title, setTitle] = useState(objective.title);
   const [description, setDescription] = useState(objective.description);
   const [goalAmountText, setGoalAmountText] = useState(
@@ -8744,6 +8766,7 @@ function BannerPickerModal({
   onApply: (bannerId: string, offsetX?: number, offsetY?: number) => void;
   onAlert: (title: string, message: string) => void;
 }) {
+  const t = TRANSLATIONS[loadAppLanguage()] || TRANSLATIONS.es;
   const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null);
   const [panX, setPanX] = useState<number>(0);
   const [panY, setPanY] = useState<number>(0);
@@ -8938,6 +8961,7 @@ function EditEntryModal({
   onSave: (entryId: string, description: string, positiveAmount: number) => void;
   onAlert: (title: string, message: string) => void;
 }) {
+  const t = TRANSLATIONS[loadAppLanguage()] || TRANSLATIONS.es;
   const [description, setDescription] = useState(entry.description);
   const [amountText, setAmountText] = useState(String(Math.abs(entry.amount)));
 
@@ -9090,6 +9114,7 @@ function IndieEmporiumModal({
   onJumpToBoard: () => void;
   onClose: () => void;
 }) {
+  const appLanguage = loadAppLanguage();
   const [activeTab, setActiveTab] = useState<
     'skins' | 'cards_audio' | 'buffs' | 'support'
   >(initialTab);
@@ -9394,7 +9419,7 @@ function IndieEmporiumModal({
                 {[
                   {
                     id: 'all',
-                    label: t.filterAll(VAULT_STATS.totalItems),
+                    label: t.filterAllWithCount(VAULT_STATS.totalItems),
                   },
                   {
                     id: 'free',
@@ -10435,7 +10460,7 @@ function IndieEmporiumModal({
                             ? '✓ Reliquia en tu Santuario'
                             : '✓ Bendición Reclamada'
                           : levelLocked
-                          ? t.requiresGuardianLevel(buff.requiredLevel)
+                          ? t.requiresGuardianLevel(buff.requiredLevel ?? 1)
                           : buff.gemCost === 0
                           ? `🎁 Reclamar Gratis (${buff.subtitle})`
                           : `Activar · 💎 ${buff.gemCost}`}

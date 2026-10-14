@@ -93,6 +93,7 @@ export interface DashboardState {
 export interface CelebrationData {
   title: string;
   message: string;
+  quote?: string;
   emoji: string;
   color: string;
   requiresDismissal: boolean;

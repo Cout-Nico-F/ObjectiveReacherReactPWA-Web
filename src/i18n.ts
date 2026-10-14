@@ -327,13 +327,9 @@ export interface TranslationDictionary {
   backButton: string;
   shopMainTitle: string;
   shopCollectiblesBadge: (c: number) => string;
-  tabSkins: (c: number) => string;
-  tabCardsAudio: (c: number) => string;
-  tabBuffs: (c: number) => string;
-  filterAll: (c: number) => string;
+  filterAllWithCount: (c: number) => string;
   filterFree: (c: number) => string;
   filterPremium: (c: number) => string;
-  searchPlaceholder: string;
   // Daily Quests Localized
   questPetTitle: string;
   questPetSub: string;
@@ -763,13 +759,9 @@ export const TRANSLATIONS: Record<AppLanguage, TranslationDictionary> = {
     shopMainTitle: '💎 Cosméticos, Tarjetas, Audio & Apoyo Indie',
     shopCollectiblesBadge: (c) =>
       `✨ ${c} COLECCIONABLES EN EL SANTUARIO`,
-    tabSkins: (c) => `🎨 Skins (${c})`,
-    tabCardsAudio: (c) => `✨ Tarjetas & Audio (${c})`,
-    tabBuffs: (c) => `🧪 Buffs & Reliquias (${c})`,
-    filterAll: (c) => `Todos (${c})`,
+    filterAllWithCount: (c) => `Todos (${c})`,
     filterFree: (c) => `🎁 Gratis (${c})`,
     filterPremium: (c) => `💎 Gemas (${c})`,
-    searchPlaceholder: '🔍 Buscar skin, marco, sonido, reliquia...',
 
     // Daily Quests Localized
     questPetTitle: 'Vínculo con tu Guardián',
@@ -1248,13 +1240,9 @@ export const TRANSLATIONS: Record<AppLanguage, TranslationDictionary> = {
     shopMainTitle: '💎 Cosmetics, Cards, Audio & Indie Support',
     shopCollectiblesBadge: (c) =>
       `✨ ${c} COLLECTIBLES IN SANCTUARY`,
-    tabSkins: (c) => `🎨 Skins (${c})`,
-    tabCardsAudio: (c) => `✨ Cards & Audio (${c})`,
-    tabBuffs: (c) => `🧪 Buffs & Relics (${c})`,
-    filterAll: (c) => `All (${c})`,
+    filterAllWithCount: (c) => `All (${c})`,
     filterFree: (c) => `🎁 Free (${c})`,
     filterPremium: (c) => `💎 Gems (${c})`,
-    searchPlaceholder: '🔍 Search skin, frame, sound, relic...',
 
     // Daily Quests Localized
     questPetTitle: 'Bond with Guardian',
@@ -1735,13 +1723,9 @@ export const TRANSLATIONS: Record<AppLanguage, TranslationDictionary> = {
     shopMainTitle: '💎 Cosméticos, Cartões, Áudio & Apoio Indie',
     shopCollectiblesBadge: (c) =>
       `✨ ${c} COLECIONÁVEIS NO SANTUÁRIO`,
-    tabSkins: (c) => `🎨 Skins (${c})`,
-    tabCardsAudio: (c) => `✨ Cartões & Áudio (${c})`,
-    tabBuffs: (c) => `🧪 Buffs & Relíquias (${c})`,
-    filterAll: (c) => `Todos (${c})`,
+    filterAllWithCount: (c) => `Todos (${c})`,
     filterFree: (c) => `🎁 Grátis (${c})`,
     filterPremium: (c) => `💎 Gemas (${c})`,
-    searchPlaceholder: '🔍 Buscar skin, moldura, som, relíquia...',
 
     // Daily Quests Localized
     questPetTitle: 'Vínculo com o Guardião',

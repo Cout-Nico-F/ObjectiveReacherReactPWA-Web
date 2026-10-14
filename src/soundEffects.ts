@@ -1531,9 +1531,9 @@ export const ASMR_TEXTURES: AsmrTextureOption[] = [
   },
   {
     id: 'purr',
-    name: 'Ronroneo & Caricias',
+    name: 'Ronroneo Felino & Calidez',
     emoji: '🐾',
-    subtitle: 'Pulso cálido del guardián + destello suave',
+    subtitle: 'Rumble rítmico de afecto felino y armónico dulce',
     accentColor: '#FF80AB',
     secondaryColor: '#CE93D8',
     orbGradient: 'radial-gradient(circle at 32% 28%, #6B2D5C 0%, #321C38 55%, #181122 100%)',
@@ -1747,15 +1747,28 @@ export function playAsmrClickSound(
 
   const now = eng.ctx.currentTime;
   const pan = ((effectiveCount % 5) - 2) * 0.22 + (Math.random() * 0.16 - 0.08);
-  const pentatonic = [1, 1.122, 1.26, 1.498, 1.682, 2.0];
-  const oriental = [1, 1.059, 1.335, 1.498, 1.587, 2.0];
-  const scaleRatio = pentatonic[effectiveCount % pentatonic.length];
-  const orientalRatio = oriental[effectiveCount % oriental.length];
+  const scaleBubbles = [1, 1.122, 1.26, 1.498, 1.682, 2.0];
+  const scaleWood = [1, 1.2, 1.335, 1.6, 1.8];
+  const scalePurr = [1, 1.189, 1.335, 1.498, 1.782];
+  const scaleRain = [1, 1.122, 1.26, 1.414, 1.682, 2.0];
+  const scaleChimes = [1, 1.189, 1.335, 1.498, 1.782, 2.245];
+  const scaleSwitch = [1, 1.25, 1.5, 1.75];
+  const scaleBowl = [1, 1.125, 1.25, 1.5, 1.667, 2.0];
+  const scaleCampfire = [1, 1.122, 1.335, 1.587, 2.0];
+  const scaleKoto = [1, 1.059, 1.335, 1.498, 1.587, 2.0];
+  const scaleHarp = [1, 1.189, 1.335, 1.5, 1.782, 2.0];
+  const scaleCyber = [1, 1.2, 1.335, 1.5, 1.782, 2.0];
+  const scaleOcean = [1, 1.122, 1.335, 1.498, 1.782];
+  const scaleMusicBox = [1, 1.122, 1.26, 1.335, 1.498, 1.682, 2.0];
+  const scaleIce = [1, 1.189, 1.26, 1.498, 1.682, 2.0];
+  const scaleChoir = [1, 1.26, 1.498, 1.682, 1.888, 2.0];
+  const scaleQuasar = [1, 1.122, 1.26, 1.414, 1.682, 2.0];
+
   const microJitter = 0.982 + Math.random() * 0.036;
 
   switch (textureId) {
     case 'wood': {
-      // Hollow bamboo node tap + warm resonant body
+      const scaleRatio = scaleWood[effectiveCount % scaleWood.length];
       const freq = 340 * scaleRatio * microJitter;
       playRichVoice({
         freq,
@@ -1775,34 +1788,39 @@ export function playAsmrClickSound(
       break;
     }
     case 'purr': {
-      const subFreq = 110 * (0.94 + (effectiveCount % 5) * 0.025) * microJitter;
+      // Authentic cat purr rumble + warm velvet cuddling chime
+      const scaleRatio = scalePurr[effectiveCount % scalePurr.length];
+      const purrRumbleFreq = 30 + (effectiveCount % 3) * 5;
       playRichVoice({
-        freq: subFreq,
-        endFreq: subFreq * 1.18,
-        type: 'triangle',
+        freq: purrRumbleFreq,
+        endFreq: purrRumbleFreq * 1.4,
+        type: 'sawtooth',
         startTime: now,
-        duration: 0.22,
-        gain: 0.12,
-        attack: 0.025,
-        vibratoHz: 18,
-        vibratoCents: 35,
-        filterFreq: 680,
-        reverbSend: 0.5,
-        pan: pan * 0.5,
+        duration: 0.35,
+        gain: 0.16,
+        attack: 0.045,
+        vibratoHz: 28,
+        vibratoCents: 60,
+        filterFreq: 300,
+        reverbSend: 0.45,
+        pan: pan * 0.3,
       });
       playRichVoice({
-        freq: 523.25 * scaleRatio * microJitter,
+        freq: 440 * scaleRatio * microJitter,
+        endFreq: 523.25 * scaleRatio,
         type: 'sine',
-        startTime: now + 0.02,
-        duration: 0.16,
-        gain: 0.06,
-        attack: 0.01,
-        reverbSend: 0.95,
+        startTime: now + 0.03,
+        duration: 0.25,
+        gain: 0.09,
+        attack: 0.012,
+        filterFreq: 1800,
+        reverbSend: 1.2,
         pan,
       });
       break;
     }
     case 'rain': {
+      const scaleRatio = scaleRain[effectiveCount % scaleRain.length];
       const dropFreq = 680 * scaleRatio * microJitter;
       playRichVoice({
         freq: dropFreq * 0.72,
@@ -1821,6 +1839,7 @@ export function playAsmrClickSound(
       break;
     }
     case 'chimes': {
+      const scaleRatio = scaleChimes[effectiveCount % scaleChimes.length];
       const chimeFreq = 880 * scaleRatio * microJitter;
       [1, 1.498].forEach((mult, idx) => {
         playRichVoice({
@@ -1841,8 +1860,8 @@ export function playAsmrClickSound(
       break;
     }
     case 'velvet_switch': {
-      // Creamy mechanical keyboard switch "thock" (downstroke + upstroke)
-      const thockFreq = (195 + (effectiveCount % 7) * 8) * microJitter;
+      const scaleRatio = scaleSwitch[effectiveCount % scaleSwitch.length];
+      const thockFreq = (195 + (effectiveCount % 7) * 8) * scaleRatio * microJitter;
       playRichVoice({
         freq: thockFreq * 1.6,
         endFreq: thockFreq * 0.72,
@@ -1872,7 +1891,7 @@ export function playAsmrClickSound(
       break;
     }
     case 'singing_bowl': {
-      // Warm Tibetan bronze bowl strike with slow beating twin partials
+      const scaleRatio = scaleBowl[effectiveCount % scaleBowl.length];
       const bowlFreq = 392 * scaleRatio * microJitter;
       playRichVoice({
         freq: bowlFreq,
@@ -1901,7 +1920,7 @@ export function playAsmrClickSound(
       break;
     }
     case 'campfire': {
-      // Warm hearth ember crackle + soft low-mid wood glow
+      const scaleRatio = scaleCampfire[effectiveCount % scaleCampfire.length];
       const emberFreq = 260 * scaleRatio * microJitter;
       playRichVoice({
         freq: emberFreq * 2.4,
@@ -1931,8 +1950,8 @@ export function playAsmrClickSound(
       break;
     }
     case 'jade_koto': {
-      // Silk-string oriental koto pluck + grace harmonic
-      const kotoFreq = 440 * orientalRatio * microJitter;
+      const scaleRatio = scaleKoto[effectiveCount % scaleKoto.length];
+      const kotoFreq = 440 * scaleRatio * microJitter;
       playRichVoice({
         freq: kotoFreq,
         endFreq: kotoFreq * 0.992,
@@ -1961,7 +1980,7 @@ export function playAsmrClickSound(
       break;
     }
     case 'crystal_harp': {
-      // Pure rose-quartz glass harp verrophone
+      const scaleRatio = scaleHarp[effectiveCount % scaleHarp.length];
       const glassFreq = 740 * scaleRatio * microJitter;
       playRichVoice({
         freq: glassFreq,
@@ -1980,7 +1999,7 @@ export function playAsmrClickSound(
       break;
     }
     case 'cyber_neon': {
-      // Retro-futuristic analog synthwave pluck with filter envelope
+      const scaleRatio = scaleCyber[effectiveCount % scaleCyber.length];
       const neonFreq = 330 * scaleRatio * microJitter;
       playRichVoice({
         freq: neonFreq * 1.01,
@@ -2011,7 +2030,7 @@ export function playAsmrClickSound(
       break;
     }
     case 'ocean_shell': {
-      // Deep lunar tide pearl resonance + upward bubble harmonic
+      const scaleRatio = scaleOcean[effectiveCount % scaleOcean.length];
       const tideFreq = 370 * scaleRatio * microJitter;
       playRichVoice({
         freq: tideFreq * 0.65,
@@ -2041,7 +2060,7 @@ export function playAsmrClickSound(
       break;
     }
     case 'music_box': {
-      // Delicate Swiss silver tine escapement + high bell note
+      const scaleRatio = scaleMusicBox[effectiveCount % scaleMusicBox.length];
       const boxFreq = 987.77 * scaleRatio * microJitter;
       playRichVoice({
         freq: 2600,
@@ -2070,7 +2089,7 @@ export function playAsmrClickSound(
       break;
     }
     case 'aurora_ice': {
-      // Crisp glacial ice crystal shimmer + deep boreal sub-tone
+      const scaleRatio = scaleIce[effectiveCount % scaleIce.length];
       const iceFreq = 783.99 * scaleRatio * microJitter;
       playRichVoice({
         freq: iceFreq,
@@ -2100,7 +2119,7 @@ export function playAsmrClickSound(
       break;
     }
     case 'cathedral_halo': {
-      // Angelic 3-voice choir pad swell with infinite sanctuary reverb
+      const scaleRatio = scaleChoir[effectiveCount % scaleChoir.length];
       const choirFreq = 440 * scaleRatio * microJitter;
       [1, 1.25, 1.5].forEach((mult, idx) => {
         playRichVoice({
@@ -2119,7 +2138,7 @@ export function playAsmrClickSound(
       break;
     }
     case 'cosmic_quasar': {
-      // Mythic 3D gravitational wave sweep + pulsar stardust triad
+      const scaleRatio = scaleQuasar[effectiveCount % scaleQuasar.length];
       const quasarFreq = 392 * scaleRatio * microJitter;
       playRichVoice({
         freq: quasarFreq * 0.5,
@@ -2152,6 +2171,7 @@ export function playAsmrClickSound(
     }
     case 'bubbles':
     default: {
+      const scaleRatio = scaleBubbles[effectiveCount % scaleBubbles.length];
       const popFreq = 440 * scaleRatio * microJitter;
       playRichVoice({
         freq: popFreq * 0.55,
