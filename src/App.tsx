@@ -88,6 +88,7 @@ import { EditEntryModal } from "./components/extracted/EditEntryModal";
 import { IndieEmporiumModal } from "./components/extracted/IndieEmporiumModal";
 import { MascotGridCard } from "./components/extracted/MascotGridCard";
 import { useHorizontalWheel } from '../src/Hooks/useHorizontalWheel';
+import { PurchaseConfirmModal } from './components/extracted/PurchaseConfirmModal';
 
 export function createEmptyState(): DashboardState {
   const id = crypto.randomUUID();
@@ -621,6 +622,7 @@ export function App() {
   const [highlightedSection, setHighlightedSection] = useState<string | null>(null);
 
   // Modals
+  const [itemToPurchase, setItemToPurchase] = useState<any>(null);
   const [isEditorOpen, setIsEditorOpen] = useState<boolean>(false);
   const [isDraftObjective, setIsDraftObjective] = useState<boolean>(false);
   const [previousObjectiveId, setPreviousObjectiveId] = useState<string | null>(null);
@@ -769,34 +771,34 @@ export function App() {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-// Section refs for smooth scrolling
-const objectiveRef = useRef<HTMLDivElement>(null);
-const objectiveTabsScrollRef = useRef<HTMLDivElement>(null);
-const [isObjectiveTabsWrapped, setIsObjectiveTabsWrapped] = useState<boolean>(false);
-const getHorizontalScrollProps = useHorizontalScrollProps();
-const entriesRef = useRef<HTMLDivElement>(null);
-const achievementsRef = useRef<HTMLDivElement>(null);
-const statsRef = useRef<HTMLDivElement>(null);
-const settingsRef = useRef<HTMLDivElement>(null);
-const asmrSanctuaryRef = useRef<HTMLDivElement>(null);
-const asmrSkinsScrollRef = useRef<HTMLDivElement>(null);
+  // Section refs for smooth scrolling
+  const objectiveRef = useRef<HTMLDivElement>(null);
+  const objectiveTabsScrollRef = useRef<HTMLDivElement>(null);
+  const [isObjectiveTabsWrapped, setIsObjectiveTabsWrapped] = useState<boolean>(false);
+  const getHorizontalScrollProps = useHorizontalScrollProps();
+  const entriesRef = useRef<HTMLDivElement>(null);
+  const achievementsRef = useRef<HTMLDivElement>(null);
+  const statsRef = useRef<HTMLDivElement>(null);
+  const settingsRef = useRef<HTMLDivElement>(null);
+  const asmrSanctuaryRef = useRef<HTMLDivElement>(null);
+  const asmrSkinsScrollRef = useRef<HTMLDivElement>(null);
 
-// 💡 HOOKS DE SCROLL HORIZONTAL (Con la rueda del mouse)
-// 1. Pestañas de Objetivos (se deshabilita si están envueltas en varias filas)
-useHorizontalWheel(objectiveTabsScrollRef, !isObjectiveTabsWrapped);
+  // 💡 HOOKS DE SCROLL HORIZONTAL (Con la rueda del mouse)
+  // 1. Pestañas de Objetivos (se deshabilita si están envueltas en varias filas)
+  useHorizontalWheel(objectiveTabsScrollRef, !isObjectiveTabsWrapped);
 
-// 2. Sección de Logros
-useHorizontalWheel(achievementsRef);
+  // 2. Sección de Logros
+  useHorizontalWheel(achievementsRef);
 
-// 3. Skins/Accesorios (si también tiene scroll horizontal)
-useHorizontalWheel(asmrSkinsScrollRef);
+  // 3. Skins/Accesorios (si también tiene scroll horizontal)
+  useHorizontalWheel(asmrSkinsScrollRef);
 
-// 4. Tarjetas de estilos / Skins ASMR
-useHorizontalWheel(asmrSkinsScrollRef);
+  // 4. Tarjetas de estilos / Skins ASMR
+  useHorizontalWheel(asmrSkinsScrollRef);
 
-const [asmrFilterCategory, setAsmrFilterCategory] = useState<
-  'all' | 'unlocked' | 'taps' | 'skins'
->('all');
+  const [asmrFilterCategory, setAsmrFilterCategory] = useState<
+    'all' | 'unlocked' | 'taps' | 'skins'
+  >('all');
 
   useEffect(() => {
     return () => {
@@ -2533,12 +2535,7 @@ const [asmrFilterCategory, setAsmrFilterCategory] = useState<
       window.clearTimeout(celebrationTimerRef.current);
       celebrationTimerRef.current = null;
     }
-    setCelebration({ title, message, quote, emoji, color, requiresDismissal });
-    if (!requiresDismissal) {
-      celebrationTimerRef.current = window.setTimeout(() => {
-        setCelebration(null);
-      }, 2100);
-    }
+    setCelebration({ title, message, quote, emoji, color, requiresDismissal: true });
   };
 
   const highlightSection = (sectionKey: string, ref: React.RefObject<HTMLDivElement | null>) => {
@@ -3296,30 +3293,30 @@ const [asmrFilterCategory, setAsmrFilterCategory] = useState<
       setSelectedAmount(fallback);
     }
   }, [currentObjective.id, quickPresetAmounts, customAmountText, selectedAmount]);
-  
+
   useEffect(() => {
-  const container = objectiveTabsScrollRef.current;
-  if (!container) return;
+    const container = objectiveTabsScrollRef.current;
+    if (!container) return;
 
-  const handleWheel = (e: WheelEvent) => {
-    // Si el contenido entra completo y no necesita scroll horizontal, no interceptamos
-    if (container.scrollWidth <= container.clientWidth) return;
+    const handleWheel = (e: WheelEvent) => {
+      // Si el contenido entra completo y no necesita scroll horizontal, no interceptamos
+      if (container.scrollWidth <= container.clientWidth) return;
 
-    // Detiene el scroll vertical de la página principal
-    e.preventDefault();
+      // Detiene el scroll vertical de la página principal
+      e.preventDefault();
 
-    // Mueve el contenedor horizontalmente según el giro de la rueda
-    container.scrollLeft += e.deltaY;
-  };
+      // Mueve el contenedor horizontalmente según el giro de la rueda
+      container.scrollLeft += e.deltaY;
+    };
 
-  // { passive: false } es la clave para que preventDefault() funcione correctamente
-  container.addEventListener('wheel', handleWheel, { passive: false });
+    // { passive: false } es la clave para que preventDefault() funcione correctamente
+    container.addEventListener('wheel', handleWheel, { passive: false });
 
-  return () => {
-    container.removeEventListener('wheel', handleWheel);
-  };
+    return () => {
+      container.removeEventListener('wheel', handleWheel);
+    };
 
-}, []);
+  }, []);
   return (
     <div
       onTouchStart={(e) => {
@@ -3370,14 +3367,15 @@ const [asmrFilterCategory, setAsmrFilterCategory] = useState<
             <div className="text-[12px] sm:text-[13px] text-[#B8AFCE] leading-relaxed break-words">
               {celebration.message}
             </div>
-            {celebration.requiresDismissal && (
-              <button
-                onClick={() => setCelebration(null)}
-                className="mt-2 px-5 py-2 rounded-[10px] bg-[#604094] text-white font-semibold text-sm hover:bg-[#7549B8] transition"
-              >
-                {t.closeButton}
-              </button>
-            )}
+            <button
+              onClick={() => {
+                playUiTap(1);
+                setCelebration(null);
+              }}
+              className="w-full mt-3 py-2.5 rounded-[12px] bg-gradient-to-r from-[#7549B8] to-[#9B6BFF] text-white font-extrabold text-sm hover:brightness-110 active:scale-95 transition shadow-lg"
+            >
+              ¡Genial, continuar! 🚀
+            </button>
           </div>
         </div>
       )}
@@ -3448,7 +3446,7 @@ const [asmrFilterCategory, setAsmrFilterCategory] = useState<
             </div>
 
             <Sidebar
-              currentLanguage={appLanguage} 
+              currentLanguage={appLanguage}
               onSelectLanguage={(lang) => setAppLanguage(lang)}
               t={t}
               activeNav={activeNav}
@@ -3649,7 +3647,7 @@ const [asmrFilterCategory, setAsmrFilterCategory] = useState<
           {/* Objective Tabs: Full touch swipe + mouse drag + wheel + scrollbar + arrow buttons + wrap toggle */}
           <div className="w-full max-w-full min-w-0 space-y-1">
             <div className="flex items-center gap-1.5 w-full max-w-full min-w-0">
-                           <div
+              <div
                 ref={objectiveTabsScrollRef}
                 {...(!isObjectiveTabsWrapped ? getHorizontalScrollProps() : {})}
                 className={
@@ -4461,7 +4459,6 @@ const [asmrFilterCategory, setAsmrFilterCategory] = useState<
 
           {/* Achievements Horizontal Section (Unified Sanctuary Medals) */}
           <div
-            ref={achievementsRef}
             className={`p-3.5 sm:p-4 rounded-[20px] bg-gradient-to-b from-[#1E1C2E] to-[#171624] space-y-3 relative overflow-hidden shadow-[0_8px_28px_rgba(10,9,20,0.45)] transition-all ${highlightedSection === 'achievements'
               ? 'border-[2px] border-[#C7A4FF]'
               : 'border border-[#342D4B]'
@@ -4496,6 +4493,8 @@ const [asmrFilterCategory, setAsmrFilterCategory] = useState<
             </div>
 
             <div
+              ref={achievementsRef}
+
               {...getHorizontalScrollProps()}
               className="flex gap-2 overflow-x-auto pb-1.5 horizontal-scroll-strip cursor-grab active:cursor-grabbing"
             >
@@ -5127,7 +5126,22 @@ const [asmrFilterCategory, setAsmrFilterCategory] = useState<
                   <button
                     key={tex.id}
                     type="button"
-                    onClick={() => handleSelectAsmrTexture(tex)}
+                    onClick={() => {
+                      if (unlocked) {
+                        // 1. Si ya está desbloqueada, la selecciona/equipa directamente
+                        handleSelectAsmrTexture(tex);
+                      } else if (tex.unlockKind === 'gems') {
+                        // 2. Si requiere gemas, activa el modal de confirmación
+                        setItemToPurchase({
+                          id: tex.id,
+                          name: tex.name,
+                          icon: tex.emoji,
+                          requiredGems: tex.gemCost,
+                          _type: 'asmr_texture',
+                          _raw: tex,
+                        });
+                      }
+                    }}
                     style={
                       isSelected
                         ? {
@@ -6122,6 +6136,34 @@ const [asmrFilterCategory, setAsmrFilterCategory] = useState<
           </div>
         </div>
       )}
+
+      {/* Modal de Confirmación para Orbes ASMR */}
+    {itemToPurchase && (
+      <PurchaseConfirmModal
+        item={itemToPurchase}
+        /* Detecta la variable de gemas sea cual sea su nombre en este componente */
+        userGems={typeof gems !== 'undefined' ? gems : (typeof gems !== 'undefined' ? gems : 0)}
+        onClose={() => setItemToPurchase(null)}
+        onConfirm={() => {
+          if (itemToPurchase._raw) {
+            handleSelectAsmrTexture(itemToPurchase._raw);
+          }
+          setItemToPurchase(null);
+        }}
+        onOpenShop={() => {
+          setItemToPurchase(null); // Cierra el modal de confirmación
+          
+          /* Ejecuta el método disponible para abrir la tienda */
+          if (typeof openIndieShop === 'function') {
+            openIndieShop('support');
+          } else if (typeof setIsIndieShopOpen === 'function') {
+            setIsIndieShopOpen(true);
+          } else if (typeof setActiveNav === 'function') {
+            setActiveNav('shop');
+          }
+        }}
+      />
+    )}
     </div>
   );
 }

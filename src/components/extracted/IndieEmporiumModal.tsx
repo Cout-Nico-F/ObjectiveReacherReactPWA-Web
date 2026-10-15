@@ -6,8 +6,14 @@ import { MascotSkinDefinition, CardCosmeticDefinition, SoundPackCatalogItem, Car
 import { findAccentTheme, findBannerPreset, formatObjectiveAmount } from "../../catalog";
 import { playSoundPackPreview, playUiTap, playMascotVoice } from "../../soundEffects";
 import { MascotAvatarSvg } from "./MascotAvatarSvg";
+import { PurchaseConfirmModal, PurchaseItem } from "./PurchaseConfirmModal";
 
 const { STORAGE_KEY, LEGACY_STORAGE_KEYS, LAUNCH_DEADLINE_STORAGE_KEY, MASCOT_STAGE_NAMES, MASCOT_STAGE_HINTS } = Constants;
+
+interface PendingPurchaseItem extends PurchaseItem {
+  _type: 'skin' | 'frame' | 'sound' | 'style' | 'title' | 'buff';
+  _raw: any;
+}
 
 export function IndieEmporiumModal({
   initialTab,
@@ -105,12 +111,10 @@ export function IndieEmporiumModal({
   const [previewSkinId, setPreviewSkinId] = useState<string>(equippedSkinId);
   const [previewMascotLevel, setPreviewMascotLevel] = useState<number>(level);
 
-  // Track which sound step (0..4) was most recently auditioned for each Sound Pack
   const [auditionedPackSteps, setAuditionedPackSteps] = useState<
     Record<string, { stepIndex: number; stepLabel: string }>
   >({});
 
-  // Live feedback banner when user equips/buys a Card Style, Frame, Sound Pack, or Title
   const [liveEquippedNotice, setLiveEquippedNotice] = useState<{
     id: number;
     emoji: string;
@@ -119,7 +123,6 @@ export function IndieEmporiumModal({
     color: string;
   } | null>(null);
 
-  // PedidosYa-style Editable Donation / Tip state + Dual Payment Gateway Selector
   const [tipAmountText, setTipAmountText] = useState<string>('2.00');
   const [isCustomTipEditing, setIsCustomTipEditing] = useState<boolean>(false);
   const tipCustomInputRef = useRef<HTMLInputElement | null>(null);
@@ -136,6 +139,9 @@ export function IndieEmporiumModal({
     message: string;
   } | null>(null);
   const [copiedCodeNotice, setCopiedCodeNotice] = useState<boolean>(false);
+  
+  // Estado para el ítem pendiente de confirmación de compra
+  const [itemToPurchase, setItemToPurchase] = useState<any>(null);
 
   useEffect(() => {
     fetch('/api/payments/config-status')
@@ -165,7 +171,6 @@ export function IndieEmporiumModal({
   );
   const isPreviewLevelLocked = previewMascotLevel > unlockedLevel;
 
-  // Live Card & Audio Stage derived state
   const liveAccentTheme = useMemo(
     () => findAccentTheme(activeAccentColor),
     [activeAccentColor]
@@ -271,8 +276,8 @@ export function IndieEmporiumModal({
 
   const filteredTitles = useMemo(
     () =>
-      GUARDIAN_TITLES.filter((t) =>
-        matchesFilterAndSearch(t.title, t.subtitle, t.gemCost)
+      GUARDIAN_TITLES.filter((tItem) =>
+        matchesFilterAndSearch(tItem.title, tItem.subtitle, tItem.gemCost)
       ),
     [tierFilter, normalizedSearch]
   );
@@ -301,12 +306,63 @@ export function IndieEmporiumModal({
     setTipAmountText(next.toFixed(2));
   };
 
+  // Función para confirmar la compra de cualquier ítem con gemas
+  const handleConfirmPurchase = () => {
+    if (!itemToPurchase) return;
+
+    const { _type, _raw } = itemToPurchase;
+
+    if (_type === 'skin') {
+      onSelectSkin(_raw);
+    } else if (_type === 'frame') {
+      onSelectCardCosmetic(_raw);
+      setLiveEquippedNotice({
+        id: Date.now(),
+        emoji: _raw.emoji,
+        title: t.equippedFrameNotice(_raw.name),
+        subtitle: t.equippedFrameCardSub(currentObjective.title),
+        color: _raw.borderColor,
+      });
+    } else if (_type === 'sound') {
+      onSelectSoundPack(_raw);
+      setLiveEquippedNotice({
+        id: Date.now(),
+        emoji: _raw.emoji,
+        title: t.soundPackActivatedNotice(_raw.name),
+        subtitle: `Motor ${_raw.synthEngineLabel || _raw.scaleName} activo en toda la app`,
+        color: _raw.accentColor,
+      });
+    } else if (_type === 'style') {
+      onApplyVaultCardStyle(_raw);
+      setLiveEquippedNotice({
+        id: Date.now(),
+        emoji: _raw.emoji,
+        title: `¡Estilo "${_raw.name}" aplicado en vivo!`,
+        subtitle: t.themeAppliedNotice(currentObjective.title),
+        color: _raw.accentColor,
+      });
+    } else if (_type === 'title') {
+      onSelectGuardianTitle(_raw);
+      setLiveEquippedNotice({
+        id: Date.now(),
+        emoji: _raw.emoji,
+        title: `¡Título "${_raw.title}" equipado en vivo!`,
+        subtitle: `Ya luce junto a tu nombre arriba y en la cabecera principal`,
+        color: _raw.color,
+      });
+    } else if (_type === 'buff') {
+      onActivateBuff(_raw);
+    }
+
+    setItemToPurchase(null);
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-[#0D0E17]/96 backdrop-blur-md flex flex-col overflow-hidden">
-      {/* Pinned Top Header + Navigation Bar — Portrait-First Layout so Brand & Title Never Collide with Buttons */}
+      {/* Pinned Top Header */}
       <div className="w-full bg-[#131221]/95 border-b border-[#2C2742] px-3 sm:px-5 pt-[max(0.65rem,calc(env(safe-area-inset-top,0px)+0.35rem))] pb-2.5 shrink-0">
         <div className="max-w-5xl w-full mx-auto space-y-2">
-          {/* Row 1: Brand Pill on Left + Gems & Back Button on Right */}
+          {/* Row 1 */}
           <div className="flex items-center justify-between gap-2">
             <div className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#1C1830] border border-[#3E335C] text-[9.5px] sm:text-[10px] font-extrabold uppercase tracking-wider shrink-0 whitespace-nowrap">
               <span className="text-xs leading-none shrink-0">🎯</span>
@@ -340,7 +396,7 @@ export function IndieEmporiumModal({
             </div>
           </div>
 
-          {/* Row 2: Full-Width Title + Total Collectibles Pill */}
+          {/* Row 2 */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-2">
             <h2 className="text-[15px] sm:text-[19px] font-extrabold text-[#F4F1FF] leading-tight">
               {t.shopMainTitle}
@@ -350,7 +406,7 @@ export function IndieEmporiumModal({
             </span>
           </div>
 
-          {/* Row 3: 4 Primary Navigation Tabs */}
+          {/* Row 3 */}
           <div className="p-1 rounded-[12px] bg-[#0E0D18] border border-[#29243D] grid grid-cols-2 sm:grid-cols-4 gap-1">
             {[
               { id: 'skins', label: t.tabSkins(MASCOT_SKINS.length) },
@@ -389,7 +445,7 @@ export function IndieEmporiumModal({
             })}
           </div>
 
-          {/* Row 4: Filter & Search Bar for Content Vault Tabs (Skins, Cards/Audio, Buffs) */}
+          {/* Row 4 */}
           {(activeTab === 'skins' ||
             activeTab === 'cards_audio' ||
             activeTab === 'buffs') && (
@@ -453,13 +509,12 @@ export function IndieEmporiumModal({
         </div>
       </div>
 
-      {/* Full-Width Scrollable Viewport Body (Right-edge native scrollbar controls this directly) */}
+      {/* Body Viewport */}
       <div className="flex-1 w-full overflow-y-scroll overscroll-contain px-3 sm:px-5 py-3.5 sm:py-4">
         <div className="max-w-5xl w-full mx-auto space-y-4 pb-10">
-          {/* TAB 1: 36 MASCOT SKINS & AURAS (With Anti-Spoiler Protection for Locked Species) */}
+          {/* TAB 1: SKINS */}
           {activeTab === 'skins' && (
             <div className="space-y-3.5">
-              {/* Interactive Mascot Skin & Evolution Stage Preview */}
               <div className="p-3 sm:p-4 rounded-[20px] border border-[#443868] bg-gradient-to-b from-[#211D34] to-[#161524] space-y-3 shadow-lg">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0">
@@ -524,7 +579,25 @@ export function IndieEmporiumModal({
                   <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
                     <button
                       type="button"
-                      onClick={() => onSelectSkin(previewSkin)}
+                      onClick={() => {
+                        const isOwned =
+                          isIndieFounder ||
+                          previewSkin.gemCost === 0 ||
+                          unlockedSkins.includes(previewSkin.id);
+
+                        if (isOwned) {
+                          onSelectSkin(previewSkin);
+                        } else {
+                          setItemToPurchase({
+                            id: previewSkin.id,
+                            name: previewSkin.name,
+                            icon: previewSkin.emoji,
+                            requiredGems: previewSkin.gemCost,
+                            _type: 'skin',
+                            _raw: previewSkin,
+                          });
+                        }
+                      }}
                       className="w-full sm:w-auto px-4 py-2.5 rounded-[12px] bg-gradient-to-r from-[#7549B8] to-[#9B6BFF] text-white text-xs font-extrabold hover:brightness-110 active:scale-95 transition shadow"
                     >
                       {equippedSkinId === previewSkin.id
@@ -538,7 +611,6 @@ export function IndieEmporiumModal({
                   </div>
                 </div>
 
-                {/* Evolution Slider with Anti-Spoiler Protection above user's current level */}
                 <div className="pt-2 border-t border-[#322B4B] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <span className="text-[11px] text-[#A8A3B8] leading-snug">
                     🎚️ Prueba <strong>{previewSkin.name}</strong> en tus niveles desbloqueados (1–{unlockedLevel}){' '}
@@ -570,7 +642,7 @@ export function IndieEmporiumModal({
                 </div>
               </div>
 
-              {/* Skins Grid (36 items) */}
+              {/* Skins Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
                 {filteredSkins.map((skin) => {
                   const isOwned =
@@ -634,7 +706,19 @@ export function IndieEmporiumModal({
                         onClick={(e) => {
                           e.stopPropagation();
                           setPreviewSkinId(skin.id);
-                          onSelectSkin(skin);
+
+                          if (isOwned) {
+                            onSelectSkin(skin);
+                          } else {
+                            setItemToPurchase({
+                              id: skin.id,
+                              name: skin.name,
+                              icon: skin.emoji,
+                              requiredGems: skin.gemCost,
+                              _type: 'skin',
+                              _raw: skin,
+                            });
+                          }
                         }}
                         className={`w-full h-[35px] rounded-[10px] text-[11px] font-extrabold transition ${
                           isEquipped
@@ -657,10 +741,9 @@ export function IndieEmporiumModal({
             </div>
           )}
 
-          {/* TAB 2: TARJETAS, SONIDOS, ESTILOS & TÍTULOS (156 ITEMS) */}
+          {/* TAB 2: CARDS & AUDIO */}
           {activeTab === 'cards_audio' && (
             <div className="space-y-3.5">
-              {/* LIVE INTERACTIVE HERO CARD & AUDIO STAGE (Shows immediate visual/audio transformation right inside the shop!) */}
               <div
                 key={liveEquippedNotice?.id || 'live-stage'}
                 style={{
@@ -695,7 +778,6 @@ export function IndieEmporiumModal({
                 )}
 
                 <div className="relative z-10 space-y-2.5">
-                  {/* Live Transformation Banner when an item is equipped/unlocked */}
                   {liveEquippedNotice && (
                     <div
                       style={{
@@ -774,7 +856,6 @@ export function IndieEmporiumModal({
                           {currentObjective.title}
                         </div>
 
-                        {/* Equipped Cosmetics Pills */}
                         <div className="flex items-center gap-1.5 flex-wrap text-[10px]">
                           <span
                             style={{
@@ -820,7 +901,6 @@ export function IndieEmporiumModal({
                       </div>
                     </div>
 
-                    {/* Mini Live Progress Bar & Board Jump */}
                     <div
                       style={{
                         backgroundColor: liveAccentTheme.surfaceDark,
@@ -919,7 +999,7 @@ export function IndieEmporiumModal({
                 })}
               </div>
 
-              {/* SUB-TAB A: 48 CARD FRAMES & FX */}
+              {/* SUB-TAB A: FRAMES */}
               {vaultSubTab === 'frames' && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
                   {filteredFrames.map((frame) => {
@@ -965,7 +1045,6 @@ export function IndieEmporiumModal({
                           <p className="text-[10px] text-[#B8B2C8] leading-snug">
                             {frame.subtitle}
                           </p>
-                          {/* Mini Progress Bar Shimmer Preview */}
                           <div className="h-2 w-full rounded-full bg-[#11101B] overflow-hidden border border-white/10">
                             <div
                               style={{
@@ -980,17 +1059,23 @@ export function IndieEmporiumModal({
                         <button
                           type="button"
                           onClick={() => {
-                            onSelectCardCosmetic(frame);
-                            if (
-                              isOwned ||
-                              gems >= frame.gemCost
-                            ) {
+                            if (isOwned) {
+                              onSelectCardCosmetic(frame);
                               setLiveEquippedNotice({
                                 id: Date.now(),
                                 emoji: frame.emoji,
                                 title: t.equippedFrameNotice(frame.name),
                                 subtitle: t.equippedFrameCardSub(currentObjective.title),
                                 color: frame.borderColor,
+                              });
+                            } else {
+                              setItemToPurchase({
+                                id: frame.id,
+                                name: frame.name,
+                                icon: frame.emoji,
+                                requiredGems: frame.gemCost,
+                                _type: 'frame',
+                                _raw: frame,
                               });
                             }
                           }}
@@ -1014,7 +1099,7 @@ export function IndieEmporiumModal({
                 </div>
               )}
 
-              {/* SUB-TAB B: 30 REAL-TIME WEB AUDIO 5-SOUND PACKS */}
+              {/* SUB-TAB B: SOUNDS */}
               {vaultSubTab === 'sounds' && (
                 <div className="space-y-2.5">
                   <div className="p-2.5 rounded-[13px] bg-[#161525] border border-[#342C50] flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-[#D8D1E5]">
@@ -1082,7 +1167,6 @@ export function IndieEmporiumModal({
                               {snd.subtitle}
                             </p>
 
-                            {/* 5 Direct Sound Audition Pads inside every Sound Pack Card */}
                             <div className="pt-1 grid grid-cols-5 gap-1">
                               {t.soundPackPads.map((padShort, padIdx) => {
                                 const isPadActive =
@@ -1119,14 +1203,23 @@ export function IndieEmporiumModal({
                           <button
                             type="button"
                             onClick={() => {
-                              onSelectSoundPack(snd);
-                              if (isOwned || gems >= snd.gemCost) {
+                              if (isOwned) {
+                                onSelectSoundPack(snd);
                                 setLiveEquippedNotice({
                                   id: Date.now(),
                                   emoji: snd.emoji,
                                   title: t.soundPackActivatedNotice(snd.name),
                                   subtitle: `Motor ${snd.synthEngineLabel || snd.scaleName} activo en toda la app`,
                                   color: snd.accentColor,
+                                });
+                              } else {
+                                setItemToPurchase({
+                                  id: snd.id,
+                                  name: snd.name,
+                                  icon: snd.emoji,
+                                  requiredGems: snd.gemCost,
+                                  _type: 'sound',
+                                  _raw: snd,
                                 });
                               }
                             }}
@@ -1151,7 +1244,7 @@ export function IndieEmporiumModal({
                 </div>
               )}
 
-              {/* SUB-TAB C: 42 CHROMATIC CARD STYLES */}
+              {/* SUB-TAB C: STYLES */}
               {vaultSubTab === 'styles' && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
                   {filteredStyles.map((st) => {
@@ -1182,7 +1275,6 @@ export function IndieEmporiumModal({
                         }`}
                       >
                         <div className="space-y-2">
-                          {/* Mini Atmospheric Banner + Color Harmony Preview Strip */}
                           <div
                             style={{
                               background: `linear-gradient(135deg, ${stPreset.startColor}, ${stPreset.endColor})`,
@@ -1232,14 +1324,23 @@ export function IndieEmporiumModal({
                         <button
                           type="button"
                           onClick={() => {
-                            onApplyVaultCardStyle(st);
-                            if (isOwned || gems >= st.gemCost) {
+                            if (isOwned) {
+                              onApplyVaultCardStyle(st);
                               setLiveEquippedNotice({
                                 id: Date.now(),
                                 emoji: st.emoji,
                                 title: `¡Estilo "${st.name}" aplicado en vivo!`,
                                 subtitle: t.themeAppliedNotice(currentObjective.title),
                                 color: st.accentColor,
+                              });
+                            } else {
+                              setItemToPurchase({
+                                id: st.id,
+                                name: st.name,
+                                icon: st.emoji,
+                                requiredGems: st.gemCost,
+                                _type: 'style',
+                                _raw: st,
                               });
                             }
                           }}
@@ -1263,19 +1364,19 @@ export function IndieEmporiumModal({
                 </div>
               )}
 
-              {/* SUB-TAB D: 36 GUARDIAN PROFILE TITLES */}
+              {/* SUB-TAB D: TITLES */}
               {vaultSubTab === 'titles' && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                  {filteredTitles.map((t) => {
+                  {filteredTitles.map((tItem) => {
                     const isOwned =
                       isIndieFounder ||
-                      t.gemCost === 0 ||
-                      unlockedVaultIds.includes(t.id);
-                    const isEquipped = equippedTitleId === t.id;
+                      tItem.gemCost === 0 ||
+                      unlockedVaultIds.includes(tItem.id);
+                    const isEquipped = equippedTitleId === tItem.id;
 
                     return (
                       <div
-                        key={t.id}
+                        key={tItem.id}
                         className={`p-3 rounded-[16px] border flex flex-col justify-between gap-2.5 ${
                           isEquipped
                             ? 'bg-[#241F3B] border-[#82E59B]/70'
@@ -1285,10 +1386,10 @@ export function IndieEmporiumModal({
                         <div className="space-y-1">
                           <div className="flex items-center justify-between">
                             <span
-                              style={{ color: t.color }}
+                              style={{ color: tItem.color }}
                               className="text-[9px] font-extrabold uppercase"
                             >
-                              {t.badge}
+                              {tItem.badge}
                             </span>
                             {isEquipped && (
                               <span className="text-[9px] font-extrabold text-[#82E59B]">
@@ -1297,27 +1398,36 @@ export function IndieEmporiumModal({
                             )}
                           </div>
                           <div
-                            style={{ color: t.color }}
+                            style={{ color: tItem.color }}
                             className="text-[13px] font-extrabold leading-snug"
                           >
-                            {t.emoji} {t.title}
+                            {tItem.emoji} {tItem.title}
                           </div>
                           <p className="text-[10px] text-[#A8A3B8] leading-snug">
-                            {t.subtitle}
+                            {tItem.subtitle}
                           </p>
                         </div>
 
                         <button
                           type="button"
                           onClick={() => {
-                            onSelectGuardianTitle(t);
-                            if (isOwned || gems >= t.gemCost) {
+                            if (isOwned) {
+                              onSelectGuardianTitle(tItem);
                               setLiveEquippedNotice({
                                 id: Date.now(),
-                                emoji: t.emoji,
-                                title: `¡Título "${t.title}" equipado en vivo!`,
+                                emoji: tItem.emoji,
+                                title: `¡Título "${tItem.title}" equipado en vivo!`,
                                 subtitle: `Ya luce junto a tu nombre arriba y en la cabecera principal`,
-                                color: t.color,
+                                color: tItem.color,
+                              });
+                            } else {
+                              setItemToPurchase({
+                                id: tItem.id,
+                                name: tItem.title,
+                                icon: tItem.emoji,
+                                requiredGems: tItem.gemCost,
+                                _type: 'title',
+                                _raw: tItem,
                               });
                             }
                           }}
@@ -1333,7 +1443,7 @@ export function IndieEmporiumModal({
                             ? '✓ Título Equipado'
                             : isOwned
                             ? '🏅 Equipar Título'
-                            : `Desbloquear · 💎 ${t.gemCost}`}
+                            : `Desbloquear · 💎 ${tItem.gemCost}`}
                         </button>
                       </div>
                     );
@@ -1343,10 +1453,9 @@ export function IndieEmporiumModal({
             </div>
           )}
 
-          {/* TAB 3: 24 BUFFS, FREE BLESSINGS & RELICS */}
+          {/* TAB 3: BUFFS */}
           {activeTab === 'buffs' && (
             <div className="space-y-3.5">
-              {/* Active Status Strip */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <div className="p-2.5 rounded-[13px] bg-[#181726] border border-[#2E2944] flex items-center justify-between">
                   <span className="text-[11px] text-[#C8C2D8]">
@@ -1423,7 +1532,20 @@ export function IndieEmporiumModal({
 
                       <button
                         type="button"
-                        onClick={() => onActivateBuff(buff)}
+                        onClick={() => {
+                          if (isClaimedOrOwned || buff.gemCost === 0) {
+                            onActivateBuff(buff);
+                          } else {
+                            setItemToPurchase({
+                              id: buff.id,
+                              name: buff.name,
+                              icon: buff.icon,
+                              requiredGems: buff.gemCost,
+                              _type: 'buff',
+                              _raw: buff,
+                            });
+                          }
+                        }}
                         className={`w-full h-[38px] rounded-[11px] text-xs font-extrabold transition flex items-center justify-center gap-1.5 shadow ${
                           isClaimedOrOwned
                             ? 'bg-[#1E3B2E] text-[#82E59B] border border-[#65DB85]/40'
@@ -1451,12 +1573,10 @@ export function IndieEmporiumModal({
             </div>
           )}
 
-          {/* TAB 4: APOYAR AL DEV INDIE (ARQUITECTURA DUAL: MERCADO PAGO + PAYPAL / GOOGLE PAY + LICENCIAS PRO) */}
+          {/* TAB 4: SUPPORT */}
           {activeTab === 'support' && (
             <div className="space-y-4">
-              {/* 🚀 BANNER DE LANZAMIENTO GLOBAL v1.0 CON TEMPORIZADOR EN VIVO Y BADGES */}
               <div className="p-4 sm:p-5 rounded-[22px] bg-gradient-to-br from-[#2D1B4E] via-[#20183A] to-[#121024] border-2 border-[#FFD54F]/70 shadow-[0_10px_35px_rgba(255,213,79,0.22)] relative overflow-hidden space-y-3.5">
-                {/* Glow decorativo de fondo */}
                 <div className="absolute -top-16 -right-16 w-48 h-48 bg-[#FFD54F]/10 rounded-full blur-3xl pointer-events-none" />
                 <div className="absolute -bottom-16 -left-16 w-48 h-48 bg-[#9B6BFF]/15 rounded-full blur-3xl pointer-events-none" />
 
@@ -1480,7 +1600,6 @@ export function IndieEmporiumModal({
                     </p>
                   </div>
 
-                  {/* Reloj de Cuenta Regresiva en Vivo */}
                   <div className="p-2.5 sm:p-3 rounded-[16px] bg-[#141026]/90 border border-[#FFD54F]/40 shadow-inner flex flex-col items-center sm:items-end shrink-0">
                     <div className="text-[10px] font-black text-[#FFD54F] uppercase tracking-wider flex items-center gap-1.5 mb-1.5">
                       <span className="w-2 h-2 rounded-full bg-[#65DB85] animate-ping" />
@@ -1510,7 +1629,6 @@ export function IndieEmporiumModal({
                   </div>
                 </div>
 
-                {/* Ticker de beneficios del lanzamiento */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 border-t border-white/10 text-[10px] sm:text-[11px] text-[#CFC7E5] font-semibold">
                   <div className="flex items-center gap-1.5">
                     <span className="text-[#65DB85]">✓</span>
@@ -1531,7 +1649,6 @@ export function IndieEmporiumModal({
                 </div>
               </div>
 
-              {/* Empathy Note from the Solo Indie Developer */}
               <div className="p-3.5 rounded-[18px] bg-gradient-to-r from-[#241D38] via-[#1E1B30] to-[#1A2826] border border-[#56447E] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-start gap-3 min-w-0">
                   <div className="w-10 h-10 rounded-[12px] bg-[#2E2448] border border-[#B58BFF]/40 flex items-center justify-center text-xl shrink-0">
@@ -1547,7 +1664,6 @@ export function IndieEmporiumModal({
                 </div>
               </div>
 
-              {/* Dual Payment Gateway Switcher (Mercado Pago vs PayPal / Google Pay) */}
               <div className="p-3.5 rounded-[18px] bg-[#161524] border border-[#3B315A] space-y-2.5">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div>
@@ -1636,7 +1752,7 @@ export function IndieEmporiumModal({
                 </div>
               </div>
 
-              {/* PedidosYa-Style Editable Tip / Donation Card */}
+              {/* Tip Card */}
               <div className="p-3.5 sm:p-5 rounded-[20px] bg-gradient-to-b from-[#231D38] to-[#171526] border-2 border-[#8C5CE0] shadow-[0_8px_28px_rgba(140,92,224,0.2)] space-y-3.5">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                   <div>
@@ -1651,7 +1767,6 @@ export function IndieEmporiumModal({
                     </p>
                   </div>
 
-                  {/* Live Reward Pill — Full width balanced row on mobile, right-aligned box on desktop */}
                   <div className="w-full sm:w-auto px-3 py-2 rounded-[13px] bg-[#141222] border border-[#493A6E] flex sm:block items-center justify-between gap-2 text-left sm:text-right shrink-0">
                     <div className="text-[10px] text-[#A8A3B8]">
                       {t.tipGratitudeReward}
@@ -1669,7 +1784,6 @@ export function IndieEmporiumModal({
                   </div>
                 </div>
 
-                {/* Quick Tip Pills (PedidosYa style) */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {t.tipPresets.map((preset) => {
                     const isSelected =
@@ -1725,7 +1839,6 @@ export function IndieEmporiumModal({
                   </button>
                 </div>
 
-                {/* Interactive Stepper + Direct Editable Input */}
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 p-2.5 rounded-[14px] bg-[#12111E] border border-[#2F2947]">
                   <div className="flex items-center justify-between sm:justify-start gap-2">
                     <button
@@ -1799,7 +1912,7 @@ export function IndieEmporiumModal({
                 </div>
               </div>
 
-              {/* 4 Structured Support Packs with Launch Discounts and Urgency */}
+              {/* Support Packs */}
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
                 {INDIE_SUPPORT_PACKS.map((pack) => {
                   const isFounderPack =
@@ -1825,7 +1938,6 @@ export function IndieEmporiumModal({
                       }`}
                     >
                       <div className="space-y-2">
-                        {/* Badges & Discount Pill */}
                         <div className="flex items-start justify-between gap-1.5">
                           <span
                             style={{ color: pack.highlightColor }}
@@ -1840,7 +1952,6 @@ export function IndieEmporiumModal({
                           )}
                         </div>
 
-                        {/* Title, Emoji & Dual Pricing (Strike-through regular + launch offer) */}
                         <div className="flex items-start gap-2.5">
                           <span className="text-2xl shrink-0 mt-0.5">{pack.emoji}</span>
                           <div className="min-w-0">
@@ -1865,7 +1976,6 @@ export function IndieEmporiumModal({
                           </div>
                         </div>
 
-                        {/* Explicit Savings Pill */}
                         {pack.savingsUsd && (
                           <div className="px-2 py-1 rounded-[8px] bg-[#142A1E] border border-[#65DB85]/30 text-[10px] font-extrabold text-[#82E59B] flex items-center gap-1">
                             <span>💸</span>
@@ -1920,7 +2030,7 @@ export function IndieEmporiumModal({
                 })}
               </div>
 
-              {/* Stateless PRO License Backup & Multi-Device Restore Card */}
+              {/* License Restore */}
               <div className="p-4 rounded-[18px] bg-[#141322] border border-[#382F54] space-y-3">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div>
@@ -2002,6 +2112,22 @@ export function IndieEmporiumModal({
           )}
         </div>
       </div>
+
+     {/* Modal de confirmación de compra con gemas */}
+      <PurchaseConfirmModal
+        item={itemToPurchase}
+        userGems={gems}
+        onClose={() => setItemToPurchase(null)}
+        onConfirm={handleConfirmPurchase}
+        onOpenShop={() => {
+          setItemToPurchase(null); // Cierra este modal de confirmación
+          
+          // Redirige a la pestaña de compra de gemas / apoyo
+          if (typeof setActiveTab === 'function') {
+            setActiveTab('support'); // O 'gems' / 'store' según las pestañas de tu tienda
+          }
+        }}
+      />
     </div>
   );
 }
