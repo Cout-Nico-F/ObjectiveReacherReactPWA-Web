@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Sidebar } from './components/extracted/Sidebar';
 import {
   ACHIEVEMENT_CATALOG,
   ACHIEVEMENT_IDS,
@@ -86,6 +87,7 @@ import { BannerPickerModal } from "./components/extracted/BannerPickerModal";
 import { EditEntryModal } from "./components/extracted/EditEntryModal";
 import { IndieEmporiumModal } from "./components/extracted/IndieEmporiumModal";
 import { MascotGridCard } from "./components/extracted/MascotGridCard";
+import { useHorizontalWheel } from '../src/Hooks/useHorizontalWheel';
 
 export function createEmptyState(): DashboardState {
   const id = crypto.randomUUID();
@@ -767,20 +769,34 @@ export function App() {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  // Section refs for smooth scrolling
-  const objectiveRef = useRef<HTMLDivElement>(null);
-  const objectiveTabsScrollRef = useRef<HTMLDivElement>(null);
-  const [isObjectiveTabsWrapped, setIsObjectiveTabsWrapped] = useState<boolean>(false);
-  const getHorizontalScrollProps = useHorizontalScrollProps();
-  const entriesRef = useRef<HTMLDivElement>(null);
-  const achievementsRef = useRef<HTMLDivElement>(null);
-  const statsRef = useRef<HTMLDivElement>(null);
-  const settingsRef = useRef<HTMLDivElement>(null);
-  const asmrSanctuaryRef = useRef<HTMLDivElement>(null);
-  const asmrSkinsScrollRef = useRef<HTMLDivElement>(null);
-  const [asmrFilterCategory, setAsmrFilterCategory] = useState<
-    'all' | 'unlocked' | 'taps' | 'skins'
-  >('all');
+// Section refs for smooth scrolling
+const objectiveRef = useRef<HTMLDivElement>(null);
+const objectiveTabsScrollRef = useRef<HTMLDivElement>(null);
+const [isObjectiveTabsWrapped, setIsObjectiveTabsWrapped] = useState<boolean>(false);
+const getHorizontalScrollProps = useHorizontalScrollProps();
+const entriesRef = useRef<HTMLDivElement>(null);
+const achievementsRef = useRef<HTMLDivElement>(null);
+const statsRef = useRef<HTMLDivElement>(null);
+const settingsRef = useRef<HTMLDivElement>(null);
+const asmrSanctuaryRef = useRef<HTMLDivElement>(null);
+const asmrSkinsScrollRef = useRef<HTMLDivElement>(null);
+
+// 💡 HOOKS DE SCROLL HORIZONTAL (Con la rueda del mouse)
+// 1. Pestañas de Objetivos (se deshabilita si están envueltas en varias filas)
+useHorizontalWheel(objectiveTabsScrollRef, !isObjectiveTabsWrapped);
+
+// 2. Sección de Logros
+useHorizontalWheel(achievementsRef);
+
+// 3. Skins/Accesorios (si también tiene scroll horizontal)
+useHorizontalWheel(asmrSkinsScrollRef);
+
+// 4. Tarjetas de estilos / Skins ASMR
+useHorizontalWheel(asmrSkinsScrollRef);
+
+const [asmrFilterCategory, setAsmrFilterCategory] = useState<
+  'all' | 'unlocked' | 'taps' | 'skins'
+>('all');
 
   useEffect(() => {
     return () => {
@@ -3280,7 +3296,30 @@ export function App() {
       setSelectedAmount(fallback);
     }
   }, [currentObjective.id, quickPresetAmounts, customAmountText, selectedAmount]);
+  
+  useEffect(() => {
+  const container = objectiveTabsScrollRef.current;
+  if (!container) return;
 
+  const handleWheel = (e: WheelEvent) => {
+    // Si el contenido entra completo y no necesita scroll horizontal, no interceptamos
+    if (container.scrollWidth <= container.clientWidth) return;
+
+    // Detiene el scroll vertical de la página principal
+    e.preventDefault();
+
+    // Mueve el contenedor horizontalmente según el giro de la rueda
+    container.scrollLeft += e.deltaY;
+  };
+
+  // { passive: false } es la clave para que preventDefault() funcione correctamente
+  container.addEventListener('wheel', handleWheel, { passive: false });
+
+  return () => {
+    container.removeEventListener('wheel', handleWheel);
+  };
+
+}, []);
   return (
     <div
       onTouchStart={(e) => {
@@ -3408,72 +3447,25 @@ export function App() {
               </button>
             </div>
 
-            <nav className="grid grid-cols-1 max-[920px]:landscape:grid-cols-2 gap-1.5">
-              {[
-                {
-                  key: 'objective',
-                  label: t.navObjective,
-                  action: () => highlightSection('objective', objectiveRef),
-                },
-                {
-                  key: 'entries',
-                  label: `＋   ${t.registerProgress}`,
-                  action: () => highlightSection('entries', entriesRef),
-                },
-                {
-                  key: 'history',
-                  label: `▤   ${t.historyTitle}`,
-                  action: () => {
-                    setActiveNav('history');
-                    setIsNavigationOpen(false);
-                    if (window.innerWidth < 1024) {
-                      setIsHistoryOpen(true);
-                    } else {
-                      highlightSection('entries', entriesRef);
-                    }
-                  },
-                },
-                {
-                  key: 'stats',
-                  label: t.navStats,
-                  action: () => highlightSection('stats', statsRef),
-                },
-                {
-                  key: 'achievements',
-                  label: t.navAchievements,
-                  action: () => highlightSection('achievements', achievementsRef),
-                },
-                {
-                  key: 'asmr_clicker',
-                  label: t.navAsmr,
-                  action: () => openAndScrollToAsmrSanctuary(),
-                },
-                {
-                  key: 'indie_shop',
-                  label: t.navSanctuary,
-                  action: () => openIndieShop('skins'),
-                },
-                {
-                  key: 'settings',
-                  label: `⚙   ${t.objectiveSettings}`,
-                  action: () => highlightSection('settings', settingsRef),
-                },
-              ].map((item) => {
-                const isSelected = activeNav === item.key;
-                return (
-                  <button
-                    key={item.key}
-                    onClick={item.action}
-                    className={`w-full h-[42px] sm:h-[48px] px-3.5 rounded-[12px] text-left font-medium text-[13px] sm:text-sm transition flex items-center truncate ${isSelected
-                      ? 'bg-[#302747] text-[#E6D9FF]'
-                      : 'bg-transparent text-[#F4F1FF] hover:bg-[#242238]'
-                      }`}
-                  >
-                    {item.label}
-                  </button>
-                );
-              })}
-            </nav>
+            <Sidebar
+              currentLanguage={appLanguage} 
+              onSelectLanguage={(lang) => setAppLanguage(lang)}
+              t={t}
+              activeNav={activeNav}
+              setActiveNav={setActiveNav}
+              setIsNavigationOpen={setIsNavigationOpen}
+              setIsHistoryOpen={setIsHistoryOpen}
+              highlightSection={highlightSection}
+              openAndScrollToAsmrSanctuary={openAndScrollToAsmrSanctuary}
+              openIndieShop={openIndieShop}
+              refs={{
+                objectiveRef,
+                entriesRef,
+                statsRef,
+                achievementsRef,
+                settingsRef,
+              }}
+            />
           </div>
 
           <div className="space-y-2.5 mt-4 shrink-0">
@@ -3657,25 +3649,7 @@ export function App() {
           {/* Objective Tabs: Full touch swipe + mouse drag + wheel + scrollbar + arrow buttons + wrap toggle */}
           <div className="w-full max-w-full min-w-0 space-y-1">
             <div className="flex items-center gap-1.5 w-full max-w-full min-w-0">
-              {!isObjectiveTabsWrapped && activeObjectives.length > 2 && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    playUiTap(1);
-                    objectiveTabsScrollRef.current?.scrollBy({
-                      left: -180,
-                      behavior: 'smooth',
-                    });
-                  }}
-                  aria-label={t.scrollLeft}
-                  title={t.scrollLeft}
-                  className="w-7 h-9 rounded-[10px] bg-[#1F1E2E] border border-[#34304B] text-[#D9C9FF] hover:bg-[#2B2740] active:scale-95 transition flex items-center justify-center shrink-0 text-sm font-bold"
-                >
-                  ‹
-                </button>
-              )}
-
-              <div
+                           <div
                 ref={objectiveTabsScrollRef}
                 {...(!isObjectiveTabsWrapped ? getHorizontalScrollProps() : {})}
                 className={
@@ -3729,50 +3703,32 @@ export function App() {
                   );
                 })}
               </div>
+            </div>
+          </div>
 
-              {!isObjectiveTabsWrapped && activeObjectives.length > 2 && (
+          {/* Subheader: Optimizado en 1 sola fila compacta */}
+          <div className="w-full flex items-center justify-between gap-2 py-1">
+            {/* Lado izquierdo: Contador + Toggle Ver todos + Archivados */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {activeObjectives.length > 1 && (
+                <span className="text-[11px] text-[#A8A3B8] font-medium">
+                  {t.activeObjectivesCount(activeObjectives.length)}
+                </span>
+              )}
+
+              {activeObjectives.length > 2 && (
                 <button
                   type="button"
                   onClick={() => {
                     playUiTap(1);
-                    objectiveTabsScrollRef.current?.scrollBy({
-                      left: 180,
-                      behavior: 'smooth',
-                    });
+                    setIsObjectiveTabsWrapped((prev) => !prev);
                   }}
-                  aria-label={t.scrollRight}
-                  title={t.scrollRight}
-                  className="w-7 h-9 rounded-[10px] bg-[#1F1E2E] border border-[#34304B] text-[#D9C9FF] hover:bg-[#2B2740] active:scale-95 transition flex items-center justify-center shrink-0 text-sm font-bold"
+                  className="px-2 py-0.5 rounded-[8px] bg-[#211E32] border border-[#383350] text-[#C7A4FF] text-[11px] font-semibold hover:bg-[#2C2844] transition"
                 >
-                  ›
+                  {isObjectiveTabsWrapped ? t.oneRowToggle : t.viewAllToggle}
                 </button>
               )}
-            </div>
-          </div>
 
-          {/* Subheader: Count + Ver todos toggle + Archivados (left) + Nuevo objetivo (right) */}
-          <div className="w-full space-y-2">
-            {activeObjectives.length > 1 && (
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[11px] text-[#A8A3B8]">
-                  {t.activeObjectivesCount(activeObjectives.length)}
-                </span>
-                {activeObjectives.length > 2 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      playUiTap(1);
-                      setIsObjectiveTabsWrapped((prev) => !prev);
-                    }}
-                    className="px-2.5 py-0.5 rounded-[8px] bg-[#211E32] border border-[#383350] text-[#C7A4FF] text-[11px] font-semibold hover:bg-[#2C2844] transition"
-                  >
-                    {isObjectiveTabsWrapped ? t.oneRowToggle : t.viewAllToggle}
-                  </button>
-                )}
-              </div>
-            )}
-
-            <div className="flex items-center justify-between gap-2 w-full">
               <button
                 onClick={() => {
                   if (archivedObjectives.length === 0) {
@@ -3784,25 +3740,26 @@ export function App() {
                     setIsArchivedModalOpen(true);
                   }
                 }}
-                className="px-3 py-1.5 rounded-[10px] bg-[#262338] border border-[#383350] text-[#E2D8FF] text-[12px] hover:bg-[#322D49] transition shrink-0"
+                className="px-2.5 py-1 rounded-[8px] bg-[#262338] border border-[#383350] text-[#E2D8FF] text-[11px] hover:bg-[#322D49] transition shrink-0"
               >
                 {t.archivedCount(archivedObjectives.length)}
               </button>
-              <button
-                onClick={handleStartNewObjective}
-                style={{
-                  background: `linear-gradient(90deg, ${currentAccentTheme.secondary}, ${currentAccentTheme.primary})`,
-                  color: currentAccentTheme.buttonText,
-                  boxShadow: `0 4px 14px -2px ${currentAccentTheme.glow}`,
-                }}
-                className="ml-auto px-3.5 py-1.5 rounded-[11px] text-[12px] font-extrabold hover:brightness-110 active:scale-95 transition flex items-center gap-1 shrink-0"
-              >
-                <span>＋</span>
-                <span>{t.newObjective}</span>
-              </button>
             </div>
-          </div>
 
+            {/* Lado derecho: Botón + Nuevo objetivo */}
+            <button
+              onClick={handleStartNewObjective}
+              style={{
+                background: `linear-gradient(90deg, ${currentAccentTheme.secondary}, ${currentAccentTheme.primary})`,
+                color: currentAccentTheme.buttonText,
+                boxShadow: `0 4px 14px -2px ${currentAccentTheme.glow}`,
+              }}
+              className="ml-auto px-3 py-1 rounded-[10px] text-[12px] font-extrabold hover:brightness-110 active:scale-95 transition flex items-center gap-1 shrink-0"
+            >
+              <span>＋</span>
+              <span>{t.newObjective}</span>
+            </button>
+          </div>
           {/* Hero Objective Section (Upgraded Customizable Sanctuary Card with Full Chromatic Harmony & Equipped Frame FX) */}
           <div
             ref={objectiveRef}
