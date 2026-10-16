@@ -85,10 +85,10 @@ import { MascotAvatarSvg } from "./components/extracted/MascotAvatarSvg";
 import { ObjectiveEditorModal } from "./components/extracted/ObjectiveEditorModal";
 import { BannerPickerModal } from "./components/extracted/BannerPickerModal";
 import { EditEntryModal } from "./components/extracted/EditEntryModal";
-import { IndieEmporiumModal } from "./components/extracted/IndieEmporiumModal";
+import { IndieEmporiumModal } from "./components/shop/IndieEmporiumModal";
 import { MascotGridCard } from "./components/extracted/MascotGridCard";
 import { useHorizontalWheel } from '../src/Hooks/useHorizontalWheel';
-import { PurchaseConfirmModal } from './components/extracted/PurchaseConfirmModal';
+import { PurchaseConfirmModal } from './components/shop/PurchaseConfirmModal';
 
 export function createEmptyState(): DashboardState {
   const id = crypto.randomUUID();
@@ -1205,7 +1205,7 @@ export function App() {
     }));
 
     setXpBurst({
-      id: Date.now(),
+      id: Date.now() + Math.random(),
       xp: xpAmount,
       leveledUp: nextLevel > prevLevel,
     });
@@ -1315,7 +1315,7 @@ export function App() {
 
     setMascotJoyId(Date.now());
     setXpBurst({
-      id: Date.now(),
+      id: Date.now() + Math.random(),
       xp: boostedXp,
       leveledUp: nextLevel > prevLevel,
     });
@@ -1353,7 +1353,7 @@ export function App() {
 
     setMascotJoyId(Date.now());
     setXpBurst({
-      id: Date.now(),
+      id: Date.now() + Math.random(),
       xp: bonusXp,
       leveledUp: nextLevel > prevLevel,
     });

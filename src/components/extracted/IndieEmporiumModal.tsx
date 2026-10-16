@@ -6,7 +6,7 @@ import { MascotSkinDefinition, CardCosmeticDefinition, SoundPackCatalogItem, Car
 import { findAccentTheme, findBannerPreset, formatObjectiveAmount } from "../../catalog";
 import { playSoundPackPreview, playUiTap, playMascotVoice } from "../../soundEffects";
 import { MascotAvatarSvg } from "./MascotAvatarSvg";
-import { PurchaseConfirmModal, PurchaseItem } from "./PurchaseConfirmModal";
+import { PurchaseConfirmModal, PurchaseItem } from "../shop/PurchaseConfirmModal";
 
 const { STORAGE_KEY, LEGACY_STORAGE_KEYS, LAUNCH_DEADLINE_STORAGE_KEY, MASCOT_STAGE_NAMES, MASCOT_STAGE_HINTS } = Constants;
 

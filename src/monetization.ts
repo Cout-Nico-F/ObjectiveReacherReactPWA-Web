@@ -110,6 +110,7 @@ export interface IndieSupportPack {
   permanentXpBonusPct: number;
   highlightColor: string;
   perks: string[];
+  seasonalMilestone?: string;
 }
 
 export type PaymentGatewayChoice = 'mercadopago' | 'paypal_googlepay';
@@ -1340,17 +1341,18 @@ export const INDIE_SUPPORT_PACKS: IndieSupportPack[] = [
     launchTag: '🔥 50% OFF ESTRENO',
     arsReference: 'Tuyo para siempre · Mercado Pago / PayPal / GPay',
     googlePlaySku: 'or_pack_founder_lifetime',
-    gemsIncluded: 850,
+    gemsIncluded: 300,
     shieldsIncluded: 3,
-    unlocksAllSkins: true,
-    permanentXpBonusPct: 20,
+    unlocksAllSkins: false,
+    permanentXpBonusPct: 15,
     highlightColor: '#FFD54F',
+    seasonalMilestone: 'Acceso a Hitos Estacionales: Otoño 2026',
     perks: [
-      '🎨 Desbloquea TODAS las 36 Skins, 48 Marcos, 30 Packs de Sonido y 36 Títulos',
-      '⚡ Bono Permanente +20% XP de Fundador en todos tus avances',
-      '💎 +850 Gemas Astrales (¡+100 Gemas Extra de Estreno v1.0!)',
-      '🛡️ +3 Escudos de Racha Eterna en tu inventario',
-      '🔑 Código PRO vitalicio firmado para usar en Web y Android',
+      '🎨 Desbloquea una selección exclusiva de Skins, Marcos y Títulos',
+      '⚡ Bono Permanente +15% XP de Fundador en todos tus avances',
+      '💎 +300 Gemas Astrales para Reliquias y Buffs',
+      '🛡️ +3 Escudos de Racha Eterna',
+      '🔑 Código PRO vitalicio',
     ],
   },
   {
