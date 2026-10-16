@@ -72,6 +72,14 @@ import {
   TranslationDictionary,
 } from './i18n';
 import {
+  calculateLevelFromXp,
+  recalculateAllXp,
+  toLocalDateKey,
+  calculateCurrentStreak,
+  evaluateObjectiveAchievements,
+  calculateSingleEntryXp,
+} from './utils/gamification';
+import {
   AchievementCondition,
   AchievementDefinition,
   CelebrationData,
@@ -89,379 +97,9 @@ import { IndieEmporiumModal } from "./components/shop/IndieEmporiumModal";
 import { MascotGridCard } from "./components/extracted/MascotGridCard";
 import { useHorizontalWheel } from '../src/Hooks/useHorizontalWheel';
 import { PurchaseConfirmModal } from './components/shop/PurchaseConfirmModal';
+import { useModalState } from './hooks/useModalState';
 
-export function createEmptyState(): DashboardState {
-  const id = crypto.randomUUID();
-  const nowIso = new Date().toISOString();
-  return {
-    version: 6,
-    objectives: [
-      {
-        id,
-        title: 'Mi objetivo',
-        description: '',
-        goalAmount: 1,
-        currentAmount: 0,
-        unitId: CUSTOM_UNIT_ID,
-        customUnitLabel: '$',
-        bannerId: 'gradient',
-        bannerOffsetX: 0,
-        bannerOffsetY: 0,
-        isArchived: false,
-        entries: [],
-        unlockedAchievementIds: [],
-        icon: '🎯',
-        category: 'Personal',
-        accentColor: '#65DB85',
-        targetDate: '',
-        pledge: '',
-        createdAt: nowIso,
-        lastUsedAt: nowIso,
-      },
-    ],
-    selectedObjectiveId: id,
-    gamification: {
-      totalXp: 0,
-      bonusXp: 0,
-      lastPetDateKey: '',
-      claimedQuestsByDay: {},
-      gems: 0,
-      unlockedSkins: ['default'],
-      equippedSkinId: 'default',
-      unlockedVaultIds: ['frame_default', 'snd_kalimba_zen', 'title_seed'],
-      equippedCardFrameId: 'frame_default',
-      equippedSoundPackId: 'snd_kalimba_zen',
-      equippedTitleId: 'title_seed',
-      streakShields: 0,
-      xpBoostUntil: '',
-      gemMagnetUntil: '',
-      isIndieFounder: false,
-      supporterTier: 'none',
-      asmrTotalTaps: 0,
-      asmrPreferredTexture: 'bubbles',
-      redeemedLicenseTxIds: [],
-      lastIssuedLicenseCode: '',
-    },
-  };
-}
-
-export function calculateLevelFromXp(xp: number): number {
-  return Math.floor((Math.sqrt(1 + (4 * Math.max(0, xp)) / 25) - 1) / 2) + 1;
-}
-
-export function calculateSingleEntryXp(
-  amount: number,
-  goalAmount: number,
-  isFirstOfDay: boolean,
-  streakDays: number
-): number {
-  if (amount > 0) {
-    const baseAdditionXp = 35;
-    const impactRatio =
-      goalAmount > 0 ? Math.min(1, Math.max(0, amount / goalAmount)) : 0;
-    const impactBonus = Math.round(5 + impactRatio * 60);
-    const firstOfDayBonus = isFirstOfDay ? 25 : 0;
-    const streakBonus = streakDays > 1 ? Math.min(45, (streakDays - 1) * 3) : 0;
-    return baseAdditionXp + impactBonus + firstOfDayBonus + streakBonus;
-  }
-  const baseSubtractionXp = 15;
-  return baseSubtractionXp + (isFirstOfDay ? 10 : 0);
-}
-
-export function recalculateAllXp(objectives: Objective[], bonusXp = 0): number {
-  let total = Math.max(0, bonusXp);
-  const seenDays = new Set<string>();
-  const allEntries = objectives
-    .flatMap((obj) => obj.entries.map((entry) => ({ obj, entry })))
-    .sort(
-      (a, b) =>
-        new Date(a.entry.createdAt).getTime() -
-        new Date(b.entry.createdAt).getTime()
-    );
-
-  for (const { obj, entry } of allEntries) {
-    const dayKey = toLocalDateKey(entry.createdAt);
-    const isFirstOfDay = !seenDays.has(dayKey);
-    seenDays.add(dayKey);
-    total += calculateSingleEntryXp(
-      entry.amount,
-      obj.goalAmount,
-      isFirstOfDay,
-      seenDays.size
-    );
-  }
-
-  for (const obj of objectives) {
-    for (const id of obj.unlockedAchievementIds) {
-      const ach = ACHIEVEMENT_CATALOG.find((a) => a.id === id);
-      if (ach) total += ach.rewardXp;
-    }
-  }
-
-  return Math.max(0, total);
-}
-
-export function loadState(): DashboardState {
-  try {
-    for (const legacyKey of LEGACY_STORAGE_KEYS) {
-      localStorage.removeItem(legacyKey);
-    }
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return createEmptyState();
-    const parsed = JSON.parse(raw) as DashboardState;
-    if (
-      parsed &&
-      parsed.version === 6 &&
-      Array.isArray(parsed.objectives) &&
-      parsed.objectives.length > 0 &&
-      parsed.gamification &&
-      typeof parsed.gamification.totalXp === 'number'
-    ) {
-      const baseTimeMs = Date.now() - parsed.objectives.length * 60000;
-      parsed.objectives = parsed.objectives.map((obj, idx) => {
-        const sanitizedEntries = Array.isArray(obj.entries)
-          ? obj.entries.map((e) => ({
-            ...e,
-            amount: clampSafeAmount(
-              e.amount || 0,
-              -MAX_SAFE_AMOUNT,
-              MAX_SAFE_AMOUNT
-            ),
-          }))
-          : [];
-        const latestEntryIso = sanitizedEntries[0]?.createdAt;
-        const fallbackIso = new Date(baseTimeMs + idx * 60000).toISOString();
-        return {
-          ...obj,
-          goalAmount: clampSafeAmount(obj.goalAmount || 1, 1, MAX_SAFE_AMOUNT),
-          currentAmount: clampSafeAmount(
-            obj.currentAmount || 0,
-            -MAX_SAFE_AMOUNT,
-            MAX_SAFE_AMOUNT * 2
-          ),
-          entries: sanitizedEntries,
-          createdAt: obj.createdAt || fallbackIso,
-          lastUsedAt: obj.lastUsedAt || latestEntryIso || obj.createdAt || fallbackIso,
-        };
-      });
-      const bonusXp =
-        typeof parsed.gamification.bonusXp === 'number'
-          ? parsed.gamification.bonusXp
-          : 0;
-      const recalculated = recalculateAllXp(parsed.objectives, bonusXp);
-      parsed.gamification.totalXp = Math.max(
-        parsed.gamification.totalXp,
-        recalculated
-      );
-      parsed.gamification.bonusXp = bonusXp;
-      parsed.gamification.lastPetDateKey =
-        parsed.gamification.lastPetDateKey || '';
-      parsed.gamification.claimedQuestsByDay =
-        parsed.gamification.claimedQuestsByDay || {};
-      parsed.gamification.gems =
-        typeof parsed.gamification.gems === 'number'
-          ? parsed.gamification.gems
-          : 0;
-      parsed.gamification.unlockedSkins = Array.isArray(
-        parsed.gamification.unlockedSkins
-      )
-        ? parsed.gamification.unlockedSkins
-        : ['default'];
-      parsed.gamification.equippedSkinId =
-        parsed.gamification.equippedSkinId || 'default';
-      parsed.gamification.unlockedVaultIds = Array.isArray(
-        parsed.gamification.unlockedVaultIds
-      )
-        ? parsed.gamification.unlockedVaultIds
-        : ['frame_default', 'snd_kalimba_zen', 'title_seed'];
-      parsed.gamification.equippedCardFrameId =
-        parsed.gamification.equippedCardFrameId || 'frame_default';
-      parsed.gamification.equippedSoundPackId =
-        parsed.gamification.equippedSoundPackId || 'snd_kalimba_zen';
-      parsed.gamification.equippedTitleId =
-        parsed.gamification.equippedTitleId || 'title_seed';
-      parsed.gamification.streakShields =
-        typeof parsed.gamification.streakShields === 'number'
-          ? parsed.gamification.streakShields
-          : 0;
-      parsed.gamification.xpBoostUntil =
-        parsed.gamification.xpBoostUntil || '';
-      parsed.gamification.gemMagnetUntil =
-        parsed.gamification.gemMagnetUntil || '';
-      parsed.gamification.isIndieFounder = Boolean(
-        parsed.gamification.isIndieFounder
-      );
-      parsed.gamification.supporterTier =
-        parsed.gamification.supporterTier || 'none';
-      parsed.gamification.asmrTotalTaps =
-        typeof parsed.gamification.asmrTotalTaps === 'number'
-          ? parsed.gamification.asmrTotalTaps
-          : 0;
-      parsed.gamification.asmrPreferredTexture =
-        parsed.gamification.asmrPreferredTexture || 'bubbles';
-      parsed.gamification.redeemedLicenseTxIds = Array.isArray(
-        parsed.gamification.redeemedLicenseTxIds
-      )
-        ? parsed.gamification.redeemedLicenseTxIds
-        : [];
-      parsed.gamification.lastIssuedLicenseCode =
-        parsed.gamification.lastIssuedLicenseCode || '';
-      return parsed;
-    }
-  } catch {
-    // Fallback to empty state
-  }
-  return createEmptyState();
-}
-
-export function toLocalDateKey(isoString: string): string {
-  const d = new Date(isoString);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
-    d.getDate()
-  ).padStart(2, '0')}`;
-}
-
-export function calculateCurrentStreak(
-  objectives: Objective[],
-  availableShields = 0
-): number {
-  const activeDays = new Set<string>();
-  for (const obj of objectives) {
-    for (const entry of obj.entries) {
-      activeDays.add(toLocalDateKey(entry.createdAt));
-    }
-  }
-
-  if (activeDays.size === 0) return 0;
-
-  const day = new Date();
-  day.setHours(0, 0, 0, 0);
-  const todayKey = toLocalDateKey(day.toISOString());
-
-  if (!activeDays.has(todayKey)) {
-    day.setDate(day.getDate() - 1);
-  }
-
-  let streak = 0;
-  let shieldsLeft = Math.max(0, availableShields);
-
-  while (true) {
-    const key = toLocalDateKey(day.toISOString());
-    if (activeDays.has(key)) {
-      streak++;
-      day.setDate(day.getDate() - 1);
-    } else if (shieldsLeft > 0 && streak > 0) {
-      // Check if there was activity the day before this gap so a shield bridges it
-      const prevDay = new Date(day);
-      prevDay.setDate(prevDay.getDate() - 1);
-      if (activeDays.has(toLocalDateKey(prevDay.toISOString()))) {
-        shieldsLeft--;
-        streak++;
-        day.setDate(day.getDate() - 1);
-      } else {
-        break;
-      }
-    } else {
-      break;
-    }
-  }
-  return streak;
-}
-
-export function isSecretAchievementMet(
-  achievement: AchievementDefinition,
-  objective: Objective,
-  progress: number,
-  streak: number
-): boolean {
-  const entries = objective.entries;
-  switch (achievement.condition) {
-    case AchievementCondition.EntryCount:
-      return entries.length >= achievement.threshold;
-    case AchievementCondition.StreakDays:
-      return streak >= achievement.threshold;
-    case AchievementCondition.ProgressPercent:
-      return progress * 100 >= achievement.threshold;
-    case AchievementCondition.LargestContributionPercent: {
-      if (objective.goalAmount <= 0) return false;
-      const maxPositive = entries
-        .filter((e) => e.amount > 0)
-        .reduce((max, e) => Math.max(max, e.amount), 0);
-      return (maxPositive / objective.goalAmount) * 100 >= achievement.threshold;
-    }
-    case AchievementCondition.WeekendEntryCount: {
-      const weekendCount = entries.filter((e) => {
-        const day = new Date(e.createdAt).getDay();
-        return day === 0 || day === 6;
-      }).length;
-      return weekendCount >= achievement.threshold;
-    }
-    case AchievementCondition.EarlyEntryCount: {
-      const earlyCount = entries.filter((e) => new Date(e.createdAt).getHours() < 8)
-        .length;
-      return earlyCount >= achievement.threshold;
-    }
-    case AchievementCondition.LateEntryCount: {
-      const lateCount = entries.filter(
-        (e) => new Date(e.createdAt).getHours() >= 21
-      ).length;
-      return lateCount >= achievement.threshold;
-    }
-    default:
-      return false;
-  }
-}
-
-export function evaluateObjectiveAchievements(
-  objective: Objective,
-  allObjectives: Objective[],
-  gamification: { totalXp: number }
-): string[] {
-  const newlyUnlockedTitles: string[] = [];
-  const unlock = (id: string) => {
-    if (objective.unlockedAchievementIds.includes(id)) return;
-    const def = ACHIEVEMENT_CATALOG.find((a) => a.id === id);
-    if (!def) return;
-    objective.unlockedAchievementIds.push(id);
-    gamification.totalXp += def.rewardXp;
-    newlyUnlockedTitles.push(def.title);
-  };
-
-  if (objective.entries.length > 0) {
-    unlock(ACHIEVEMENT_IDS.FirstEntry);
-  }
-
-  const streak = calculateCurrentStreak(allObjectives);
-  if (streak >= 3) {
-    unlock(ACHIEVEMENT_IDS.ThreeDayStreak);
-  }
-  if (streak >= 7) {
-    unlock(ACHIEVEMENT_IDS.SevenDayStreak);
-  }
-
-  const progress =
-    objective.goalAmount <= 0 ? 0 : objective.currentAmount / objective.goalAmount;
-  if (progress >= 0.25) {
-    unlock(ACHIEVEMENT_IDS.Progress25);
-  }
-  if (progress >= 0.5) {
-    unlock(ACHIEVEMENT_IDS.Progress50);
-  }
-  if (progress >= 1) {
-    unlock(ACHIEVEMENT_IDS.Progress100);
-    unlock(ACHIEVEMENT_IDS.GoalComplete);
-  }
-
-  for (const achievement of ACHIEVEMENT_CATALOG) {
-    if (achievement.isSecret) {
-      if (isSecretAchievementMet(achievement, objective, progress, streak)) {
-        unlock(achievement.id);
-      }
-    }
-  }
-
-  return newlyUnlockedTitles;
-}
+import { loadState } from './utils/storage';
 
 export function formatEntryTime(isoString: string): string {
   const date = new Date(isoString);
@@ -621,21 +259,11 @@ export function App() {
   const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(false);
   const [highlightedSection, setHighlightedSection] = useState<string | null>(null);
 
-  // Modals
+  const { modals, actions } = useModalState();
   const [itemToPurchase, setItemToPurchase] = useState<any>(null);
-  const [isEditorOpen, setIsEditorOpen] = useState<boolean>(false);
   const [isDraftObjective, setIsDraftObjective] = useState<boolean>(false);
   const [previousObjectiveId, setPreviousObjectiveId] = useState<string | null>(null);
 
-  const [isBannerPickerOpen, setIsBannerPickerOpen] = useState<boolean>(false);
-  const [isAllAchievementsOpen, setIsAllAchievementsOpen] = useState<boolean>(false);
-  const [isMascotGalleryOpen, setIsMascotGalleryOpen] = useState<boolean>(false);
-  const [mascotGalleryStartLevel, setMascotGalleryStartLevel] = useState<number | null>(null);
-  const [isArchivedModalOpen, setIsArchivedModalOpen] = useState<boolean>(false);
-  const [isIndieShopOpen, setIsIndieShopOpen] = useState<boolean>(false);
-  const [indieShopInitialTab, setIndieShopInitialTab] = useState<
-    'skins' | 'cards_audio' | 'buffs' | 'support'
-  >('skins');
 
   // Interactive Mascot Sanctuary, ASMR Clicker & Daily Ritual
   const [mascotJoyId, setMascotJoyId] = useState<number>(0);
@@ -1004,12 +632,12 @@ export function App() {
   // Lock background page scroll whenever a full-screen modal is open so the outer scrollbar never moves dead space
   useEffect(() => {
     const anyModalOpen =
-      isIndieShopOpen ||
-      isEditorOpen ||
-      isBannerPickerOpen ||
-      isMascotGalleryOpen ||
-      isAllAchievementsOpen ||
-      isArchivedModalOpen;
+      modals.isIndieShopOpen ||
+      modals.isEditorOpen ||
+      modals.isBannerPickerOpen ||
+      modals.isMascotGalleryOpen ||
+      modals.isAllAchievementsOpen ||
+      modals.isArchivedModalOpen;
     if (anyModalOpen) {
       const prevOverflow = document.body.style.overflow;
       document.body.style.overflow = 'hidden';
@@ -1018,12 +646,12 @@ export function App() {
       };
     }
   }, [
-    isIndieShopOpen,
-    isEditorOpen,
-    isBannerPickerOpen,
-    isMascotGalleryOpen,
-    isAllAchievementsOpen,
-    isArchivedModalOpen,
+    modals.isIndieShopOpen,
+    modals.isEditorOpen,
+    modals.isBannerPickerOpen,
+    modals.isMascotGalleryOpen,
+    modals.isAllAchievementsOpen,
+    modals.isArchivedModalOpen,
   ]);
   const streakShields = state.gamification.streakShields ?? 0;
   const isIndieFounder = Boolean(state.gamification.isIndieFounder);
@@ -1371,8 +999,8 @@ export function App() {
     playUiTap(3);
     setIsNavigationOpen(false);
     setIsHistoryOpen(false);
-    setIndieShopInitialTab(tab);
-    setIsIndieShopOpen(true);
+    actions.setIndieShopInitialTab(tab);
+    actions.setIsIndieShopOpen(true);
   };
 
   const DAILY_ASMR_GEM_CAP = 8;
@@ -1716,7 +1344,7 @@ export function App() {
 
     if (gems < cosmetic.gemCost) {
       playUiTap(0);
-      setIndieShopInitialTab('support');
+      actions.setIndieShopInitialTab('support');
       setAlertDialog({
         title: 'Gemas Astrales insuficientes',
         message: `Necesitas ${cosmetic.gemCost} 💎 para desbloquear "${cosmetic.name}" (tienes ${gems} 💎). Puedes ganar más en misiones diarias o apoyar al dev con una propina editable.`,
@@ -1771,7 +1399,7 @@ export function App() {
 
     if (gems < pack.gemCost) {
       playUiTap(0);
-      setIndieShopInitialTab('support');
+      actions.setIndieShopInitialTab('support');
       setAlertDialog({
         title: 'Gemas Astrales insuficientes',
         message: `Necesitas ${pack.gemCost} 💎 para desbloquear el pack de 5 sonidos "${pack.name}" (tienes ${gems} 💎).`,
@@ -1811,7 +1439,7 @@ export function App() {
 
     if (!isOwned && gems < styleItem.gemCost) {
       playUiTap(0);
-      setIndieShopInitialTab('support');
+      actions.setIndieShopInitialTab('support');
       setAlertDialog({
         title: 'Gemas Astrales insuficientes',
         message: `Necesitas ${styleItem.gemCost} 💎 para desbloquear la sintonía "${styleItem.name}" (tienes ${gems} 💎).`,
@@ -1889,7 +1517,7 @@ export function App() {
 
     if (gems < titleItem.gemCost) {
       playUiTap(0);
-      setIndieShopInitialTab('support');
+      actions.setIndieShopInitialTab('support');
       setAlertDialog({
         title: 'Gemas Astrales insuficientes',
         message: `Necesitas ${titleItem.gemCost} 💎 para desbloquear el título "${titleItem.title}" (tienes ${gems} 💎).`,
@@ -1943,7 +1571,7 @@ export function App() {
 
     if (gems < skin.gemCost) {
       playUiTap(0);
-      setIndieShopInitialTab('support');
+      actions.setIndieShopInitialTab('support');
       setAlertDialog({
         title: 'Gemas Astrales insuficientes',
         message: `Necesitas ${skin.gemCost} 💎 para desbloquear "${skin.name}" (tienes ${gems} 💎). Puedes ganar más cumpliendo misiones diarias o desbloquear TODAS las skins al instante con el Pase Fundador Indie.`,
@@ -2005,7 +1633,7 @@ export function App() {
 
     if (gems < buff.gemCost) {
       playUiTap(0);
-      setIndieShopInitialTab('support');
+      actions.setIndieShopInitialTab('support');
       setAlertDialog({
         title: 'Gemas Astrales insuficientes',
         message: `Necesitas ${buff.gemCost} 💎 para activar "${buff.name}" (tienes ${gems} 💎). Suma avances, reclama misiones o apoya al dev indie para obtener más gemas.`,
@@ -2831,7 +2459,7 @@ export function App() {
       objectives: [newObj, ...prev.objectives],
       selectedObjectiveId: newId,
     }));
-    setIsEditorOpen(true);
+    actions.setIsEditorOpen(true);
   };
 
   const handleCancelObjectiveEditor = () => {
@@ -2853,7 +2481,7 @@ export function App() {
       setIsDraftObjective(false);
       setPreviousObjectiveId(null);
     }
-    setIsEditorOpen(false);
+    actions.setIsEditorOpen(false);
   };
 
   const handleSaveObjectiveEditor = (
@@ -2910,7 +2538,7 @@ export function App() {
       setHistoryFilter('all');
       setIsDraftObjective(false);
       setPreviousObjectiveId(null);
-      setIsEditorOpen(false);
+      actions.setIsEditorOpen(false);
       playCelebrationFanfare('levelUp');
       triggerCelebration(
         '¡Nuevo Objetivo Creado!',
@@ -2967,7 +2595,7 @@ export function App() {
     });
     setIsDraftObjective(false);
     setPreviousObjectiveId(null);
-    setIsEditorOpen(false);
+    actions.setIsEditorOpen(false);
     if (wasDraft || saveMode === 'overwrite_reset') {
       triggerCelebration(
         wasDraft ? '¡Objetivo Creado!' : '¡Tarjeta Reiniciada a 0!',
@@ -3158,7 +2786,7 @@ export function App() {
           : o
       ),
     }));
-    setIsBannerPickerOpen(false);
+    actions.setIsBannerPickerOpen(false);
   };
 
   const handleAchievementClick = (rawDef: AchievementDefinition) => {
@@ -3735,7 +3363,7 @@ export function App() {
                       message: t.noArchivedGoals,
                     });
                   } else {
-                    setIsArchivedModalOpen(true);
+                    actions.setIsArchivedModalOpen(true);
                   }
                 }}
                 className="px-2.5 py-1 rounded-[8px] bg-[#262338] border border-[#383350] text-[#E2D8FF] text-[11px] hover:bg-[#322D49] transition shrink-0"
@@ -3874,7 +3502,7 @@ export function App() {
                       <span className="hidden sm:inline">{t.framesAndFx}</span>
                     </button>
                     <button
-                      onClick={() => setIsEditorOpen(true)}
+                      onClick={() => actions.setIsEditorOpen(true)}
                       title={t.customizeObjectiveTooltip}
                       style={{
                         backgroundColor: currentAccentTheme.surfaceDark,
@@ -3889,7 +3517,7 @@ export function App() {
                       </span>
                     </button>
                     <button
-                      onClick={() => setIsBannerPickerOpen(true)}
+                      onClick={() => actions.setIsBannerPickerOpen(true)}
                       title={t.changeBackgroundTooltip}
                       style={{
                         backgroundColor: currentAccentTheme.surfaceDark,
@@ -3909,7 +3537,7 @@ export function App() {
                 {/* Full-Width Objective Identity Row (Emblem + Title + Description) */}
                 <div className="flex items-start gap-3 min-w-0">
                   <button
-                    onClick={() => setIsEditorOpen(true)}
+                    onClick={() => actions.setIsEditorOpen(true)}
                     title={t.changeIconTooltip}
                     style={{
                       borderColor: `${currentAccentTheme.primary}88`,
@@ -3934,7 +3562,7 @@ export function App() {
                       </p>
                     ) : (
                       <button
-                        onClick={() => setIsEditorOpen(true)}
+                        onClick={() => actions.setIsEditorOpen(true)}
                         style={{ color: currentAccentTheme.primary }}
                         className="text-[11px] font-semibold hover:underline text-left"
                       >
@@ -4223,7 +3851,7 @@ export function App() {
                     </div>
                   ) : (
                     <button
-                      onClick={() => setIsEditorOpen(true)}
+                      onClick={() => actions.setIsEditorOpen(true)}
                       style={{ color: currentAccentTheme.primary }}
                       className="text-[10px] font-bold hover:underline text-left sm:text-right shrink-0"
                     >
@@ -4485,7 +4113,7 @@ export function App() {
                 </div>
               </div>
               <button
-                onClick={() => setIsAllAchievementsOpen(true)}
+                onClick={() => actions.setIsAllAchievementsOpen(true)}
                 className="text-[10px] font-bold text-[#C7A4FF] hover:text-white hover:underline transition shrink-0"
               >
                 {t.viewAllAchievements}
@@ -4700,8 +4328,8 @@ export function App() {
                     <button
                       onClick={() => {
                         playUiTap(3);
-                        setMascotGalleryStartLevel(level);
-                        setIsMascotGalleryOpen(true);
+                        actions.setMascotGalleryStartLevel(level);
+                        actions.setIsMascotGalleryOpen(true);
                       }}
                       className="text-[10px] font-bold text-[#C7A4FF] hover:text-white hover:underline transition"
                     >
@@ -4770,8 +4398,8 @@ export function App() {
                       <button
                         key={nodeLevel}
                         onClick={() => {
-                          setMascotGalleryStartLevel(nodeLevel);
-                          setIsMascotGalleryOpen(true);
+                          actions.setMascotGalleryStartLevel(nodeLevel);
+                          actions.setIsMascotGalleryOpen(true);
                         }}
                         title={t.viewLevelInCodex(nodeLevel)}
                         className={`h-[7px] flex-1 rounded-full transition-all ${isCurrent
@@ -4790,8 +4418,8 @@ export function App() {
               {mascotTier < 19 && (
                 <button
                   onClick={() => {
-                    setMascotGalleryStartLevel(nextSpeciesLevel);
-                    setIsMascotGalleryOpen(true);
+                    actions.setMascotGalleryStartLevel(nextSpeciesLevel);
+                    actions.setIsMascotGalleryOpen(true);
                   }}
                   title={t.spyLevelSilhouette(nextSpeciesLevel, t.mascotStageHints[nextSpeciesTier])}
                   className="shrink-0 flex items-center gap-1.5 pl-2 pr-2.5 py-1 rounded-[12px] bg-[#221E33] border border-[#4D3E73] hover:border-[#C7A4FF] transition group animate-mystery-beacon"
@@ -5558,7 +5186,7 @@ export function App() {
               <button
                 onClick={() => {
                   playUiTap(2);
-                  setIsEditorOpen(true);
+                  actions.setIsEditorOpen(true);
                 }}
                 className="p-2.5 rounded-[14px] bg-[#141320]/90 border border-[#2B273D] hover:border-[#635091] hover:bg-[#1C1A2E] flex items-center gap-3 text-left transition group"
               >
@@ -5578,7 +5206,7 @@ export function App() {
               <button
                 onClick={() => {
                   playUiTap(2);
-                  setIsBannerPickerOpen(true);
+                  actions.setIsBannerPickerOpen(true);
                 }}
                 className="p-2.5 rounded-[14px] bg-[#141320]/90 border border-[#2B273D] hover:border-[#635091] hover:bg-[#1C1A2E] flex items-center gap-3 text-left transition group"
               >
@@ -5778,7 +5406,7 @@ export function App() {
       </div>
 
       {/* Modal: ObjectiveEditorPage (Forja de Objetivo) */}
-      {isEditorOpen && (
+      {modals.isEditorOpen && (
         <ObjectiveEditorModal
           objective={currentObjective}
           isNewDraft={isDraftObjective}
@@ -5789,37 +5417,37 @@ export function App() {
       )}
 
       {/* Modal: BannerPickerPage */}
-      {isBannerPickerOpen && (
+      {modals.isBannerPickerOpen && (
         <BannerPickerModal
-          onCancel={() => setIsBannerPickerOpen(false)}
+          onCancel={() => actions.setIsBannerPickerOpen(false)}
           onApply={handleApplyBanner}
           onAlert={(title, message) => setAlertDialog({ title, message })}
         />
       )}
 
       {/* Modal: MascotGalleryPage (200 evolutions) */}
-      {isMascotGalleryOpen && (
+      {modals.isMascotGalleryOpen && (
         <MascotGalleryModal
           initialLevel={level}
-          initialPreviewLevel={mascotGalleryStartLevel ?? level}
+          initialPreviewLevel={modals.mascotGalleryStartLevel ?? level}
           skinId={equippedSkinId}
           onOpenSkins={() => {
-            setIsMascotGalleryOpen(false);
+            actions.setIsMascotGalleryOpen(false);
             openIndieShop('skins');
           }}
           onClose={() => {
-            setIsMascotGalleryOpen(false);
-            setMascotGalleryStartLevel(null);
+            actions.setIsMascotGalleryOpen(false);
+            actions.setMascotGalleryStartLevel(null);
           }}
         />
       )}
 
       {/* Modal: Indie Sanctuary Emporium (216-Item Vault: Skins, Card FX, Sound Packs, Buffs & Indie Support) */}
-      {isIndieShopOpen && (
+      {modals.isIndieShopOpen && (
         <IndieEmporiumModal
           t={t}
           launchTimeLeft={launchTimeLeft}
-          initialTab={indieShopInitialTab}
+          initialTab={modals.indieShopInitialTab}
           currentObjective={currentObjective}
           level={level}
           gems={gems}
@@ -5852,15 +5480,15 @@ export function App() {
           onCustomTipSupport={handleCustomTipSupport}
           onRedeemLicenseCode={handleRedeemLicenseCode}
           onJumpToBoard={() => {
-            setIsIndieShopOpen(false);
+            actions.setIsIndieShopOpen(false);
             highlightSection('objective', objectiveRef);
           }}
-          onClose={() => setIsIndieShopOpen(false)}
+          onClose={() => actions.setIsIndieShopOpen(false)}
         />
       )}
 
       {/* Modal: AchievementsPage */}
-      {isAllAchievementsOpen && (
+      {modals.isAllAchievementsOpen && (
         <div className="fixed inset-0 z-50 bg-[#0D0E17]/95 backdrop-blur-md flex flex-col pt-[max(0.875rem,calc(env(safe-area-inset-top,0px)+0.4rem))] pb-[max(0.875rem,calc(env(safe-area-inset-bottom,0px)+0.4rem))] px-3.5 sm:p-6 overflow-hidden">
           <div className="max-w-4xl w-full mx-auto flex-1 flex flex-col gap-3.5 min-h-0">
             <div className="space-y-1.5 shrink-0">
@@ -5872,7 +5500,7 @@ export function App() {
                   <span className="text-[#FFD54F]">· LOGROS</span>
                 </div>
                 <button
-                  onClick={() => setIsAllAchievementsOpen(false)}
+                  onClick={() => actions.setIsAllAchievementsOpen(false)}
                   className="px-3.5 py-1.5 rounded-[10px] bg-[#252138] border border-[#3E355B] text-[#F4F1FF] text-xs sm:text-sm font-bold hover:bg-[#322C4B] transition shrink-0"
                 >
                   ← Volver
@@ -5951,7 +5579,7 @@ export function App() {
       )}
 
       {/* Modal: Archived Objectives */}
-      {isArchivedModalOpen && (
+      {modals.isArchivedModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
           <div className="w-full max-w-md rounded-[18px] border border-[#29283C] bg-[#1C1C2A] p-5 space-y-4">
             <h3 className="text-lg font-bold text-[#F4F1FF]">
@@ -5987,7 +5615,7 @@ export function App() {
                             ),
                             selectedObjectiveId: obj.id,
                           }));
-                          setIsArchivedModalOpen(false);
+                          actions.setIsArchivedModalOpen(false);
                         }}
                         className="px-2.5 py-1.5 rounded-lg bg-[#604094] text-white text-xs font-medium"
                       >
@@ -5995,7 +5623,7 @@ export function App() {
                       </button>
                       <button
                         onClick={() => {
-                          setIsArchivedModalOpen(false);
+                          actions.setIsArchivedModalOpen(false);
                           handleDeleteObjective(obj);
                         }}
                         className="px-2.5 py-1.5 rounded-lg bg-[#542A38] text-white text-xs font-medium"
@@ -6009,7 +5637,7 @@ export function App() {
             )}
             <div className="flex justify-end">
               <button
-                onClick={() => setIsArchivedModalOpen(false)}
+                onClick={() => actions.setIsArchivedModalOpen(false)}
                 className="px-4 py-2 rounded-[10px] bg-[#302E42] text-[#F4F1FF] text-sm"
               >
                 Cerrar
@@ -6156,8 +5784,8 @@ export function App() {
           /* Ejecuta el método disponible para abrir la tienda */
           if (typeof openIndieShop === 'function') {
             openIndieShop('support');
-          } else if (typeof setIsIndieShopOpen === 'function') {
-            setIsIndieShopOpen(true);
+          } else if (typeof actions.setIsIndieShopOpen === 'function') {
+            actions.setIsIndieShopOpen(true);
           } else if (typeof setActiveNav === 'function') {
             setActiveNav('shop');
           }
