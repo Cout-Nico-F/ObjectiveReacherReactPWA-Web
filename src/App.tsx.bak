@@ -105,6 +105,7 @@ import { formatEntryTime } from "./utils/formatEntryTime";
 import { getLaunchEndTimestamp } from "./utils/getLaunchEndTimestamp";
 import { doTitlesShareCoreMeaning } from "./utils/doTitlesShareCoreMeaning";
 import { useMascotEngine } from "./Hooks/useMascotEngine";
+import { useEquippedEngine } from "./Hooks/useEquippedEngine";
 
 export function useHorizontalScrollProps() {
   const dragStateRef = useRef<{
@@ -438,7 +439,7 @@ export function App() {
       }, [state.objectives, todayDateKey]);
     const hasEntryToday = todayEntries.length > 0;
     const hasPettedToday = state.gamification.lastPetDateKey === todayDateKey;
-    const { mascotJoyId, setMascotJoyId, mascotSpeech, setMascotSpeech, mascotSpeechTimerRef, triggerMascotSpeech, isAsmrSanctuaryOpen, asmrFloatingSparks, lastAsmrPrizeNotice, setLastAsmrPrizeNotice, asmrTapCooldownCounterRef, asmrHoldTimerRef, asmrHoldIntervalRef, asmrHoldLastShiftTimeRef, asmrHoldMouseDownFiredRef, asmrTotalTapsRef, asmrLastSparkTimeRef, asmrSparkLaneRef, isAsmrHolding, asmrSanctuaryRef, asmrSkinsScrollRef, asmrFilterCategory, setAsmrFilterCategory, DAILY_ASMR_GEM_CAP, ASMR_CYCLE_TAPS, asmrTotalTaps, asmrPreferredTexture, asmrCycleProgress, asmrGemsEarnedToday, asmrRemainingDailyGems, activeAsmrTextureObj, isAsmrStyleUnlocked, openAndScrollToAsmrSanctuary, scrollAsmrCarousel, handleSelectAsmrTexture, handleAsmrClick, stopAsmrTimer, handleStopAsmrHold, handleStartAsmrHold, mascotTier, mascotEmojis, mascotEmoji, mascotMessage, mascotMood, nextSpeciesLevel, nextSpeciesTier, levelsToNextSpecies, handlePetMascot } = useMascotEngine({ state, todayDateKey, t, isIndieFounder, unlockedVaultIds, setIsNavigationOpen, setIsHistoryOpen, setState, gems, setAlertDialog, triggerCelebration, activeGemMultiplier, activeXpMultiplier, totalXp, level, hasEntryToday, streakDays, currentObjective, hasPettedToday, setXpBurst });
+    const { mascotJoyId, setMascotJoyId, mascotSpeech, setMascotSpeech, mascotSpeechTimerRef, triggerMascotSpeech, isAsmrSanctuaryOpen, asmrFloatingSparks, lastAsmrPrizeNotice, setLastAsmrPrizeNotice, asmrTapCooldownCounterRef, asmrHoldTimerRef, asmrHoldIntervalRef, asmrHoldLastShiftTimeRef, asmrHoldMouseDownFiredRef, asmrTotalTapsRef, asmrLastSparkTimeRef, asmrSparkLaneRef, isAsmrHolding, asmrSanctuaryRef, asmrSkinsScrollRef, asmrFilterCategory, setAsmrFilterCategory, DAILY_ASMR_GEM_CAP, ASMR_CYCLE_TAPS, asmrTotalTaps, asmrPreferredTexture, asmrCycleProgress, asmrGemsEarnedToday, asmrRemainingDailyGems, activeAsmrTextureObj, isAsmrStyleUnlocked, openAndScrollToAsmrSanctuary, scrollAsmrCarousel, handleSelectAsmrTexture, handleAsmrClick, stopAsmrTimer, handleStopAsmrHold, handleStartAsmrHold, mascotTier, mascotEmojis, mascotEmoji, mascotMessage, mascotMood, nextSpeciesLevel, nextSpeciesTier, levelsToNextSpecies, handlePetMascot, unlockedSkins, equippedSkinId, equippedSkin, equippedCardFrameId, equippedCardCosmetic, equippedCardStyleId, equippedSoundPackId, equippedTitleId, equippedGuardianTitle, handleUnlockOrEquipSkin } = useEquippedEngine({ state, todayDateKey, t, isIndieFounder, unlockedVaultIds, setIsNavigationOpen, setIsHistoryOpen, setState, gems, setAlertDialog, triggerCelebration, activeGemMultiplier, activeXpMultiplier, totalXp, level, hasEntryToday, streakDays, currentObjective, hasPettedToday, setXpBurst, actions });
 
   const achievementsRef = useRef<HTMLDivElement>(null);
   const statsRef = useRef<HTMLDivElement>(null);
@@ -517,27 +518,6 @@ export function App() {
         : `${streakDays} ${t.streakDaysPlural}`;
 
   // Indie Monetization, Cosmetics & Active Buffs derived properties
-  const unlockedSkins = state.gamification.unlockedSkins || ['default'];
-  const equippedSkinId = state.gamification.equippedSkinId || 'default';
-  const equippedSkin = useMemo(
-    () => findMascotSkin(equippedSkinId),
-    [equippedSkinId]
-  );
-  const equippedCardFrameId =
-    state.gamification.equippedCardFrameId || 'frame_default';
-  const equippedCardCosmetic = useMemo(
-    () => findCardCosmetic(equippedCardFrameId),
-    [equippedCardFrameId]
-  );
-  const equippedCardStyleId = state.gamification.equippedCardStyleId;
-  const equippedSoundPackId =
-    state.gamification.equippedSoundPackId || 'snd_kalimba_zen';
-  const equippedTitleId = state.gamification.equippedTitleId || 'title_seed';
-  const equippedGuardianTitle = useMemo(
-    () => findGuardianTitle(equippedTitleId),
-    [equippedTitleId]
-  );
-
   // Sync active sound pack and procedural background music with Web Audio synthesizer
   useEffect(() => {
     setActiveSoundPack(equippedSoundPackId);
@@ -1048,62 +1028,6 @@ export function App() {
       titleItem.color
     );
   };
-
-  const handleUnlockOrEquipSkin = (skin: MascotSkinDefinition) => {
-    const isUnlocked =
-      isIndieFounder ||
-      skin.gemCost === 0 ||
-      unlockedSkins.includes(skin.id);
-
-    if (isUnlocked) {
-      playMascotVoice(level, false);
-      setState((prev) => ({
-        ...prev,
-        gamification: {
-          ...prev.gamification,
-          equippedSkinId: skin.id,
-        },
-      }));
-      triggerMascotSpeech(
-        `¡Equipaste el aura "${skin.name}" ${skin.emoji}! Tu guardián brilla con nueva energía.`
-      );
-      return;
-    }
-
-    if (gems < skin.gemCost) {
-      playUiTap(0);
-      actions.setIndieShopInitialTab('support');
-      setAlertDialog({
-        title: 'Gemas Astrales insuficientes',
-        message: `Necesitas ${skin.gemCost} 💎 para desbloquear "${skin.name}" (tienes ${gems} 💎). Puedes ganar más cumpliendo misiones diarias o desbloquear TODAS las skins al instante con el Pase Fundador Indie.`,
-      });
-      return;
-    }
-
-    playCelebrationFanfare('levelUp');
-    setState((prev) => {
-      const currentUnlocked = prev.gamification.unlockedSkins || ['default'];
-      return {
-        ...prev,
-        gamification: {
-          ...prev.gamification,
-          gems: Math.max(0, (prev.gamification.gems ?? 0) - skin.gemCost),
-          unlockedSkins: currentUnlocked.includes(skin.id)
-            ? currentUnlocked
-            : [...currentUnlocked, skin.id],
-          equippedSkinId: skin.id,
-        },
-      };
-    });
-    setMascotJoyId(Date.now());
-    triggerCelebration(
-      `¡Nueva Skin: ${skin.name}!`,
-      `Se aplicó a las 200 evoluciones de tu guardián ${skin.emoji}`,
-      skin.emoji,
-      skin.auraRingColor
-    );
-  };
-
   const handleActivateBuff = (buff: SanctuaryBuffDefinition) => {
     const alreadyClaimedFree =
       buff.kind === 'free_blessing' && unlockedVaultIds.includes(buff.id);

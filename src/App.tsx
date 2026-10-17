@@ -106,6 +106,7 @@ import { getLaunchEndTimestamp } from "./utils/getLaunchEndTimestamp";
 import { doTitlesShareCoreMeaning } from "./utils/doTitlesShareCoreMeaning";
 import { useMascotEngine } from "./Hooks/useMascotEngine";
 import { useEquippedEngine } from "./Hooks/useEquippedEngine";
+import { useObjectiveEngine } from "./Hooks/useObjectiveEngine";
 
 export function useHorizontalScrollProps() {
   const dragStateRef = useRef<{
@@ -224,10 +225,6 @@ export function App() {
 
   const { modals, actions } = useModalState();
   const [itemToPurchase, setItemToPurchase] = useState<any>(null);
-  const [isDraftObjective, setIsDraftObjective] = useState<boolean>(false);
-  const [previousObjectiveId, setPreviousObjectiveId] = useState<string | null>(null);
-
-
   // Interactive Mascot Sanctuary, ASMR Clicker & Daily Ritual
   const [isDailyRitualOpen, setIsDailyRitualOpen] = useState<boolean>(false);
   const [appLanguage, setAppLanguage] = useState<AppLanguage>(() =>
@@ -251,7 +248,7 @@ export function App() {
 
   const toggleSereneMode = () => {
     playUiTap(1);
-    setIsSereneMode((prev) => {
+    setIsSereneMode((prev: any) => {
       const next = !prev;
       try {
         localStorage.setItem('objectivereacher_serene_mode', String(next));
@@ -299,10 +296,6 @@ export function App() {
     detail: string;
     status: string;
   } | null>(null);
-
-  const [editingEntry, setEditingEntry] = useState<ObjectiveEntry | null>(null);
-  const [entryActionTarget, setEntryActionTarget] = useState<ObjectiveEntry | null>(null);
-
   const [confirmDialog, setConfirmDialog] = useState<{
     title: string;
     message: string;
@@ -335,9 +328,6 @@ export function App() {
   }, []);
 
   // Section refs for smooth scrolling
-  const objectiveRef = useRef<HTMLDivElement>(null);
-  const objectiveTabsScrollRef = useRef<HTMLDivElement>(null);
-  const [isObjectiveTabsWrapped, setIsObjectiveTabsWrapped] = useState<boolean>(false);
   const getHorizontalScrollProps = useHorizontalScrollProps();
   const entriesRef = useRef<HTMLDivElement>(null);
     const totalXp = state.gamification.totalXp;
@@ -359,7 +349,7 @@ export function App() {
         message: string,
         emoji: string,
         color: string,
-        requiresDismissal = false,
+        requiresDismissal: any = false,
         quote?: string
       ) => {
         if (celebrationTimerRef.current) {
@@ -368,79 +358,20 @@ export function App() {
         }
         setCelebration({ title, message, quote, emoji, color, requiresDismissal: true });
       };
-    const activeObjectives = useMemo(() => {
-        const unarchived = state.objectives.filter((o) => !o.isArchived);
-        if (unarchived.length <= 1) return unarchived;
+    const progress =
+        currentObjective.goalAmount <= 0
+          ? 0
+          : Math.min(
+            1,
+            Math.max(0, currentObjective.currentAmount / currentObjective.goalAmount)
+          );
+    const hasValidSelectedAmount = useMemo(() => {
+        return true;
+      }, [selectedQuickAmount, customAmountText]);
+    const { isDraftObjective, setIsDraftObjective, previousObjectiveId, setPreviousObjectiveId, editingEntry, setEditingEntry, entryActionTarget, setEntryActionTarget, objectiveRef, objectiveTabsScrollRef, isObjectiveTabsWrapped, setIsObjectiveTabsWrapped, activeObjectives, currentObjective, streakDays, todayEntries, hasEntryToday, hasPettedToday, mascotJoyId, setMascotJoyId, mascotSpeech, setMascotSpeech, mascotSpeechTimerRef, triggerMascotSpeech, isAsmrSanctuaryOpen, asmrFloatingSparks, lastAsmrPrizeNotice, setLastAsmrPrizeNotice, asmrTapCooldownCounterRef, asmrHoldTimerRef, asmrHoldIntervalRef, asmrHoldLastShiftTimeRef, asmrHoldMouseDownFiredRef, asmrTotalTapsRef, asmrLastSparkTimeRef, asmrSparkLaneRef, isAsmrHolding, asmrSanctuaryRef, asmrSkinsScrollRef, asmrFilterCategory, setAsmrFilterCategory, DAILY_ASMR_GEM_CAP, ASMR_CYCLE_TAPS, asmrTotalTaps, asmrPreferredTexture, asmrCycleProgress, asmrGemsEarnedToday, asmrRemainingDailyGems, activeAsmrTextureObj, isAsmrStyleUnlocked, openAndScrollToAsmrSanctuary, scrollAsmrCarousel, handleSelectAsmrTexture, handleAsmrClick, stopAsmrTimer, handleStopAsmrHold, handleStartAsmrHold, mascotTier, mascotEmojis, mascotEmoji, mascotMessage, mascotMood, nextSpeciesLevel, nextSpeciesTier, levelsToNextSpecies, handlePetMascot, unlockedSkins, equippedSkinId, equippedSkin, equippedCardFrameId, equippedCardCosmetic, equippedCardStyleId, equippedSoundPackId, equippedTitleId, equippedGuardianTitle, handleUnlockOrEquipSkin, archivedObjectives, projectedGoalProgress, handleSelectObjective, handleStartNewObjective, handleCancelObjectiveEditor, handleSaveObjectiveEditor, handleArchiveCurrentObjective, handleDeleteObjective, projectedObjectiveProgress, objectiveInsights } = useObjectiveEngine({ state, t, streakShields, todayDateKey, isIndieFounder, unlockedVaultIds, setIsNavigationOpen, setIsHistoryOpen, setState, gems, setAlertDialog, triggerCelebration, activeGemMultiplier, activeXpMultiplier, totalXp, level, setXpBurst, actions, hasValidSelectedAmount, isAddition, selectedAmount, setHistoryFilter, setActiveNav, setHighlightedSection, setConfirmDialog, progress });
 
-        const getCreatedMs = (o: Objective, idx: number) => {
-          const t = o.createdAt ? new Date(o.createdAt).getTime() : 0;
-          return Number.isNaN(t) || t === 0 ? idx : t;
-        };
-        const getUsedMs = (o: Objective, idx: number) => {
-          const t = o.lastUsedAt ? new Date(o.lastUsedAt).getTime() : 0;
-          return Number.isNaN(t) || t === 0 ? getCreatedMs(o, idx) : t;
-        };
-
-        const indexed = unarchived.map((obj, idx) => ({
-          obj,
-          createdMs: getCreatedMs(obj, idx),
-          usedMs: getUsedMs(obj, idx),
-        }));
-
-        const newestEntry = [...indexed].sort((a, b) => b.createdMs - a.createdMs)[0];
-        const lastUsedEntry = [...indexed].sort((a, b) => b.usedMs - a.usedMs)[0];
-
-        const result: Objective[] = [];
-        const placedIds = new Set<string>();
-
-        if (newestEntry) {
-          result.push(newestEntry.obj);
-          placedIds.add(newestEntry.obj.id);
-        }
-
-        if (lastUsedEntry && !placedIds.has(lastUsedEntry.obj.id)) {
-          result.push(lastUsedEntry.obj);
-          placedIds.add(lastUsedEntry.obj.id);
-        }
-
-        const remaining = indexed
-          .filter((item) => !placedIds.has(item.obj.id))
-          .sort((a, b) => b.usedMs - a.usedMs || b.createdMs - a.createdMs);
-
-        for (const item of remaining) {
-          result.push(item.obj);
-        }
-
-        return result;
-      }, [state.objectives]);
-    const currentObjective = useMemo(() => {
-        return (
-          state.objectives.find(
-            (o) => o.id === state.selectedObjectiveId && !o.isArchived
-          ) ||
-          activeObjectives[0] ||
-          state.objectives[0]
-        );
-      }, [state.objectives, state.selectedObjectiveId, activeObjectives]);
     const level = calculateLevelFromXp(totalXp);
-    const streakDays = useMemo(
-        () =>
-          calculateCurrentStreak(
-            state.objectives,
-            state.gamification.streakShields || 0
-          ),
-        [state.objectives, state.gamification.streakShields]
-      );
     const streakShields = state.gamification.streakShields ?? 0;
-    const todayEntries = useMemo(() => {
-        return state.objectives.flatMap((obj) =>
-          obj.entries.filter((e) => toLocalDateKey(e.createdAt) === todayDateKey)
-        );
-      }, [state.objectives, todayDateKey]);
-    const hasEntryToday = todayEntries.length > 0;
-    const hasPettedToday = state.gamification.lastPetDateKey === todayDateKey;
-    const { mascotJoyId, setMascotJoyId, mascotSpeech, setMascotSpeech, mascotSpeechTimerRef, triggerMascotSpeech, isAsmrSanctuaryOpen, asmrFloatingSparks, lastAsmrPrizeNotice, setLastAsmrPrizeNotice, asmrTapCooldownCounterRef, asmrHoldTimerRef, asmrHoldIntervalRef, asmrHoldLastShiftTimeRef, asmrHoldMouseDownFiredRef, asmrTotalTapsRef, asmrLastSparkTimeRef, asmrSparkLaneRef, isAsmrHolding, asmrSanctuaryRef, asmrSkinsScrollRef, asmrFilterCategory, setAsmrFilterCategory, DAILY_ASMR_GEM_CAP, ASMR_CYCLE_TAPS, asmrTotalTaps, asmrPreferredTexture, asmrCycleProgress, asmrGemsEarnedToday, asmrRemainingDailyGems, activeAsmrTextureObj, isAsmrStyleUnlocked, openAndScrollToAsmrSanctuary, scrollAsmrCarousel, handleSelectAsmrTexture, handleAsmrClick, stopAsmrTimer, handleStopAsmrHold, handleStartAsmrHold, mascotTier, mascotEmojis, mascotEmoji, mascotMessage, mascotMood, nextSpeciesLevel, nextSpeciesTier, levelsToNextSpecies, handlePetMascot, unlockedSkins, equippedSkinId, equippedSkin, equippedCardFrameId, equippedCardCosmetic, equippedCardStyleId, equippedSoundPackId, equippedTitleId, equippedGuardianTitle, handleUnlockOrEquipSkin } = useEquippedEngine({ state, todayDateKey, t, isIndieFounder, unlockedVaultIds, setIsNavigationOpen, setIsHistoryOpen, setState, gems, setAlertDialog, triggerCelebration, activeGemMultiplier, activeXpMultiplier, totalXp, level, hasEntryToday, streakDays, currentObjective, hasPettedToday, setXpBurst, actions });
-
   const achievementsRef = useRef<HTMLDivElement>(null);
   const statsRef = useRef<HTMLDivElement>(null);
   const settingsRef = useRef<HTMLDivElement>(null);
@@ -479,10 +410,6 @@ export function App() {
   // 1st position: Newest created objective (highest createdAt)
   // 1st/2nd position: Last used objective (highest lastUsedAt — 1st if it is the newest, 2nd right after the newest otherwise)
   // Remaining objectives: ordered by lastUsedAt desc, then createdAt desc
-  const archivedObjectives = useMemo(
-    () => state.objectives.filter((o) => o.isArchived),
-    [state.objectives]
-  );
   useEffect(() => {
     if (isObjectiveTabsWrapped) return;
     const container = objectiveTabsScrollRef.current;
@@ -568,7 +495,7 @@ export function App() {
     state.gamification.gemMagnetUntil
   );
   const totalEntryCount = useMemo(
-    () => state.objectives.reduce((sum, o) => sum + o.entries.length, 0),
+    () => state.objectives.reduce((sum: any, o: any) => sum + o.entries.length, 0),
     [state.objectives]
   );
 
@@ -583,7 +510,7 @@ export function App() {
     return s;
   }, [state.objectives]);
   const hasPositiveNoteToday = todayEntries.some(
-    (e) =>
+    (e: any) =>
       e.amount > 0 &&
       e.description.trim() !== '' &&
       e.description.trim() !== 'Aporte' &&
@@ -625,9 +552,9 @@ export function App() {
     [hasPettedToday, hasEntryToday, hasPositiveNoteToday, claimedToday, t]
   );
 
-  const completedQuestsCount = dailyQuests.filter((q) => q.isCompleted).length;
+  const completedQuestsCount = dailyQuests.filter((q: any) => q.isCompleted).length;
   const unclaimedReadyQuestsCount = dailyQuests.filter(
-    (q) => q.isCompleted && !q.isClaimed
+    (q: any) => q.isCompleted && !q.isClaimed
   ).length;
   const isAllDailyBonusClaimed = claimedToday.includes('all_daily_bonus');
   const canClaimAllDailyBonus =
@@ -641,7 +568,7 @@ export function App() {
     const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + mondayOffset);
     const labels = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
 
-    return labels.map((label, idx) => {
+    return labels.map((label: any, idx: any) => {
       const d = new Date(monday);
       d.setDate(monday.getDate() + idx);
       const key = toLocalDateKey(d.toISOString());
@@ -656,7 +583,7 @@ export function App() {
   // Evolution Path (C)
   const tierStartLevel = mascotTier * 10 + 1;
   const currentSubLevelIndex = (Math.min(200, Math.max(1, level)) - 1) % 10; // 0..9
-  const awardBonusXp = (xpAmount: number, reasonTitle: string, reasonEmoji = '✨') => {
+  const awardBonusXp = (xpAmount: number, reasonTitle: string, reasonEmoji: any = '✨') => {
     const prevLevel = level;
     const prevTier = mascotTier;
     const nextTotalXp = state.gamification.totalXp + xpAmount;
@@ -664,7 +591,7 @@ export function App() {
     const nextLevel = calculateLevelFromXp(nextTotalXp);
     const nextTier = Math.floor((Math.min(200, Math.max(1, nextLevel)) - 1) / 10);
 
-    setState((prev) => ({
+    setState((prev: any) => ({
       ...prev,
       gamification: {
         ...prev.gamification,
@@ -705,7 +632,7 @@ export function App() {
     const nextTotalXp = state.gamification.totalXp + boostedXp;
     const nextLevel = calculateLevelFromXp(nextTotalXp);
 
-    setState((prev) => {
+    setState((prev: any) => {
       const prevClaimed = prev.gamification.claimedQuestsByDay?.[todayDateKey] || [];
       if (prevClaimed.includes(questId)) return prev;
       return {
@@ -743,7 +670,7 @@ export function App() {
     const nextTotalXp = state.gamification.totalXp + bonusXp;
     const nextLevel = calculateLevelFromXp(nextTotalXp);
 
-    setState((prev) => {
+    setState((prev: any) => {
       const prevClaimed = prev.gamification.claimedQuestsByDay?.[todayDateKey] || [];
       if (prevClaimed.includes('all_daily_bonus')) return prev;
       return {
@@ -810,7 +737,7 @@ export function App() {
 
     if (isOwned) {
       playUiTap(4);
-      setState((prev) => ({
+      setState((prev: any) => ({
         ...prev,
         gamification: {
           ...prev.gamification,
@@ -834,7 +761,7 @@ export function App() {
     }
 
     playCelebrationFanfare('levelUp');
-    setState((prev) => {
+    setState((prev: any) => {
       const prevVault = prev.gamification.unlockedVaultIds || [];
       return {
         ...prev,
@@ -865,7 +792,7 @@ export function App() {
     if (isOwned) {
       setActiveSoundPack(pack.id);
       playSoundPackPreview(pack.id, 1);
-      setState((prev) => ({
+      setState((prev: any) => ({
         ...prev,
         gamification: {
           ...prev.gamification,
@@ -890,7 +817,7 @@ export function App() {
 
     setActiveSoundPack(pack.id);
     playSoundPackPreview(pack.id, 4);
-    setState((prev) => {
+    setState((prev: any) => {
       const prevVault = prev.gamification.unlockedVaultIds || [];
       return {
         ...prev,
@@ -934,11 +861,11 @@ export function App() {
       playCelebrationFanfare('levelUp');
     }
 
-    setState((prev) => {
+    setState((prev: any) => {
       const prevVault = prev.gamification.unlockedVaultIds || [];
       return {
         ...prev,
-        objectives: prev.objectives.map((o) =>
+        objectives: prev.objectives.map((o: any) =>
           o.id === currentObjective.id
             ? {
               ...o,
@@ -983,7 +910,7 @@ export function App() {
 
     if (isOwned) {
       playUiTap(3);
-      setState((prev) => ({
+      setState((prev: any) => ({
         ...prev,
         gamification: {
           ...prev.gamification,
@@ -1007,7 +934,7 @@ export function App() {
     }
 
     playQuestClaimSound(true);
-    setState((prev) => {
+    setState((prev: any) => {
       const prevVault = prev.gamification.unlockedVaultIds || [];
       return {
         ...prev,
@@ -1077,7 +1004,7 @@ export function App() {
         currentUntilMs + 24 * 60 * 60 * 1000
       ).toISOString();
 
-      setState((prev) => ({
+      setState((prev: any) => ({
         ...prev,
         gamification: {
           ...prev.gamification,
@@ -1098,7 +1025,7 @@ export function App() {
         currentUntilMs + 7 * 24 * 60 * 60 * 1000
       ).toISOString();
 
-      setState((prev) => ({
+      setState((prev: any) => ({
         ...prev,
         gamification: {
           ...prev.gamification,
@@ -1125,7 +1052,7 @@ export function App() {
       playQuestClaimSound(false);
     }
 
-    setState((prev) => {
+    setState((prev: any) => {
       const prevVault = prev.gamification.unlockedVaultIds || [];
       const shouldRecordId =
         buff.kind === 'free_blessing' || buff.kind === 'relic';
@@ -1188,15 +1115,15 @@ export function App() {
     if (!result.success) return;
 
     playCelebrationFanfare('goal');
-    const allSkinIds = MASCOT_SKINS.map((s) => s.id);
+    const allSkinIds = MASCOT_SKINS.map((s: any) => s.id);
     const allVaultIds = [
-      ...CARD_COSMETICS.map((c) => c.id),
-      ...SOUND_PACKS.map((s) => s.id),
-      ...CARD_STYLE_VAULT.map((st) => st.id),
-      ...GUARDIAN_TITLES.map((t) => t.id),
+      ...CARD_COSMETICS.map((c: any) => c.id),
+      ...SOUND_PACKS.map((s: any) => s.id),
+      ...CARD_STYLE_VAULT.map((st: any) => st.id),
+      ...GUARDIAN_TITLES.map((t: any) => t.id),
     ];
 
-    setState((prev) => {
+    setState((prev: any) => {
       const prevUnlocked = prev.gamification.unlockedSkins || ['default'];
       const prevVault = prev.gamification.unlockedVaultIds || [];
       const prevTxIds = prev.gamification.redeemedLicenseTxIds || [];
@@ -1287,15 +1214,15 @@ export function App() {
     const rewardedGems = Math.round(cleanUsd * 140);
     const rewardedShields = Math.max(1, Math.floor(cleanUsd / 1.5));
     const unlocksFounder = cleanUsd >= 4.99;
-    const allSkinIds = MASCOT_SKINS.map((s) => s.id);
+    const allSkinIds = MASCOT_SKINS.map((s: any) => s.id);
     const allVaultIds = [
-      ...CARD_COSMETICS.map((c) => c.id),
-      ...SOUND_PACKS.map((s) => s.id),
-      ...CARD_STYLE_VAULT.map((st) => st.id),
-      ...GUARDIAN_TITLES.map((t) => t.id),
+      ...CARD_COSMETICS.map((c: any) => c.id),
+      ...SOUND_PACKS.map((s: any) => s.id),
+      ...CARD_STYLE_VAULT.map((st: any) => st.id),
+      ...GUARDIAN_TITLES.map((t: any) => t.id),
     ];
 
-    setState((prev) => {
+    setState((prev: any) => {
       const prevUnlocked = prev.gamification.unlockedSkins || ['default'];
       const prevVault = prev.gamification.unlockedVaultIds || [];
       const prevTxIds = prev.gamification.redeemedLicenseTxIds || [];
@@ -1384,15 +1311,15 @@ export function App() {
     }
 
     playCelebrationFanfare('goal');
-    const allSkinIds = MASCOT_SKINS.map((s) => s.id);
+    const allSkinIds = MASCOT_SKINS.map((s: any) => s.id);
     const allVaultIds = [
-      ...CARD_COSMETICS.map((c) => c.id),
-      ...SOUND_PACKS.map((s) => s.id),
-      ...CARD_STYLE_VAULT.map((st) => st.id),
-      ...GUARDIAN_TITLES.map((t) => t.id),
+      ...CARD_COSMETICS.map((c: any) => c.id),
+      ...SOUND_PACKS.map((s: any) => s.id),
+      ...CARD_STYLE_VAULT.map((st: any) => st.id),
+      ...GUARDIAN_TITLES.map((t: any) => t.id),
     ];
 
-    setState((prev) => {
+    setState((prev: any) => {
       const prevUnlocked = prev.gamification.unlockedSkins || ['default'];
       const prevVault = prev.gamification.unlockedVaultIds || [];
       const prevTxIds = prev.gamification.redeemedLicenseTxIds || [];
@@ -1466,8 +1393,8 @@ export function App() {
           gateway: gatewayParam,
         }),
       })
-        .then((r) => r.json())
-        .then((data) => {
+        .then((r: any) => r.json())
+        .then((data: any) => {
           if (data?.licenseCode) {
             handleRedeemLicenseCode(data.licenseCode);
           }
@@ -1479,13 +1406,6 @@ export function App() {
   }, []);
 
   // Derived objective properties
-  const progress =
-    currentObjective.goalAmount <= 0
-      ? 0
-      : Math.min(
-        1,
-        Math.max(0, currentObjective.currentAmount / currentObjective.goalAmount)
-      );
   const progressText = `${Math.floor(progress * 100)}%`;
   const remainingText =
     currentObjective.currentAmount >= currentObjective.goalAmount
@@ -1496,34 +1416,14 @@ export function App() {
           currentObjective
         )
       );
-
-  const hasValidSelectedAmount = useMemo(() => {
-    return true;
-  }, [selectedQuickAmount, customAmountText]);
-
-  const projectedGoalProgress = useMemo(() => {
-    if (!hasValidSelectedAmount) return null;
-    const effectiveAmount = isAddition
-      ? selectedAmount
-      : -Math.min(selectedAmount, Math.max(1, currentObjective.currentAmount));
-    const nextAmount = Math.max(0, currentObjective.currentAmount + effectiveAmount);
-    const nextPct = Math.min(100, Math.round((nextAmount / Math.max(1, currentObjective.goalAmount)) * 100));
-    const nextRemaining = Math.max(0, currentObjective.goalAmount - nextAmount);
-    return {
-      nextAmount,
-      nextPct,
-      nextRemainingFormatted: formatObjectiveAmount(nextRemaining, currentObjective),
-    };
-  }, [hasValidSelectedAmount, isAddition, selectedAmount, currentObjective]);
-
   const liveXpPreview = useMemo(() => {
     if (!hasValidSelectedAmount) return null;
     const effectiveAmount = isAddition
       ? selectedAmount
       : -Math.min(selectedAmount, Math.max(1, currentObjective.currentAmount));
     const todayKey = toLocalDateKey(new Date().toISOString());
-    const hadEntryToday = state.objectives.some((obj) =>
-      obj.entries.some((e) => toLocalDateKey(e.createdAt) === todayKey)
+    const hadEntryToday = state.objectives.some((obj: any) =>
+      obj.entries.some((e: any) => toLocalDateKey(e.createdAt) === todayKey)
     );
     const previewStreak = hadEntryToday ? streakDays : streakDays + 1;
     const rawEstimatedXp = calculateSingleEntryXp(
@@ -1569,7 +1469,7 @@ export function App() {
   ]);
 
   const filteredEntries = useMemo(() => {
-    return currentObjective.entries.filter((entry) => {
+    return currentObjective.entries.filter((entry: any) => {
       if (historyFilter === 'add') return entry.amount > 0;
       if (historyFilter === 'subtract') return entry.amount < 0;
       return true;
@@ -1582,7 +1482,7 @@ export function App() {
     ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     setHighlightedSection(sectionKey);
     window.setTimeout(() => {
-      setHighlightedSection((prev) => (prev === sectionKey ? null : prev));
+      setHighlightedSection((prev: any) => (prev === sectionKey ? null : prev));
     }, 1000);
   };
 
@@ -1666,11 +1566,11 @@ export function App() {
 
     const nowIso = new Date().toISOString();
     const todayKey = toLocalDateKey(nowIso);
-    const hadEntryToday = state.objectives.some((obj) =>
-      obj.entries.some((e) => toLocalDateKey(e.createdAt) === todayKey)
+    const hadEntryToday = state.objectives.some((obj: any) =>
+      obj.entries.some((e: any) => toLocalDateKey(e.createdAt) === todayKey)
     );
 
-    const nextObjectives = state.objectives.map((o) =>
+    const nextObjectives = state.objectives.map((o: any) =>
       o.id === currentObjective.id
         ? {
           ...o,
@@ -1694,7 +1594,7 @@ export function App() {
         : { ...o, entries: [...o.entries], unlockedAchievementIds: [...o.unlockedAchievementIds] }
     );
 
-    const updatedObj = nextObjectives.find((o) => o.id === currentObjective.id)!;
+    const updatedObj = nextObjectives.find((o: any) => o.id === currentObjective.id)!;
     const nextStreak = calculateCurrentStreak(
       nextObjectives,
       state.gamification.streakShields || 0
@@ -1816,268 +1716,6 @@ export function App() {
       );
     }
   };
-
-  const handleSelectObjective = (id: string) => {
-    playUiTap(1);
-    const nowIso = new Date().toISOString();
-    setState((prev) => ({
-      ...prev,
-      selectedObjectiveId: id,
-      objectives: prev.objectives.map((o) =>
-        o.id === id ? { ...o, lastUsedAt: nowIso } : o
-      ),
-    }));
-    setHistoryFilter('all');
-    setActiveNav('objective');
-    setHighlightedSection('objective');
-    window.setTimeout(() => {
-      setHighlightedSection((prev) => (prev === 'objective' ? null : prev));
-    }, 1000);
-  };
-
-  const handleStartNewObjective = () => {
-    const newId = crypto.randomUUID();
-    const nowIso = new Date().toISOString();
-    const newObj: Objective = {
-      id: newId,
-      title: `Objetivo ${state.objectives.length + 1}`,
-      description: '',
-      goalAmount: 1000,
-      currentAmount: 0,
-      unitId: CUSTOM_UNIT_ID,
-      customUnitLabel: '$',
-      bannerId: 'gradient',
-      bannerOffsetX: 0,
-      bannerOffsetY: 0,
-      isArchived: false,
-      entries: [],
-      unlockedAchievementIds: [],
-      icon: '🎯',
-      category: 'Personal',
-      accentColor: '#65DB85',
-      targetDate: '',
-      pledge: '',
-      createdAt: nowIso,
-      lastUsedAt: nowIso,
-    };
-    setPreviousObjectiveId(currentObjective.id);
-    setIsDraftObjective(true);
-    setHistoryFilter('all');
-    setState((prev) => ({
-      ...prev,
-      objectives: [newObj, ...prev.objectives],
-      selectedObjectiveId: newId,
-    }));
-    actions.setIsEditorOpen(true);
-  };
-
-  const handleCancelObjectiveEditor = () => {
-    if (isDraftObjective) {
-      setState((prev) => {
-        const remaining = prev.objectives.filter(
-          (o) => o.id !== prev.selectedObjectiveId
-        );
-        const fallbackId =
-          previousObjectiveId && remaining.some((o) => o.id === previousObjectiveId)
-            ? previousObjectiveId
-            : remaining[0]?.id || '';
-        return {
-          ...prev,
-          objectives: remaining,
-          selectedObjectiveId: fallbackId,
-        };
-      });
-      setIsDraftObjective(false);
-      setPreviousObjectiveId(null);
-    }
-    actions.setIsEditorOpen(false);
-  };
-
-  const handleSaveObjectiveEditor = (
-    input: {
-      title: string;
-      description: string;
-      goalAmount: number;
-      unitId: string;
-      customUnitLabel: string;
-      icon: string;
-      category: string;
-      accentColor: string;
-      bannerId: string;
-      targetDate: string;
-      pledge: string;
-    },
-    saveMode: 'update_keep' | 'create_new' | 'overwrite_reset' = 'update_keep'
-  ) => {
-    const wasDraft = isDraftObjective;
-    const nowIso = new Date().toISOString();
-    const safeGoalAmount = clampSafeAmount(input.goalAmount, 1, MAX_SAFE_AMOUNT);
-
-    if (!wasDraft && saveMode === 'create_new') {
-      const newId = crypto.randomUUID();
-      const newObj: Objective = {
-        id: newId,
-        title: input.title.trim(),
-        description: input.description.trim(),
-        goalAmount: safeGoalAmount,
-        currentAmount: 0,
-        unitId: input.unitId,
-        customUnitLabel:
-          input.unitId === CUSTOM_UNIT_ID ? input.customUnitLabel.trim() : '',
-        bannerId: input.bannerId || 'gradient',
-        bannerOffsetX: 0,
-        bannerOffsetY: 0,
-        isArchived: false,
-        entries: [],
-        unlockedAchievementIds: [],
-        icon: input.icon || '🎯',
-        category: input.category.trim() || 'Personal',
-        accentColor: input.accentColor || '#65DB85',
-        targetDate: input.targetDate || '',
-        pledge: input.pledge.trim(),
-        createdAt: nowIso,
-        lastUsedAt: nowIso,
-      };
-
-      setState((prev) => ({
-        ...prev,
-        objectives: [newObj, ...prev.objectives],
-        selectedObjectiveId: newId,
-      }));
-      setHistoryFilter('all');
-      setIsDraftObjective(false);
-      setPreviousObjectiveId(null);
-      actions.setIsEditorOpen(false);
-      playCelebrationFanfare('levelUp');
-      triggerCelebration(
-        '¡Nuevo Objetivo Creado!',
-        `Conservamos "${currentObjective.title}" intacto y creamos "${newObj.title}" listo para empezar`,
-        newObj.icon || '🚀',
-        newObj.accentColor || '#65DB85'
-      );
-      return;
-    }
-
-    setState((prev) => {
-      const nextObjectives = prev.objectives.map((o) =>
-        o.id === currentObjective.id
-          ? {
-            ...o,
-            title: input.title.trim(),
-            description: input.description.trim(),
-            goalAmount: safeGoalAmount,
-            currentAmount:
-              saveMode === 'overwrite_reset' ? 0 : o.currentAmount,
-            entries: saveMode === 'overwrite_reset' ? [] : [...o.entries],
-            unitId: input.unitId,
-            customUnitLabel:
-              input.unitId === CUSTOM_UNIT_ID ? input.customUnitLabel.trim() : '',
-            icon: input.icon || '🎯',
-            category: input.category.trim() || 'Personal',
-            accentColor: input.accentColor || '#65DB85',
-            bannerId: input.bannerId || o.bannerId || 'gradient',
-            targetDate: input.targetDate || '',
-            pledge: input.pledge.trim(),
-            createdAt: wasDraft ? nowIso : o.createdAt || nowIso,
-            lastUsedAt: nowIso,
-            unlockedAchievementIds:
-              saveMode === 'overwrite_reset'
-                ? []
-                : [...o.unlockedAchievementIds],
-          }
-          : o
-      );
-      const updatedObj = nextObjectives.find((o) => o.id === currentObjective.id)!;
-      const nextGamification = {
-        ...prev.gamification,
-        totalXp:
-          saveMode === 'overwrite_reset'
-            ? recalculateAllXp(nextObjectives, prev.gamification.bonusXp || 0)
-            : prev.gamification.totalXp,
-      };
-      evaluateObjectiveAchievements(updatedObj, nextObjectives, nextGamification);
-      return {
-        ...prev,
-        objectives: nextObjectives,
-        gamification: nextGamification,
-      };
-    });
-    setIsDraftObjective(false);
-    setPreviousObjectiveId(null);
-    actions.setIsEditorOpen(false);
-    if (wasDraft || saveMode === 'overwrite_reset') {
-      triggerCelebration(
-        wasDraft ? '¡Objetivo Creado!' : '¡Tarjeta Reiniciada a 0!',
-        `${input.icon || '🎯'} ${input.title.trim()} está listo para tu primer impulso`,
-        input.icon || '🚀',
-        input.accentColor || '#65DB85'
-      );
-    }
-  };
-
-  const handleArchiveCurrentObjective = () => {
-    setConfirmDialog({
-      title: 'Archivar objetivo',
-      message: `¿Archivar '${currentObjective.title}'? Podrás restaurarlo desde Archivados.`,
-      confirmText: 'Archivar',
-      onConfirm: () => {
-        setConfirmDialog(null);
-        const otherActive = state.objectives.filter(
-          (o) => !o.isArchived && o.id !== currentObjective.id
-        );
-        if (otherActive.length === 0) {
-          setAlertDialog({
-            title: 'No se pudo archivar',
-            message: 'Debe quedar al menos un objetivo activo.',
-          });
-          return;
-        }
-        setState((prev) => ({
-          ...prev,
-          objectives: prev.objectives.map((o) =>
-            o.id === currentObjective.id ? { ...o, isArchived: true } : o
-          ),
-          selectedObjectiveId: otherActive[0].id,
-        }));
-      },
-    });
-  };
-
-  const handleDeleteObjective = (target: Objective) => {
-    setConfirmDialog({
-      title: 'Eliminar objetivo',
-      message: `¿Eliminar '${target.title}' y todas sus entradas? Esta acción no se puede deshacer.`,
-      confirmText: t.deleteConfirmAction,
-      onConfirm: () => {
-        setConfirmDialog(null);
-        const activeCount = state.objectives.filter((o) => !o.isArchived).length;
-        if (!target.isArchived && activeCount <= 1) {
-          setAlertDialog({
-            title: 'No se pudo eliminar',
-            message: 'No se puede eliminar el único objetivo activo.',
-          });
-          return;
-        }
-        setState((prev) => {
-          const remaining = prev.objectives.filter((o) => o.id !== target.id);
-          const nextSelected =
-            prev.selectedObjectiveId === target.id
-              ? (remaining.find((o) => !o.isArchived) || remaining[0]).id
-              : prev.selectedObjectiveId;
-          return {
-            ...prev,
-            objectives: remaining,
-            selectedObjectiveId: nextSelected,
-            gamification: {
-              ...prev.gamification,
-              totalXp: recalculateAllXp(remaining, prev.gamification.bonusXp || 0),
-            },
-          };
-        });
-      },
-    });
-  };
-
   const handleDeleteEntry = (entryId: string) => {
     setConfirmDialog({
       title: 'Eliminar entrada',
@@ -2085,23 +1723,23 @@ export function App() {
       confirmText: 'Eliminar',
       onConfirm: () => {
         setConfirmDialog(null);
-        setState((prev) => {
-          const entry = currentObjective.entries.find((e) => e.id === entryId);
+        setState((prev: any) => {
+          const entry = currentObjective.entries.find((e: any) => e.id === entryId);
           if (!entry) return prev;
 
-          const nextObjectives = prev.objectives.map((o) =>
+          const nextObjectives = prev.objectives.map((o: any) =>
             o.id === currentObjective.id
               ? {
                 ...o,
                 currentAmount: o.currentAmount - entry.amount,
-                entries: o.entries.filter((e) => e.id !== entryId),
+                entries: o.entries.filter((e: any) => e.id !== entryId),
                 unlockedAchievementIds: [],
               }
               : o
           );
 
           const updatedObj = nextObjectives.find(
-            (o) => o.id === currentObjective.id
+            (o: any) => o.id === currentObjective.id
           )!;
           const dummyGamification = { totalXp: 0 };
           evaluateObjectiveAchievements(
@@ -2132,20 +1770,20 @@ export function App() {
     positiveAmount: number
   ) => {
     const safePositive = clampSafeAmount(positiveAmount, 0.01, MAX_SAFE_AMOUNT);
-    setState((prev) => {
-      const entry = currentObjective.entries.find((e) => e.id === entryId);
+    setState((prev: any) => {
+      const entry = currentObjective.entries.find((e: any) => e.id === entryId);
       if (!entry) return prev;
 
       const sign = entry.amount < 0 ? -1 : 1;
       const updatedAmount = safePositive * sign;
       const diff = updatedAmount - entry.amount;
 
-      const nextObjectives = prev.objectives.map((o) =>
+      const nextObjectives = prev.objectives.map((o: any) =>
         o.id === currentObjective.id
           ? {
             ...o,
             currentAmount: o.currentAmount + diff,
-            entries: o.entries.map((e) =>
+            entries: o.entries.map((e: any) =>
               e.id === entryId
                 ? {
                   ...e,
@@ -2162,7 +1800,7 @@ export function App() {
           : o
       );
 
-      const updatedObj = nextObjectives.find((o) => o.id === currentObjective.id)!;
+      const updatedObj = nextObjectives.find((o: any) => o.id === currentObjective.id)!;
       const dummyGamification = { totalXp: 0 };
       evaluateObjectiveAchievements(updatedObj, nextObjectives, dummyGamification);
 
@@ -2181,10 +1819,10 @@ export function App() {
     setEditingEntry(null);
   };
 
-  const handleApplyBanner = (bannerId: string, offsetX = 0, offsetY = 0) => {
-    setState((prev) => ({
+  const handleApplyBanner = (bannerId: string, offsetX: any = 0, offsetY: any = 0) => {
+    setState((prev: any) => ({
       ...prev,
-      objectives: prev.objectives.map((o) =>
+      objectives: prev.objectives.map((o: any) =>
         o.id === currentObjective.id
           ? {
             ...o,
@@ -2239,82 +1877,7 @@ export function App() {
   const currentCategory = currentObjective.category || t.categoryFallback;
 
   // Projected objective progress when user selects an amount
-  const projectedObjectiveProgress = useMemo(() => {
-    if (!hasValidSelectedAmount || currentObjective.goalAmount <= 0)
-      return progress;
-    const delta = isAddition ? selectedAmount : -selectedAmount;
-    return Math.min(
-      1,
-      Math.max(0, (currentObjective.currentAmount + delta) / currentObjective.goalAmount)
-    );
-  }, [
-    hasValidSelectedAmount,
-    isAddition,
-    selectedAmount,
-    currentObjective.currentAmount,
-    currentObjective.goalAmount,
-    progress,
-  ]);
-
   // Smart Pace & Deadline Metrics
-  const objectiveInsights = useMemo(() => {
-    const remaining = Math.max(
-      0,
-      currentObjective.goalAmount - currentObjective.currentAmount
-    );
-    const positiveEntries = currentObjective.entries.filter((e) => e.amount > 0);
-    const bestEntry = positiveEntries.reduce(
-      (max, e) => Math.max(max, e.amount),
-      0
-    );
-
-    let daysLeft: number | null = null;
-    let dailyPaceNeeded: number | null = null;
-
-    if (currentObjective.targetDate) {
-      const [y, m, d] = currentObjective.targetDate.split('-').map(Number);
-      if (y && m && d) {
-        const target = new Date(y, m - 1, d, 23, 59, 59);
-        const now = new Date();
-        const diffDays = Math.ceil(
-          (target.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
-        );
-        daysLeft = diffDays;
-        if (diffDays > 0 && remaining > 0) {
-          dailyPaceNeeded = remaining / diffDays;
-        }
-      }
-    }
-
-    const nextMilestonePct =
-      progress < 0.25
-        ? 25
-        : progress < 0.5
-          ? 50
-          : progress < 0.75
-            ? 75
-            : progress < 1
-              ? 100
-              : null;
-    const amountToNextMilestone =
-      nextMilestonePct !== null
-        ? Math.max(
-          0,
-          currentObjective.goalAmount * (nextMilestonePct / 100) -
-          currentObjective.currentAmount
-        )
-        : 0;
-
-    return {
-      remaining,
-      bestEntry,
-      daysLeft,
-      dailyPaceNeeded,
-      nextMilestonePct,
-      amountToNextMilestone,
-    };
-  }, [currentObjective, progress]);
-
   // Smart quick amounts adapted to the objective's scale so small goals (e.g. 30 sessions) and large goals both feel natural
   const quickPresetAmounts = useMemo(() => {
     const g = currentObjective.goalAmount;
@@ -2356,7 +1919,7 @@ export function App() {
   }, []);
   return (
     <div
-      onTouchStart={(e) => {
+      onTouchStart={(e: any) => {
         const t = e.touches[0];
         if (t && t.clientX <= 28 && !isNavigationOpen && !isHistoryOpen) {
           touchEdgeStartRef.current = { x: t.clientX, y: t.clientY };
@@ -2364,7 +1927,7 @@ export function App() {
           touchEdgeStartRef.current = null;
         }
       }}
-      onTouchMove={(e) => {
+      onTouchMove={(e: any) => {
         if (!touchEdgeStartRef.current) return;
         const t = e.touches[0];
         if (!t) return;
@@ -2484,7 +2047,7 @@ export function App() {
 
             <Sidebar
               currentLanguage={appLanguage}
-              onSelectLanguage={(lang) => setAppLanguage(lang)}
+              onSelectLanguage={(lang: any) => setAppLanguage(lang)}
               t={t}
               activeNav={activeNav}
               setActiveNav={setActiveNav}
@@ -2693,7 +2256,7 @@ export function App() {
                     : 'flex flex-nowrap items-center gap-2 w-full max-w-full min-w-0 overflow-x-auto pb-1.5 pt-0.5 horizontal-scroll-strip cursor-grab active:cursor-grabbing'
                 }
               >
-                {activeObjectives.map((obj) => {
+                {activeObjectives.map((obj: any) => {
                   const isSelected = obj.id === currentObjective.id;
                   const tabIcon = obj.icon || '🎯';
                   const tabTheme = findAccentTheme(obj.accentColor);
@@ -2756,7 +2319,7 @@ export function App() {
                   type="button"
                   onClick={() => {
                     playUiTap(1);
-                    setIsObjectiveTabsWrapped((prev) => !prev);
+                    setIsObjectiveTabsWrapped((prev: any) => !prev);
                   }}
                   className="px-2 py-0.5 rounded-[8px] bg-[#211E32] border border-[#383350] text-[#C7A4FF] text-[11px] font-semibold hover:bg-[#2C2844] transition"
                 >
@@ -3160,7 +2723,7 @@ export function App() {
                     </div>
 
                     {/* Milestone Gems (25%, 50%, 75%, 100%) */}
-                    {[0.25, 0.5, 0.75, 1].map((m) => {
+                    {[0.25, 0.5, 0.75, 1].map((m: any) => {
                       const reached = progress >= m;
                       const pctLabel = `${m * 100}%`;
                       return (
@@ -3376,7 +2939,7 @@ export function App() {
 
             {/* Adaptive Quick Amount Chips */}
             <div className="grid grid-cols-4 gap-1.5 relative z-10">
-              {quickPresetAmounts.map((amt) => {
+              {quickPresetAmounts.map((amt: any) => {
                 const isSelected = selectedQuickAmount === amt;
                 return (
                   <button
@@ -3413,8 +2976,8 @@ export function App() {
                   min="0"
                   step="any"
                   value={customAmountText}
-                  onChange={(e) => handleCustomAmountChange(e.target.value)}
-                  onKeyDown={(e) => {
+                  onChange={(e: any) => handleCustomAmountChange(e.target.value)}
+                  onKeyDown={(e: any) => {
                     if (e.key === 'Enter') handleAddEntry();
                   }}
                   placeholder={t.customPlaceholder(formatObjectiveAmount(selectedAmount, currentObjective))}
@@ -3425,8 +2988,8 @@ export function App() {
               <input
                 type="text"
                 value={newEntryDescription}
-                onChange={(e) => setNewEntryDescription(e.target.value)}
-                onKeyDown={(e) => {
+                onChange={(e: any) => setNewEntryDescription(e.target.value)}
+                onKeyDown={(e: any) => {
                   if (e.key === 'Enter') handleAddEntry();
                 }}
                 placeholder={t.optionalNotePlaceholder}
@@ -3535,7 +3098,7 @@ export function App() {
               {...getHorizontalScrollProps()}
               className="flex gap-2 overflow-x-auto pb-1.5 horizontal-scroll-strip cursor-grab active:cursor-grabbing"
             >
-              {ACHIEVEMENT_CATALOG.map((ach) => {
+              {ACHIEVEMENT_CATALOG.map((ach: any) => {
                 const isUnlocked =
                   currentObjective.unlockedAchievementIds.includes(ach.id);
                 const title =
@@ -3799,7 +3362,7 @@ export function App() {
 
                 {/* 10 Sub-level Rune Nodes */}
                 <div className="flex items-center gap-1">
-                  {Array.from({ length: 10 }, (_, idx) => {
+                  {Array.from({ length: 10 }, (_: any, idx: any) => {
                     const nodeLevel = tierStartLevel + idx;
                     const isPassed = idx < currentSubLevelIndex;
                     const isCurrent = idx === currentSubLevelIndex;
@@ -3864,7 +3427,7 @@ export function App() {
                     🔥 {streakDays}d
                   </span>
                   <div className="flex items-center gap-1">
-                    {weekDaysStrip.map((d) => (
+                    {weekDaysStrip.map((d: any) => (
                       <div
                         key={d.key}
                         title={
@@ -3890,7 +3453,7 @@ export function App() {
                 {/* Toggle Daily Quests Button */}
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <button
-                    onClick={() => setIsDailyRitualOpen((prev) => !prev)}
+                    onClick={() => setIsDailyRitualOpen((prev: any) => !prev)}
                     className={`px-2.5 py-1.5 rounded-[10px] text-[10px] sm:text-[11px] font-bold border flex items-center gap-1.5 transition ${unclaimedReadyQuestsCount > 0 || canClaimAllDailyBonus
                       ? 'bg-[#35294F] border-[#FFD54F] text-[#FFE082] shadow-[0_0_10px_rgba(255,213,79,0.25)]'
                       : 'bg-[#252136] border-[#3D3559] text-[#D8C5FF] hover:bg-[#2F2A44]'
@@ -3939,7 +3502,7 @@ export function App() {
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
-                      {dailyQuests.map((q) => {
+                      {dailyQuests.map((q: any) => {
                         const canClaim = q.isCompleted && !q.isClaimed;
                         return (
                           <div
@@ -4083,12 +3646,12 @@ export function App() {
                   { id: 'all', label: `${t.filterAll} (${ASMR_TEXTURES.length})` },
                   {
                     id: 'unlocked',
-                    label: `${t.filterMyOrbs} (${ASMR_TEXTURES.filter((tex) => isAsmrStyleUnlocked(tex)).length
+                    label: `${t.filterMyOrbs} (${ASMR_TEXTURES.filter((tex: any) => isAsmrStyleUnlocked(tex)).length
                       })`,
                   },
                   { id: 'taps', label: `${t.filterTaps} (4)` },
                   { id: 'skins', label: `${t.filterSkins} (8)` },
-                ].map((tab) => {
+                ].map((tab: any) => {
                   const active = asmrFilterCategory === tab.id;
                   return (
                     <button
@@ -4140,7 +3703,7 @@ export function App() {
               {...getHorizontalScrollProps()}
               className="flex items-stretch gap-2 overflow-x-auto px-1.5 py-1.5 scroll-smooth horizontal-scroll-strip cursor-grab active:cursor-grabbing"
             >
-              {ASMR_TEXTURES.filter((tex) => {
+              {ASMR_TEXTURES.filter((tex: any) => {
                 if (asmrFilterCategory === 'unlocked')
                   return isAsmrStyleUnlocked(tex);
                 if (asmrFilterCategory === 'taps')
@@ -4148,7 +3711,7 @@ export function App() {
                 if (asmrFilterCategory === 'skins')
                   return tex.unlockKind === 'gems';
                 return true;
-              }).map((tex) => {
+              }).map((tex: any) => {
                 const unlocked = isAsmrStyleUnlocked(tex);
                 const isSelected = asmrPreferredTexture === tex.id;
                 const tapProgPct =
@@ -4272,7 +3835,7 @@ export function App() {
             <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] items-center gap-3.5 p-3 rounded-[16px] bg-[#100F1A]/95 border border-[#2B2842]">
               <div className="relative flex justify-center py-2">
                 {/* Floating ASMR Sparks with dedicated lane positioning so sparks never overlap */}
-                {asmrFloatingSparks.map((sp) => (
+                {asmrFloatingSparks.map((sp: any) => (
                   <div
                     key={sp.id}
                     style={{
@@ -4297,7 +3860,7 @@ export function App() {
                   onMouseDown={handleStartAsmrHold}
                   onMouseUp={handleStopAsmrHold}
                   onMouseLeave={handleStopAsmrHold}
-                  onTouchStart={(e) => {
+                  onTouchStart={(e: any) => {
                     e.preventDefault();
                     handleStartAsmrHold();
                   }}
@@ -4525,7 +4088,7 @@ export function App() {
                     { code: 'es', label: '🇪🇸 ES' },
                     { code: 'en', label: '🇺🇸 EN' },
                     { code: 'pt', label: '🇧🇷 PT' },
-                  ].map((l) => (
+                  ].map((l: any) => (
                     <button
                       key={l.code}
                       type="button"
@@ -4738,7 +4301,7 @@ export function App() {
               { id: 'all', label: t.historyFilterAll },
               { id: 'add', label: t.historyFilterAdd },
               { id: 'subtract', label: t.historyFilterSubtract },
-            ].map((tab) => {
+            ].map((tab: any) => {
               const isSelected = historyFilter === tab.id;
               return (
                 <button
@@ -4764,7 +4327,7 @@ export function App() {
                 Aún no hay movimientos registrados en esta vista.
               </div>
             ) : (
-              filteredEntries.map((entry) => {
+              filteredEntries.map((entry: any) => {
                 const isPositive = entry.amount >= 0;
                 const amountFormatted = `${isPositive ? '+' : '−'
                   }${formatObjectiveAmount(
@@ -4821,7 +4384,7 @@ export function App() {
           isNewDraft={isDraftObjective}
           onCancel={handleCancelObjectiveEditor}
           onSave={handleSaveObjectiveEditor}
-          onAlert={(title, message) => setAlertDialog({ title, message })}
+          onAlert={(title: any, message: any) => setAlertDialog({ title, message })}
         />
       )}
 
@@ -4830,7 +4393,7 @@ export function App() {
         <BannerPickerModal
           onCancel={() => actions.setIsBannerPickerOpen(false)}
           onApply={handleApplyBanner}
-          onAlert={(title, message) => setAlertDialog({ title, message })}
+          onAlert={(title: any, message: any) => setAlertDialog({ title, message })}
         />
       )}
 
@@ -4932,7 +4495,7 @@ export function App() {
             </div>
 
             <div className="flex-1 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-2.5 pr-1">
-              {ACHIEVEMENT_CATALOG.map((ach) => {
+              {ACHIEVEMENT_CATALOG.map((ach: any) => {
                 const isUnlocked =
                   currentObjective.unlockedAchievementIds.includes(ach.id);
                 const title =
@@ -5000,7 +4563,7 @@ export function App() {
               </p>
             ) : (
               <div className="space-y-2 max-h-72 overflow-y-auto">
-                {archivedObjectives.map((obj) => (
+                {archivedObjectives.map((obj: any) => (
                   <div
                     key={obj.id}
                     className="p-3 rounded-[12px] bg-[#242238] flex items-center justify-between gap-2"
@@ -5017,9 +4580,9 @@ export function App() {
                     <div className="flex items-center gap-1.5 shrink-0">
                       <button
                         onClick={() => {
-                          setState((prev) => ({
+                          setState((prev: any) => ({
                             ...prev,
-                            objectives: prev.objectives.map((o) =>
+                            objectives: prev.objectives.map((o: any) =>
                               o.id === obj.id ? { ...o, isArchived: false } : o
                             ),
                             selectedObjectiveId: obj.id,
@@ -5099,7 +4662,7 @@ export function App() {
           entry={editingEntry}
           onCancel={() => setEditingEntry(null)}
           onSave={handleSaveEntryEdit}
-          onAlert={(title, message) => setAlertDialog({ title, message })}
+          onAlert={(title: any, message: any) => setAlertDialog({ title, message })}
         />
       )}
 
