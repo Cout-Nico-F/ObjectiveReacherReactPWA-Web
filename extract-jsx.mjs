@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { execSync } from 'child_process';
 
-console.log('🤖 Refactorizador AST (Hoisting Transitivo de Dependencias v12)...\n');
+console.log('🤖 Refactorizador AST (Dominio Extendido con Alias v13)...\n');
 
 function getFileInfo(filePath) {
   if (!fs.existsSync(filePath)) return { lines: 0, kb: '0.00 KB' };
@@ -72,6 +72,17 @@ if (!appFunc) {
 
 const appBody = appFunc.getBody();
 const targetDomainName = process.argv[2] ? process.argv[2].toLowerCase() : 'asmr';
+
+// Mapeo de palabras clave complementarias por dominio
+const domainKeywords = {
+  mascot: ['mascot', 'species'],
+  asmr: ['asmr'],
+  objective: ['objective', 'goal'],
+  equipped: ['equipped', 'skin']
+};
+
+const searchKeywords = domainKeywords[targetDomainName] || [targetDomainName];
+
 const hookName = `use${targetDomainName.charAt(0).toUpperCase() + targetDomainName.slice(1)}Engine`;
 const fileName = `${hookName}.ts`;
 
@@ -79,7 +90,7 @@ const cluster = new Set();
 
 appFunc.getDescendantsOfKind(SyntaxKind.Identifier).forEach(id => {
   const text = id.getText();
-  if (text.toLowerCase().includes(targetDomainName)) {
+  if (searchKeywords.some(kw => text.toLowerCase().includes(kw))) {
     cluster.add(text);
   }
 });
@@ -253,16 +264,13 @@ fs.writeFileSync(hookFilePath, sanitizedHookContent, 'utf-8');
 project.addSourceFileAtPath(hookFilePath);
 console.log(`  ✅ Creado: src/${hooksFolderName}/${fileName}`);
 
-// Remover declaraciones monolíticas de App()
 for (const stmt of statementsToRemove) {
   try { stmt.remove(); } catch (e) {}
 }
 
 console.log(`  🧹 Eliminadas ${statementsToRemove.length} declaraciones monolíticas de App()`);
 
-// -------------------------------------------------------------
-// INYECCIÓN Y HOISTING TRANSITIVO DE PROPS Y DEPENDENCIAS
-// -------------------------------------------------------------
+// Hoisting y Posicionamiento
 let targetUsageIndex = -1;
 const remainingStatements = appBody.getStatements();
 
@@ -277,7 +285,6 @@ remainingStatements.forEach((stmt, idx) => {
 
 if (targetUsageIndex === -1) targetUsageIndex = 0;
 
-// Hoisting transitivo: si una Prop depende de otra variable, eleva ambas en orden
 const hoistedMap = new Map();
 const propsToHoistQueue = Array.from(autoProps);
 
@@ -290,7 +297,6 @@ while (propsToHoistQueue.length > 0) {
     if (currentIdx > targetUsageIndex && !hoistedMap.has(propDeclStmt)) {
       hoistedMap.set(propDeclStmt, currentIdx);
 
-      // Buscar si este statement consume otras variables locales que también deban ser elevadas
       propDeclStmt.getDescendantsOfKind(SyntaxKind.Identifier).forEach(id => {
         const idText = id.getText();
         if (allAppDeclaredVars.has(idText) && !hoistedMap.has(allAppDeclaredVars.get(idText))) {
@@ -301,7 +307,6 @@ while (propsToHoistQueue.length > 0) {
   }
 }
 
-// Ordenar sentencias elevadas por su posición original para mantener el orden correcto de evaluación
 const sortedHoistedStmts = Array.from(hoistedMap.entries())
   .sort((a, b) => a[1] - b[1])
   .map(([stmt]) => {
@@ -336,7 +341,7 @@ if (!hasImport) {
 appFile.saveSync();
 project.saveSync();
 
-// Auditoría final
+// Auditoría
 const finalStats = getFileInfo(appFilePath);
 const linesReduced = initialStats.lines - finalStats.lines;
 

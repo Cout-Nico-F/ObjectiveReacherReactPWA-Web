@@ -104,6 +104,7 @@ import { loadState } from './utils/storage';
 import { formatEntryTime } from "./utils/formatEntryTime";
 import { getLaunchEndTimestamp } from "./utils/getLaunchEndTimestamp";
 import { doTitlesShareCoreMeaning } from "./utils/doTitlesShareCoreMeaning";
+import { useMascotEngine } from "./Hooks/useMascotEngine";
 
 export function useHorizontalScrollProps() {
   const dragStateRef = useRef<{
@@ -227,9 +228,6 @@ export function App() {
 
 
   // Interactive Mascot Sanctuary, ASMR Clicker & Daily Ritual
-  const [mascotJoyId, setMascotJoyId] = useState<number>(0);
-  const [mascotSpeech, setMascotSpeech] = useState<string | null>(null);
-  const mascotSpeechTimerRef = useRef<number | null>(null);
   const [isDailyRitualOpen, setIsDailyRitualOpen] = useState<boolean>(false);
   const [appLanguage, setAppLanguage] = useState<AppLanguage>(() =>
     loadAppLanguage()
@@ -355,15 +353,6 @@ export function App() {
         1 + (isXpBoostActive ? 0.5 : 0) + (isIndieFounder ? 0.2 : 0);
     const activeGemMultiplier = isGemMagnetActive ? 2 : 1;
     const todayDateKey = toLocalDateKey(new Date().toISOString());
-    const triggerMascotSpeech = (text: string) => {
-        if (mascotSpeechTimerRef.current) {
-          window.clearTimeout(mascotSpeechTimerRef.current);
-        }
-        setMascotSpeech(text);
-        mascotSpeechTimerRef.current = window.setTimeout(() => {
-          setMascotSpeech(null);
-        }, 3800);
-      };
     const triggerCelebration = (
         title: string,
         message: string,
@@ -378,7 +367,78 @@ export function App() {
         }
         setCelebration({ title, message, quote, emoji, color, requiresDismissal: true });
       };
-    const { isAsmrSanctuaryOpen, setIsAsmrSanctuaryOpen, asmrFloatingSparks, setAsmrFloatingSparks, lastAsmrPrizeNotice, setLastAsmrPrizeNotice, asmrTapCooldownCounterRef, asmrHoldTimerRef, asmrHoldIntervalRef, asmrHoldLastShiftTimeRef, asmrHoldMouseDownFiredRef, asmrTotalTapsRef, asmrLastSparkTimeRef, asmrSparkLaneRef, isAsmrHolding, setIsAsmrHolding, asmrSanctuaryRef, asmrSkinsScrollRef, asmrFilterCategory, setAsmrFilterCategory, DAILY_ASMR_GEM_CAP, ASMR_CYCLE_TAPS, asmrTotalTaps, asmrPreferredTexture, asmrCycleProgress, asmrGemsEarnedToday, asmrRemainingDailyGems, activeAsmrTextureObj, isAsmrStyleUnlocked, openAndScrollToAsmrSanctuary, scrollAsmrCarousel, handleSelectAsmrTexture, handleAsmrClick, stopAsmrTimer, handleStopAsmrHold, handleStartAsmrHold } = useAsmrEngine({ state, todayDateKey, t, isIndieFounder, unlockedVaultIds, setIsNavigationOpen, setIsHistoryOpen, setState, triggerMascotSpeech, gems, setAlertDialog, setMascotJoyId, triggerCelebration, activeGemMultiplier, activeXpMultiplier, totalXp });
+    const activeObjectives = useMemo(() => {
+        const unarchived = state.objectives.filter((o) => !o.isArchived);
+        if (unarchived.length <= 1) return unarchived;
+
+        const getCreatedMs = (o: Objective, idx: number) => {
+          const t = o.createdAt ? new Date(o.createdAt).getTime() : 0;
+          return Number.isNaN(t) || t === 0 ? idx : t;
+        };
+        const getUsedMs = (o: Objective, idx: number) => {
+          const t = o.lastUsedAt ? new Date(o.lastUsedAt).getTime() : 0;
+          return Number.isNaN(t) || t === 0 ? getCreatedMs(o, idx) : t;
+        };
+
+        const indexed = unarchived.map((obj, idx) => ({
+          obj,
+          createdMs: getCreatedMs(obj, idx),
+          usedMs: getUsedMs(obj, idx),
+        }));
+
+        const newestEntry = [...indexed].sort((a, b) => b.createdMs - a.createdMs)[0];
+        const lastUsedEntry = [...indexed].sort((a, b) => b.usedMs - a.usedMs)[0];
+
+        const result: Objective[] = [];
+        const placedIds = new Set<string>();
+
+        if (newestEntry) {
+          result.push(newestEntry.obj);
+          placedIds.add(newestEntry.obj.id);
+        }
+
+        if (lastUsedEntry && !placedIds.has(lastUsedEntry.obj.id)) {
+          result.push(lastUsedEntry.obj);
+          placedIds.add(lastUsedEntry.obj.id);
+        }
+
+        const remaining = indexed
+          .filter((item) => !placedIds.has(item.obj.id))
+          .sort((a, b) => b.usedMs - a.usedMs || b.createdMs - a.createdMs);
+
+        for (const item of remaining) {
+          result.push(item.obj);
+        }
+
+        return result;
+      }, [state.objectives]);
+    const currentObjective = useMemo(() => {
+        return (
+          state.objectives.find(
+            (o) => o.id === state.selectedObjectiveId && !o.isArchived
+          ) ||
+          activeObjectives[0] ||
+          state.objectives[0]
+        );
+      }, [state.objectives, state.selectedObjectiveId, activeObjectives]);
+    const level = calculateLevelFromXp(totalXp);
+    const streakDays = useMemo(
+        () =>
+          calculateCurrentStreak(
+            state.objectives,
+            state.gamification.streakShields || 0
+          ),
+        [state.objectives, state.gamification.streakShields]
+      );
+    const streakShields = state.gamification.streakShields ?? 0;
+    const todayEntries = useMemo(() => {
+        return state.objectives.flatMap((obj) =>
+          obj.entries.filter((e) => toLocalDateKey(e.createdAt) === todayDateKey)
+        );
+      }, [state.objectives, todayDateKey]);
+    const hasEntryToday = todayEntries.length > 0;
+    const hasPettedToday = state.gamification.lastPetDateKey === todayDateKey;
+    const { mascotJoyId, setMascotJoyId, mascotSpeech, setMascotSpeech, mascotSpeechTimerRef, triggerMascotSpeech, isAsmrSanctuaryOpen, asmrFloatingSparks, lastAsmrPrizeNotice, setLastAsmrPrizeNotice, asmrTapCooldownCounterRef, asmrHoldTimerRef, asmrHoldIntervalRef, asmrHoldLastShiftTimeRef, asmrHoldMouseDownFiredRef, asmrTotalTapsRef, asmrLastSparkTimeRef, asmrSparkLaneRef, isAsmrHolding, asmrSanctuaryRef, asmrSkinsScrollRef, asmrFilterCategory, setAsmrFilterCategory, DAILY_ASMR_GEM_CAP, ASMR_CYCLE_TAPS, asmrTotalTaps, asmrPreferredTexture, asmrCycleProgress, asmrGemsEarnedToday, asmrRemainingDailyGems, activeAsmrTextureObj, isAsmrStyleUnlocked, openAndScrollToAsmrSanctuary, scrollAsmrCarousel, handleSelectAsmrTexture, handleAsmrClick, stopAsmrTimer, handleStopAsmrHold, handleStartAsmrHold, mascotTier, mascotEmojis, mascotEmoji, mascotMessage, mascotMood, nextSpeciesLevel, nextSpeciesTier, levelsToNextSpecies, handlePetMascot } = useMascotEngine({ state, todayDateKey, t, isIndieFounder, unlockedVaultIds, setIsNavigationOpen, setIsHistoryOpen, setState, gems, setAlertDialog, triggerCelebration, activeGemMultiplier, activeXpMultiplier, totalXp, level, hasEntryToday, streakDays, currentObjective, hasPettedToday, setXpBurst });
 
   const achievementsRef = useRef<HTMLDivElement>(null);
   const statsRef = useRef<HTMLDivElement>(null);
@@ -418,67 +478,10 @@ export function App() {
   // 1st position: Newest created objective (highest createdAt)
   // 1st/2nd position: Last used objective (highest lastUsedAt — 1st if it is the newest, 2nd right after the newest otherwise)
   // Remaining objectives: ordered by lastUsedAt desc, then createdAt desc
-  const activeObjectives = useMemo(() => {
-    const unarchived = state.objectives.filter((o) => !o.isArchived);
-    if (unarchived.length <= 1) return unarchived;
-
-    const getCreatedMs = (o: Objective, idx: number) => {
-      const t = o.createdAt ? new Date(o.createdAt).getTime() : 0;
-      return Number.isNaN(t) || t === 0 ? idx : t;
-    };
-    const getUsedMs = (o: Objective, idx: number) => {
-      const t = o.lastUsedAt ? new Date(o.lastUsedAt).getTime() : 0;
-      return Number.isNaN(t) || t === 0 ? getCreatedMs(o, idx) : t;
-    };
-
-    const indexed = unarchived.map((obj, idx) => ({
-      obj,
-      createdMs: getCreatedMs(obj, idx),
-      usedMs: getUsedMs(obj, idx),
-    }));
-
-    const newestEntry = [...indexed].sort((a, b) => b.createdMs - a.createdMs)[0];
-    const lastUsedEntry = [...indexed].sort((a, b) => b.usedMs - a.usedMs)[0];
-
-    const result: Objective[] = [];
-    const placedIds = new Set<string>();
-
-    if (newestEntry) {
-      result.push(newestEntry.obj);
-      placedIds.add(newestEntry.obj.id);
-    }
-
-    if (lastUsedEntry && !placedIds.has(lastUsedEntry.obj.id)) {
-      result.push(lastUsedEntry.obj);
-      placedIds.add(lastUsedEntry.obj.id);
-    }
-
-    const remaining = indexed
-      .filter((item) => !placedIds.has(item.obj.id))
-      .sort((a, b) => b.usedMs - a.usedMs || b.createdMs - a.createdMs);
-
-    for (const item of remaining) {
-      result.push(item.obj);
-    }
-
-    return result;
-  }, [state.objectives]);
-
   const archivedObjectives = useMemo(
     () => state.objectives.filter((o) => o.isArchived),
     [state.objectives]
   );
-
-  const currentObjective = useMemo(() => {
-    return (
-      state.objectives.find(
-        (o) => o.id === state.selectedObjectiveId && !o.isArchived
-      ) ||
-      activeObjectives[0] ||
-      state.objectives[0]
-    );
-  }, [state.objectives, state.selectedObjectiveId, activeObjectives]);
-
   useEffect(() => {
     if (isObjectiveTabsWrapped) return;
     const container = objectiveTabsScrollRef.current;
@@ -496,7 +499,6 @@ export function App() {
   }, [currentObjective.id, isObjectiveTabsWrapped]);
 
   // Derived gamification properties
-  const level = calculateLevelFromXp(totalXp);
   const experienceText = `Nivel ${level} · ${totalXp} XP`;
   const xpAtLevelStart = 25 * (level - 1) * level;
   const xpForCurrentLevel = 50 * level;
@@ -507,41 +509,6 @@ export function App() {
   );
   const levelProgressText = `${totalXp - xpAtLevelStart}/${xpAtNextLevel - xpAtLevelStart
     } XP para el siguiente nivel`;
-
-  const mascotTier = Math.floor((Math.min(200, Math.max(1, level)) - 1) / 10);
-  const mascotEmojis = [
-    '🌱',
-    '🐱',
-    '🦊',
-    '🦉',
-    '🐺',
-    '🐯',
-    '🦁',
-    '🦌',
-    '🦅',
-    '🪽',
-    '🔥',
-    '💎',
-    '🐉',
-    '⚡',
-    '🌌',
-    '🔮',
-    '✨',
-    '🌊',
-    '👑',
-    '🪐',
-  ];
-  const mascotEmoji = mascotEmojis[mascotTier] || '🪐';
-  const mascotMessage = t.mascotMessages[mascotTier] || t.mascotMessages[0];
-
-  const streakDays = useMemo(
-    () =>
-      calculateCurrentStreak(
-        state.objectives,
-        state.gamification.streakShields || 0
-      ),
-    [state.objectives, state.gamification.streakShields]
-  );
   const streakText =
     streakDays === 0
       ? t.streakIgnitePrompt
@@ -613,7 +580,6 @@ export function App() {
     modals.isAllAchievementsOpen,
     modals.isArchivedModalOpen,
   ]);
-  const streakShields = state.gamification.streakShields ?? 0;
   const supporterTier = state.gamification.supporterTier || 'none';
   const xpBoostRemainingText = formatRemainingBuffTime(
     state.gamification.xpBoostUntil
@@ -636,14 +602,6 @@ export function App() {
     }
     return s;
   }, [state.objectives]);
-
-  const todayEntries = useMemo(() => {
-    return state.objectives.flatMap((obj) =>
-      obj.entries.filter((e) => toLocalDateKey(e.createdAt) === todayDateKey)
-    );
-  }, [state.objectives, todayDateKey]);
-
-  const hasEntryToday = todayEntries.length > 0;
   const hasPositiveNoteToday = todayEntries.some(
     (e) =>
       e.amount > 0 &&
@@ -651,7 +609,6 @@ export function App() {
       e.description.trim() !== 'Aporte' &&
       e.description.trim() !== 'Gasto'
   );
-  const hasPettedToday = state.gamification.lastPetDateKey === todayDateKey;
   const claimedToday =
     state.gamification.claimedQuestsByDay?.[todayDateKey] || [];
 
@@ -716,44 +673,8 @@ export function App() {
   }, [activeDayKeysSet, todayDateKey, hasPettedToday]);
 
   // Mascot Emotional State (A)
-  const mascotMood = useMemo(() => {
-    if (mascotJoyId > 0 && Date.now() - mascotJoyId < 4000) {
-      return {
-        badge: '💖 Radiante',
-        color: '#FF80AB',
-        bg: 'rgba(255, 128, 171, 0.14)',
-        border: 'rgba(255, 128, 171, 0.45)',
-      };
-    }
-    if (hasEntryToday && streakDays >= 3) {
-      return {
-        badge: `🔥 En Racha (${streakDays}d)`,
-        color: '#FFD54F',
-        bg: 'rgba(255, 213, 79, 0.14)',
-        border: 'rgba(255, 213, 79, 0.45)',
-      };
-    }
-    if (hasEntryToday) {
-      return {
-        badge: '✨ Energizado',
-        color: '#82E59B',
-        bg: 'rgba(130, 229, 155, 0.14)',
-        border: 'rgba(130, 229, 155, 0.45)',
-      };
-    }
-    return {
-      badge: '💤 Esperando impulso',
-      color: '#C7A4FF',
-      bg: 'rgba(199, 164, 255, 0.12)',
-      border: 'rgba(199, 164, 255, 0.3)',
-    };
-  }, [mascotJoyId, hasEntryToday, streakDays]);
-
   // Evolution Path (C)
   const tierStartLevel = mascotTier * 10 + 1;
-  const nextSpeciesLevel = Math.min(200, (mascotTier + 1) * 10 + 1);
-  const nextSpeciesTier = Math.min(19, mascotTier + 1);
-  const levelsToNextSpecies = Math.max(0, nextSpeciesLevel - level);
   const currentSubLevelIndex = (Math.min(200, Math.max(1, level)) - 1) % 10; // 0..9
   const awardBonusXp = (xpAmount: number, reasonTitle: string, reasonEmoji = '✨') => {
     const prevLevel = level;
@@ -795,65 +716,6 @@ export function App() {
       );
     }
   };
-
-  const handlePetMascot = () => {
-    const nowId = Date.now();
-    setMascotJoyId(nowId);
-
-    const remainingAmountFormatted = formatObjectiveAmount(
-      Math.max(0, currentObjective.goalAmount - currentObjective.currentAmount),
-      currentObjective
-    );
-
-    const contextualPhrases = [
-      !hasEntryToday
-        ? t.petGreetNoEntry
-        : t.petGreetStreak(streakDays),
-      levelsToNextSpecies > 0
-        ? t.petGreetLevelsLeft(levelsToNextSpecies)
-        : t.petGreetMax,
-      currentObjective.currentAmount >= currentObjective.goalAmount
-        ? t.petGreetObjectiveSurpassed(currentObjective.title)
-        : t.petGreetObjectiveRemaining(currentObjective.title, remainingAmountFormatted),
-      t.petGreetThanks,
-    ];
-
-    if (!hasPettedToday) {
-      playMascotVoice(level, true);
-      const petXp = Math.round(15 * activeXpMultiplier);
-      const petGems = 5 * activeGemMultiplier;
-      const prevLevel = level;
-      const nextTotalXp = state.gamification.totalXp + petXp;
-      const nextLevel = calculateLevelFromXp(nextTotalXp);
-
-      setState((prev) => ({
-        ...prev,
-        gamification: {
-          ...prev.gamification,
-          totalXp: prev.gamification.totalXp + petXp,
-          bonusXp: (prev.gamification.bonusXp || 0) + petXp,
-          gems: (prev.gamification.gems ?? 0) + petGems,
-          lastPetDateKey: todayDateKey,
-        },
-      }));
-
-      setXpBurst({
-        id: nowId,
-        xp: petXp,
-        leveledUp: nextLevel > prevLevel,
-      });
-
-      triggerMascotSpeech(
-        `¡Caricia diaria recibida! +${petXp} XP y +${petGems} 💎 Gemas de vínculo 💖`
-      );
-    } else {
-      playMascotVoice(level, false);
-      const randomPhrase =
-        contextualPhrases[Math.floor(Math.random() * contextualPhrases.length)];
-      triggerMascotSpeech(randomPhrase);
-    }
-  };
-
   const handleClaimQuest = (questId: string, rewardXp: number, title: string) => {
     if (claimedToday.includes(questId)) return;
     playQuestClaimSound(false);
