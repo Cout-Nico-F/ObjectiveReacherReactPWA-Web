@@ -6,3 +6,10 @@ coverage/
 *.log
 .env*
 !.env.example
+encryption_public_key.pem
+output.zip
+upload_certificate.pem
+android/capacitor.settings.gradle
+android/app/build.gradle
+android/app/build.gradle
+android/app/build.gradle
