@@ -79,6 +79,8 @@ import {
   calculateCurrentStreak,
   evaluateObjectiveAchievements,
   calculateSingleEntryXp,
+  formatProgressNumber,
+  formatProgressPercent,
 } from './utils/gamification';
 import {
   AchievementCondition,
@@ -1702,7 +1704,7 @@ export function App() {
         1,
         Math.max(0, currentObjective.currentAmount / currentObjective.goalAmount)
       );
-  const progressText = `${Math.floor(progress * 100)}%`;
+  const progressText = formatProgressPercent(progress, appLanguage);
   const remainingText =
     currentObjective.currentAmount >= currentObjective.goalAmount
       ? t.goalCompletedCelebration
@@ -1723,14 +1725,17 @@ export function App() {
       ? selectedAmount
       : -Math.min(selectedAmount, Math.max(1, currentObjective.currentAmount));
     const nextAmount = Math.max(0, currentObjective.currentAmount + effectiveAmount);
-    const nextPct = Math.min(100, Math.round((nextAmount / Math.max(1, currentObjective.goalAmount)) * 100));
+    const nextRatio = Math.min(1, Math.max(0, nextAmount / Math.max(1, currentObjective.goalAmount)));
+    const nextPctText = formatProgressNumber(nextRatio, appLanguage);
+    const nextPct = Math.round(nextRatio * 100);
     const nextRemaining = Math.max(0, currentObjective.goalAmount - nextAmount);
     return {
       nextAmount,
       nextPct,
+      nextPctText,
       nextRemainingFormatted: formatObjectiveAmount(nextRemaining, currentObjective),
     };
-  }, [hasValidSelectedAmount, isAddition, selectedAmount, currentObjective]);
+  }, [hasValidSelectedAmount, isAddition, selectedAmount, currentObjective, appLanguage]);
 
   const liveXpPreview = useMemo(() => {
     if (!hasValidSelectedAmount) return null;
@@ -1967,7 +1972,7 @@ export function App() {
 
     const remainingAmount = Math.max(0, updatedObj.goalAmount - updatedObj.currentAmount);
     const remainingFormatted = formatObjectiveAmount(remainingAmount, updatedObj);
-    const percentCompleted = Math.min(100, Math.round(newProgress * 100));
+    const percentCompletedText = formatProgressPercent(newProgress, appLanguage);
 
     if (amount > 0 && previousProgress < 1 && newProgress >= 1) {
       playCelebrationFanfare('goal');
@@ -1982,7 +1987,7 @@ export function App() {
       playCelebrationFanfare('species');
       triggerCelebration(
         '¡Gran avance en tu camino!',
-        `${percentCompleted}% completado · Quedan ${remainingFormatted} para la meta. ¡Nueva etapa alcanzada!`,
+        `${percentCompletedText} completado · Quedan ${remainingFormatted} para la meta. ¡Nueva etapa alcanzada!`,
         nextMascotEmoji,
         '#FFD54F',
         true
@@ -1990,7 +1995,7 @@ export function App() {
     } else if (nextLevel > previousLevel) {
       playCelebrationFanfare('levelUp');
       triggerCelebration(
-        `¡Excelente constancia (${percentCompleted}% completado)!`,
+        `¡Excelente constancia (${percentCompletedText} completado)!`,
         `Quedan ${remainingFormatted} para tu meta. ${newlyUnlocked.length > 0
           ? 'Hito: ' + newlyUnlocked.join(' · ')
           : 'Cada paso te acerca más a tu objetivo.'
@@ -2002,7 +2007,7 @@ export function App() {
       playCelebrationFanfare('levelUp');
       triggerCelebration(
         '¡Nuevo hito alcanzado!',
-        `${newlyUnlocked.join(' · ')} · ${percentCompleted}% completado (${remainingFormatted} restantes)`,
+        `${newlyUnlocked.join(' · ')} · ${percentCompletedText} completado (${remainingFormatted} restantes)`,
         '🏅',
         '#B58BFF'
       );
@@ -2023,7 +2028,7 @@ export function App() {
       triggerCelebration(
         amount > 0 ? '¡Avance registrado!' : 'Registro actualizado',
         amount > 0
-          ? `${percentCompleted}% completado · Quedan ${remainingFormatted} para la meta.`
+          ? `${percentCompletedText} completado · Quedan ${remainingFormatted} para la meta.`
           : `Saldo ajustado · Quedan ${remainingFormatted} para la meta.`,
         amount > 0 ? '✨' : '📝',
         '#65DB85',
@@ -2914,13 +2919,14 @@ export function App() {
                   const tabIcon = obj.icon || '🎯';
                   const tabTheme = findAccentTheme(obj.accentColor);
                   const tabAccent = tabTheme.primary;
-                  const objProg =
+                  const objProgRatio =
                     obj.goalAmount > 0
                       ? Math.min(
-                        100,
-                        Math.floor((obj.currentAmount / obj.goalAmount) * 100)
+                        1,
+                        Math.max(0, obj.currentAmount / obj.goalAmount)
                       )
                       : 0;
+                  const objProgText = formatProgressPercent(objProgRatio, appLanguage);
                   return (
                     <button
                       key={obj.id}
@@ -2948,7 +2954,7 @@ export function App() {
                         }}
                         className="text-[10px] font-mono-tabular font-bold"
                       >
-                        {objProg}%
+                        {objProgText}
                       </span>
                     </button>
                   );
@@ -3685,7 +3691,7 @@ export function App() {
                   <span className="font-semibold text-[#82E59B]">
                     {t.projectedRemaining(
                       projectedGoalProgress.nextRemainingFormatted,
-                      projectedGoalProgress.nextPct
+                      projectedGoalProgress.nextPctText
                     )}
                   </span>
                 </span>

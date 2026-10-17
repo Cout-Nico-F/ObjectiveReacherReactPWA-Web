@@ -204,3 +204,19 @@ export function evaluateObjectiveAchievements(
 
   return newlyUnlockedTitles;
 }
+
+export function formatProgressNumber(progress: number, lang: string = 'es'): string {
+  const pct = Math.min(100, Math.max(0, progress * 100));
+  if (Number.isInteger(pct) || pct === 100 || pct === 0) {
+    return `${Math.round(pct)}`;
+  }
+  const locale = lang === 'en' ? 'en-US' : (lang === 'pt' ? 'pt-BR' : 'es-ES');
+  return pct.toLocaleString(locale, {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  });
+}
+
+export function formatProgressPercent(progress: number, lang: string = 'es'): string {
+  return `${formatProgressNumber(progress, lang)}%`;
+}

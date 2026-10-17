@@ -438,7 +438,7 @@ export interface TranslationDictionary {
   // Serene Progress Mode
   sereneFocusMode: string;
   sereneFocusSubtitle: string;
-  projectedRemaining: (rem: string, pct: number) => string;
+  projectedRemaining: (rem: string, pct: number | string) => string;
   dailyBonusIncluded: string;
   streakMultiplier: (days: number) => string;
   goalCompletedCelebration: string;
