@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Objective Reacher 1.22</string>
+    <string name="title_activity_main">Objective Reacher 1.22</string>
+    <string name="package_name">com.cnf.ObjectiveReacher</string>
+    <string name="custom_url_scheme">com.cnf.ObjectiveReacher</string>
+</resources>

@@ -14,6 +14,25 @@ export interface SensoryPreferences {
 
 const SENSORY_STORAGE_KEY = 'ObjectiveReacher.SensoryPrefs.v1';
 
+export function loadSensoryPreferences(): SensoryPreferences {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem(SENSORY_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return {
+          soundEnabled: parsed.soundEnabled !== false,
+          hapticsEnabled: parsed.hapticsEnabled !== false,
+          musicEnabled: Boolean(parsed.musicEnabled),
+        };
+      }
+    }
+  } catch {
+    // ignore storage errors
+  }
+  return { soundEnabled: true, hapticsEnabled: true, musicEnabled: false };
+}
+
 let currentPrefs: SensoryPreferences = loadSensoryPreferences();
 let activeSoundPackId = 'snd_kalimba_zen';
 
@@ -106,22 +125,7 @@ interface AudioEngineNodes {
 
 let engine: AudioEngineNodes | null = null;
 
-export function loadSensoryPreferences(): SensoryPreferences {
-  try {
-    const raw = localStorage.getItem(SENSORY_STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      return {
-        soundEnabled: parsed.soundEnabled !== false,
-        hapticsEnabled: parsed.hapticsEnabled !== false,
-        musicEnabled: Boolean(parsed.musicEnabled),
-      };
-    }
-  } catch {
-    // ignore storage errors
-  }
-  return { soundEnabled: true, hapticsEnabled: true, musicEnabled: false };
-}
+
 
 export function saveSensoryPreferences(prefs: SensoryPreferences): void {
   currentPrefs = prefs;
