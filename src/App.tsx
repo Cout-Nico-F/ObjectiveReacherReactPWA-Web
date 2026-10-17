@@ -95,9 +95,9 @@ import { BannerPickerModal } from "./components/extracted/BannerPickerModal";
 import { EditEntryModal } from "./components/extracted/EditEntryModal";
 import { IndieEmporiumModal } from "./components/shop/IndieEmporiumModal";
 import { MascotGridCard } from "./components/extracted/MascotGridCard";
-import { useHorizontalWheel } from '../src/Hooks/useHorizontalWheel';
+import { useHorizontalWheel } from './Hooks/useHorizontalWheel';
 import { PurchaseConfirmModal } from './components/shop/PurchaseConfirmModal';
-import { useModalState } from './hooks/useModalState';
+import { useModalState } from './Hooks/useModalState';
 
 import { loadState } from './utils/storage';
 
