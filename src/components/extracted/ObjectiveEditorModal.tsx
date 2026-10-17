@@ -4,9 +4,10 @@ import * as Constants from '../../constants';
 import { TRANSLATIONS, loadAppLanguage } from "../../i18n";
 import { findObjectiveUnit, CUSTOM_UNIT_ID, clampSafeAmount, MAX_SAFE_AMOUNT, findBannerPreset, findAccentTheme, formatObjectiveAmount, OBJECTIVE_TEMPLATES, OBJECTIVE_UNITS, OBJECTIVE_ICONS, OBJECTIVE_ACCENT_THEMES, BANNER_PRESETS } from "../../catalog";
 import { playUiTap } from "../../soundEffects";
-import { doTitlesShareCoreMeaning, useHorizontalScrollProps } from "../../App";
+import { doTitlesShareCoreMeaning } from "../../utils/textUtils";
+import { useHorizontalScrollProps } from "../../Hooks/useHorizontalScroll";
 
-const { STORAGE_KEY, LEGACY_STORAGE_KEYS, LAUNCH_DEADLINE_STORAGE_KEY, MASCOT_STAGE_NAMES, MASCOT_STAGE_HINTS } = Constants;
+const { MASCOT_STAGE_NAMES, MASCOT_STAGE_HINTS } = Constants;
 
 export function ObjectiveEditorModal({
   objective,

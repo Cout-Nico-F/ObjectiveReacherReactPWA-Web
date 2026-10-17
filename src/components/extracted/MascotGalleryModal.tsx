@@ -7,7 +7,7 @@ import { playMascotVoice, playUiTap } from "../../soundEffects";
 import { MascotAvatarSvg } from "./MascotAvatarSvg";
 import { MascotGridCard } from "./MascotGridCard";
 
-const { STORAGE_KEY, LEGACY_STORAGE_KEYS, LAUNCH_DEADLINE_STORAGE_KEY, MASCOT_STAGE_NAMES, MASCOT_STAGE_HINTS } = Constants;
+const { MASCOT_STAGE_NAMES, MASCOT_STAGE_HINTS } = Constants;
 
 export function MascotGalleryModal({
   initialLevel,

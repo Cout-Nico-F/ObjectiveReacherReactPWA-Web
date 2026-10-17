@@ -3,7 +3,7 @@ import { ObjectiveEntry, Objective, GamificationState } from '../../types';
 import * as Constants from '../../constants';
 import { findMascotSkin } from "../../monetization";
 
-const { STORAGE_KEY, LEGACY_STORAGE_KEYS, LAUNCH_DEADLINE_STORAGE_KEY, MASCOT_STAGE_NAMES, MASCOT_STAGE_HINTS } = Constants;
+const { MASCOT_STAGE_NAMES, MASCOT_STAGE_HINTS } = Constants;
 
 export function MascotAvatarSvg({
   level,

@@ -1,202 +1,149 @@
-import { Project } from 'ts-morph';
+import { Project, SyntaxKind } from 'ts-morph';
 import path from 'path';
 import fs from 'fs';
 import { execSync } from 'child_process';
 
-const project = new Project({
-  compilerOptions: { allowJs: true, jsx: 1, target: 99, moduleResolution: 2 }
+console.log('🚀 Ejecutando Refactorizador y Extractor de Dominios (ts-morph)...\n');
+
+function getFileInfo(filePath) {
+  if (!fs.existsSync(filePath)) return { exists: false, lines: 0, bytes: 0, kb: '0.00 KB' };
+  const content = fs.readFileSync(filePath, 'utf-8');
+  const bytes = fs.statSync(filePath).size;
+  const lines = content.split('\n').length;
+  return { exists: true, lines, bytes, kb: (bytes / 1024).toFixed(2) + ' KB' };
+}
+
+const srcPath = path.join(process.cwd(), 'src');
+const srcContents = fs.existsSync(srcPath) ? fs.readdirSync(srcPath) : [];
+const hooksFolderName = srcContents.find(f => f.toLowerCase() === 'hooks') || 'Hooks';
+const utilsFolderName = srcContents.find(f => f.toLowerCase() === 'utils') || 'utils';
+
+const dirs = {
+  utils: path.join(srcPath, utilsFolderName),
+  hooks: path.join(srcPath, hooksFolderName),
+  extracted: path.join(srcPath, 'components', 'extracted')
+};
+
+Object.values(dirs).forEach(dir => {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
-const appFilePath = path.join(process.cwd(), 'src', 'App.tsx');
+const appFilePath = path.join(srcPath, 'App.tsx');
 if (!fs.existsSync(appFilePath)) {
   console.error('❌ No se encontró src/App.tsx');
   process.exit(1);
 }
 
+const initialAppStats = getFileInfo(appFilePath);
+console.log(`📊 ESTADO INICIAL DE App.tsx:`);
+console.log(`   • Líneas totales: ${initialAppStats.lines.toLocaleString()}`);
+console.log(`   • Tamaño en disco: ${initialAppStats.kb}\n`);
+
+// Backup de seguridad
+fs.copyFileSync(appFilePath, path.join(srcPath, 'App.tsx.bak'));
+
+const project = new Project({
+  compilerOptions: { allowJs: true, jsx: 1, target: 99, moduleResolution: 2 }
+});
+
 const appFile = project.addSourceFileAtPath(appFilePath);
 
-// Mapear importaciones originales de App.tsx
-const originalImportsMap = new Map();
-appFile.getImportDeclarations().forEach((imp) => {
-  const moduleSpecifier = imp.getModuleSpecifierValue();
-  imp.getNamedImports().forEach((named) => {
-    originalImportsMap.set(named.getName(), moduleSpecifier);
-  });
-  if (imp.getDefaultImport()) {
-    originalImportsMap.set(imp.getDefaultImport().getText(), moduleSpecifier);
-  }
-});
-
-// Exportar helpers y hooks que se quedaron en App.tsx (empezados en minúscula)
-appFile.getFunctions().forEach((func) => {
-  const name = func.getName();
-  if (name && (!/^[A-Z]/.test(name) || name.startsWith('use')) && !func.isExported()) {
-    func.setIsExported(true);
-    originalImportsMap.set(name, './App');
-  }
-});
-
 // -------------------------------------------------------------
-// FASE 1: EXTRAER CONSTANTES GLOBALES
+// FASE 1: SANEAMIENTO Y AUTO-FIX DE IMPORTACIONES EN UTILIDADES
 // -------------------------------------------------------------
-console.log('📦 FASE 1: Extrayendo constantes globales...');
+console.log('🧹 FASE 1: Verificando importaciones de constantes...');
 
-const constantsToExtract = [];
-const statementsToRemove = [];
-
-appFile.getVariableStatements().forEach((stmt) => {
-  const stmtText = stmt.getText();
-  const containsJsx = /<[A-Za-z]|\/>|<\//.test(stmtText) || stmtText.includes('React.memo') || stmtText.includes('memo(');
-
-  stmt.getDeclarations().forEach((decl) => {
-    const name = decl.getName();
-    const isComponent = (/^[A-Z]/.test(name) && decl.getInitializer()?.getKindName().includes('Function')) || containsJsx;
-    
-    if (!isComponent && name !== 'App') {
-      constantsToExtract.push(stmt.getText());
-      statementsToRemove.push(stmt);
-    }
-  });
-});
-
-let constantsNames = [];
-
-if (constantsToExtract.length > 0) {
-  const constantsFilePath = path.join(process.cwd(), 'src', 'constants.ts');
-  const constantsContent = `// Generado automáticamente\n\n` + 
-    constantsToExtract.map(code => code.startsWith('export') ? code : `export ${code}`).join('\n\n');
+const constantsFilePath = path.join(srcPath, 'constants.ts');
+if (fs.existsSync(constantsFilePath)) {
+  const constantsFile = project.addSourceFileAtPath(constantsFilePath);
+  const exportedConstantNames = new Set();
   
-  fs.writeFileSync(constantsFilePath, constantsContent, 'utf-8');
-
-  constantsNames = constantsToExtract
-    .map(c => c.match(/const\s+([A-Za-z0-9_]+)/)?.[1])
-    .filter(Boolean);
-
-  statementsToRemove.forEach(stmt => { try { stmt.remove(); } catch(e){} });
-
-  appFile.addImportDeclaration({
-    moduleSpecifier: './constants',
-    namedImports: constantsNames
-  });
-}
-
-// -------------------------------------------------------------
-// FASE 2: EXTRAER COMPONENTES
-// -------------------------------------------------------------
-console.log('\n🚀 FASE 2: Extraer componentes a src/components/extracted/...');
-
-const outputDir = path.join(process.cwd(), 'src', 'components', 'extracted');
-if (!fs.existsSync(outputDir)) {
-  fs.mkdirSync(outputDir, { recursive: true });
-}
-
-const components = [];
-const extractedComponentNames = new Set();
-
-appFile.getFunctions().forEach((func) => {
-  const name = func.getName();
-  if (name && /^[A-Z]/.test(name) && name !== 'App' && !name.startsWith('use')) {
-    components.push({ name, node: func });
-    extractedComponentNames.add(name);
-  }
-});
-
-appFile.getVariableDeclarations().forEach((v) => {
-  const name = v.getName();
-  const stmtText = v.getVariableStatement()?.getText() || '';
-  const isJsxComponent = /^[A-Z]/.test(name) && (/<[A-Za-z]|\/>|<\//.test(stmtText) || stmtText.includes('memo('));
-  
-  if (isJsxComponent && name !== 'App') {
-    components.push({ name, node: v.getVariableStatement() || v });
-    extractedComponentNames.add(name);
-  }
-});
-
-components.forEach(({ name, node }) => {
-  if (!node) return;
-  let compCode = node.getText().trim();
-
-  if (compCode.startsWith('export ')) {
-    compCode = compCode.substring(7).trim();
-  }
-
-  const newFileContent = `import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { ObjectiveEntry, Objective, GamificationState } from '../../types';
-import * as Constants from '../../constants';
-
-${constantsNames.length > 0 ? `const { ${constantsNames.join(', ')} } = Constants;\n` : ''}
-export ${compCode}
-`;
-
-  const newFilePath = path.join(outputDir, `${name}.tsx`);
-  fs.writeFileSync(newFilePath, newFileContent, 'utf-8');
-  project.addSourceFileAtPath(newFilePath);
-
-  try { node.remove(); } catch(e){}
-
-  appFile.addImportDeclaration({
-    moduleSpecifier: `./components/extracted/${name}`,
-    namedImports: [name]
+  constantsFile.getVariableDeclarations().forEach(v => {
+    if (v.isExported()) exportedConstantNames.add(v.getName());
   });
 
-  console.log(`  • Extraído: ${name}`);
-});
+  const utilFiles = fs.readdirSync(dirs.utils).filter(f => f.endsWith('.ts'));
+  utilFiles.forEach(file => {
+    const filePath = path.join(dirs.utils, file);
+    const sourceFile = project.addSourceFileAtPath(filePath);
+    let updated = false;
 
-appFile.saveSync();
+    exportedConstantNames.forEach(constName => {
+      const usesConst = new RegExp(`\\b${constName}\\b`).test(sourceFile.getText());
+      const hasImport = sourceFile.getImportDeclarations().some(imp => 
+        imp.getNamedImports().some(n => n.getName() === constName)
+      );
 
-// -------------------------------------------------------------
-// FASE 3: CONECTAR DEPENDENCIAS Y PREVENIR DUPLICADOS
-// -------------------------------------------------------------
-console.log('\n🛠️ FASE 3: Resolviendo dependencias cruzadas...');
-
-const diagnostics = project.getPreEmitDiagnostics();
-
-diagnostics.forEach((diag) => {
-  if (diag.getCode() === 2304 || diag.getCode() === 2552) {
-    const message = typeof diag.getMessageText() === 'string' 
-      ? diag.getMessageText() 
-      : diag.getMessageText().getMessageText();
-    
-    const missingName = message.match(/Cannot find name '([^']+)'/)?.[1];
-    const sourceFile = diag.getSourceFile();
-
-    if (missingName && sourceFile) {
-      const filePath = sourceFile.getFilePath();
-
-      const addNamedImportSafely = (file, moduleSpec, symbol) => {
-        const existingImport = file.getImportDeclaration(imp => imp.getModuleSpecifierValue() === moduleSpec);
-        if (existingImport) {
-          if (!existingImport.getNamedImports().some(n => n.getName() === symbol)) {
-            existingImport.addNamedImport(symbol);
-          }
+      if (usesConst && !hasImport) {
+        let constImport = sourceFile.getImportDeclaration(imp => imp.getModuleSpecifierValue().includes('constants'));
+        if (constImport) {
+          constImport.addNamedImport(constName);
         } else {
-          file.addImportDeclaration({ moduleSpecifier: moduleSpec, namedImports: [symbol] });
+          sourceFile.addImportDeclaration({
+            moduleSpecifier: '../constants',
+            namedImports: [constName]
+          });
         }
-      };
-
-      if (extractedComponentNames.has(missingName) && filePath.includes('extracted')) {
-        addNamedImportSafely(sourceFile, `./${missingName}`, missingName);
-      } else if (originalImportsMap.has(missingName) && filePath.includes('extracted')) {
-        let moduleSpecifier = originalImportsMap.get(missingName);
-        if (moduleSpecifier.startsWith('./')) {
-          moduleSpecifier = `../../${moduleSpecifier.replace('./', '')}`;
-        }
-        addNamedImportSafely(sourceFile, moduleSpecifier, missingName);
+        updated = true;
       }
+    });
+
+    if (updated) {
+      sourceFile.saveSync();
+      console.log(`   • Inyectadas constantes faltantes en: src/${utilsFolderName}/${file}`);
     }
+  });
+}
+
+// -------------------------------------------------------------
+// FASE 2: AUTO-SANEAR RUTAS ENTRE COMPONENTES HERMANOS
+// -------------------------------------------------------------
+console.log('\n🧩 FASE 2: Saneando importaciones en /components/extracted/...');
+
+const extractedFiles = fs.readdirSync(dirs.extracted).filter(f => f.endsWith('.tsx'));
+
+extractedFiles.forEach(file => {
+  const filePath = path.join(dirs.extracted, file);
+  let code = fs.readFileSync(filePath, 'utf-8');
+  let modified = false;
+
+  if (code.includes('../../App')) {
+    code = code.replace(/import\s*\{[^}]*doTitlesShareCoreMeaning[^}]*\}\s*from\s*["']\.\.\/\.\.\/App["'];?/g, `import { doTitlesShareCoreMeaning } from "../../${utilsFolderName}/textUtils";`);
+    code = code.replace(/import\s*\{[^}]*useHorizontalScrollProps[^}]*\}\s*from\s*["']\.\.\/\.\.\/App["'];?/g, `import { useHorizontalScrollProps } from "../../${hooksFolderName}/useHorizontalScroll";`);
+    modified = true;
+  }
+
+  if (code.includes('../extracted/')) {
+    code = code.replace(/from\s*["']\.\.\/extracted\/([A-Za-z0-9_]+)["'];?/g, 'from "./$1";');
+    modified = true;
+  }
+
+  if (modified) {
+    fs.writeFileSync(filePath, code, 'utf-8');
   }
 });
 
 project.saveSync();
 
 // -------------------------------------------------------------
-// FASE 4: VERIFICACIÓN FINAL
+// FASE 3: AUDITORÍA FINAL DE TIPO Y LÍNEAS
 // -------------------------------------------------------------
-console.log('\n🔍 FASE 4: Ejecutando "npx tsc --noEmit"...');
+const finalAppStats = getFileInfo(appFilePath);
+const linesReduced = initialAppStats.lines - finalAppStats.lines;
+
+console.log('\n' + '═'.repeat(60));
+console.log('📈 INFORME FINAL DE REFACTORIZACIÓN Y ESTADO DE App.tsx');
+console.log('═'.repeat(60));
+
+console.log(`\n📄 Estado de App.tsx:`);
+console.log(`   • Líneas: ${initialAppStats.lines.toLocaleString()} ➔ ${finalAppStats.lines.toLocaleString()} (${linesReduced} líneas reducidas)`);
+console.log(`   • Tamaño: ${initialAppStats.kb} ➔ ${finalAppStats.kb}`);
+
+console.log('\n⚡ Ejecutando verificación de tipos (npx tsc --noEmit)...');
 
 try {
   execSync('npx tsc --noEmit', { stdio: 'inherit' });
   console.log('\n🎉 ¡VERIFICACIÓN EXITOSA! 0 errores de compilación.');
 } catch (error) {
-  console.log('\n⚠️ Revisa la consola si queda algún detalle.');
+  console.log('\n⚠️ Revisa la consola si resta algún detalle de tipos.');
 }
