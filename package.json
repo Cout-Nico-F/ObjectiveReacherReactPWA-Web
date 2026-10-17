@@ -14,6 +14,7 @@
     "@capacitor/android": "^8.5.3",
     "@capacitor/cli": "^8.5.3",
     "@capacitor/core": "^8.5.3",
+    "adb": "^0.2.0",
     "express": "^5.3.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
