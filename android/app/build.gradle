@@ -1,14 +1,16 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace = "com.cnf.ObjectiveReacher"
+    namespace = "com.cnf.objectivereacherMAUI"
+    //El namespace quedó con nombre maui aunque el proyecto no usa maui en absoluto.
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.cnf.ObjectiveReacher"
+        applicationId "com.cnf.objectivereacherMAUI"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode 26
+        versionName "1.26"
+        multiDexEnabled true
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,11 +18,34 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+
+    signingConfigs {
+        release {
+            // Apunta a 'upload-keystore.jks' ubicado en la raíz de la carpeta 'android'
+            storeFile rootProject.file('upload-keystore.jks')
+
+            // Si la keystore estuviera un nivel más arriba (raíz del repositorio web), usa:
+            // storeFile file("../../upload-keystore.jks")
+
+            storePassword '025250'
+            keyAlias 'upload'
+            keyPassword '025250'
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig signingConfigs.release
             minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            shrinkResources false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
+    }
+
+    bundle {
+        language { enableSplit = false }
+        density { enableSplit = false }
+        abi { enableSplit = false }
     }
 }
 

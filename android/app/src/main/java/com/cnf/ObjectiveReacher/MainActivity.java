@@ -1,4 +1,4 @@
-package com.cnf.ObjectiveReacher;
+package com.cnf.objectivereacherMAUI;
 
 import com.getcapacitor.BridgeActivity;
 
