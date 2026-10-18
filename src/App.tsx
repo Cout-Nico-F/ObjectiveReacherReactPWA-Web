@@ -1664,37 +1664,55 @@ export function App() {
 
   // Detectar retorno automático desde pasarela externa (Mercado Pago / PayPal / Google Pay)
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const status = params.get('payment_status');
-    const packId = params.get('pack');
-    const gatewayParam = (params.get('gateway') ||
-      'mercadopago') as PaymentGatewayChoice;
-    const usdParam = Number(params.get('usd') || '1.99');
+  const params = new URLSearchParams(window.location.search);
 
-    if (status === 'approved' && packId) {
-      // Limpiar la URL inmediatamente para evitar doble acreditación al recargar
-      window.history.replaceState({}, '', window.location.pathname);
+  // 1. Detección flexible del estado de aprobación (Mercado Pago / PayPal / Manual)
+  const status =
+    params.get('payment_status') ||
+    params.get('status') ||
+    params.get('collection_status');
 
-      fetch('/api/payments/issue-receipt-license', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          packId,
-          customUsdAmount: usdParam,
-          gateway: gatewayParam,
-        }),
+  // 2. Detección del Pack ID o fallback a 'custom_tip' si el link no tenía monto/referencia definida
+  const rawPack = params.get('pack') || params.get('external_reference');
+  const packId =
+    rawPack && rawPack !== 'null' && rawPack !== 'undefined'
+      ? rawPack
+      : 'custom_tip';
+
+  const gatewayParam = (params.get('gateway') ||
+    'mercadopago') as PaymentGatewayChoice;
+  const usdParam = Number(params.get('usd') || '1.99');
+
+  if (status === 'approved') {
+    // 3. Limpiar la URL inmediatamente para evitar doble procesamiento al recargar la página
+    window.history.replaceState({}, '', window.location.pathname);
+
+    // 4. Solicitar el código de licencia oficial al backend
+    fetch('/api/payments/issue-receipt-license', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        packId,
+        customUsdAmount: usdParam,
+        gateway: gatewayParam,
+      }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.licenseCode) {
+          // Acredita las Gemas, Escudos y Pases verificando el código PRO
+          handleRedeemLicenseCode(data.licenseCode);
+        } else {
+          // Si no devuelve un código formateado, abre el menú para inspección
+          openIndieShop('support');
+        }
       })
-        .then((r) => r.json())
-        .then((data) => {
-          if (data?.licenseCode) {
-            handleRedeemLicenseCode(data.licenseCode);
-          }
-        })
-        .catch(() => {
-          // Si falla la red al volver, igual abrimos la tienda en soporte
-        });
-    }
-  }, []);
+      .catch(() => {
+        // Resguardo si la PWA se ejecuta sin conexión al backend Serverless
+        openIndieShop('support');
+      });
+  }
+}, []);
 
   // Derived objective properties
   const progress =
