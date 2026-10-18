@@ -37,3 +37,4 @@ android/app/build.gradle
 app/src/main/res/xml/shortcuts.xml
 gradle/wrapper/gradle-wrapper.properties
 android/app/build.gradle
+.vercel
