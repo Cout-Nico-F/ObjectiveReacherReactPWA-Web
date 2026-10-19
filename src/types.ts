@@ -84,6 +84,7 @@ export interface GamificationState {
 }
 
 export interface DashboardState {
+  hasCompletedWelcome?: boolean;
   version: number;
   objectives: Objective[];
   selectedObjectiveId: string;

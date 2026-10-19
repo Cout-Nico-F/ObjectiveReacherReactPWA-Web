@@ -709,11 +709,11 @@ export function ObjectiveEditorModal({
               {...getModalHorizontalScrollProps()}
               className="flex items-center gap-1.5 overflow-x-auto pb-1.5 horizontal-scroll-strip cursor-grab active:cursor-grabbing"
             >
-              {OBJECTIVE_ICONS.map((ic) => {
+              {OBJECTIVE_ICONS.map((ic, idx) => {
                 const isSelected = icon === ic;
                 return (
                   <button
-                    key={ic}
+                    key={`editor-icon-${ic}-${idx}`}
                     type="button"
                     onClick={() => setIcon(ic)}
                     style={

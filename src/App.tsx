@@ -178,6 +178,50 @@ export function useHorizontalScrollProps() {
 
 export function App() {
   const [state, setState] = useState<DashboardState>(() => loadState());
+  const [isMascotCollapsed, setIsMascotCollapsed] = useState<boolean>(true);
+  const [isAsmrCollapsed, setIsAsmrCollapsed] = useState<boolean>(true);
+  const [welcomeTitle, setWelcomeTitle] = useState<string>('');
+  const [welcomeGoalAmount, setWelcomeGoalAmount] = useState<string>('30');
+  const [welcomeUnitLabel, setWelcomeUnitLabel] = useState<string>('horas');
+  const [welcomeIcon, setWelcomeIcon] = useState<string>('🚀');
+
+  const handleCreateFirstCard = () => {
+    const title = welcomeTitle.trim() || 'Mi Primer Objetivo';
+    const goalAmt = Number(welcomeGoalAmount) || 10;
+    const unitLabel = welcomeUnitLabel.trim() || 'unidades';
+    const newId = crypto.randomUUID();
+    const nowIso = new Date().toISOString();
+
+    const newObjective = {
+      id: newId,
+      title,
+      description: 'Creado desde la bienvenida',
+      goalAmount: goalAmt,
+      currentAmount: 0,
+      unitId: 'custom',
+      customUnitLabel: unitLabel,
+      bannerId: 'gradient',
+      bannerOffsetX: 0,
+      bannerOffsetY: 0,
+      isArchived: false,
+      entries: [],
+      unlockedAchievementIds: [],
+      icon: welcomeIcon,
+      category: 'Personal',
+      accentColor: '#65DB85',
+      targetDate: '',
+      pledge: '',
+      createdAt: nowIso,
+      lastUsedAt: nowIso,
+    };
+
+    setState(prev => ({
+      ...prev,
+      hasCompletedWelcome: true,
+      objectives: [newObjective],
+      selectedObjectiveId: newId,
+    }));
+  };
   const [selectedQuickAmount, setSelectedQuickAmount] = useState<number | null>(50);
   const [customAmountText, setCustomAmountText] = useState<string>('');
   const [selectedAmount, setSelectedAmount] = useState<number>(50);
@@ -931,7 +975,7 @@ export function App() {
     });
     triggerCelebration(
       '¡Sello Diario Maestro!',
-      `Completaste las 3 misiones de hoy · +${bonusXp} XP y +${chestGems} 💎 Gemas Astrales`,
+      `Completaste las 3 misiones de hoy · +${bonusXp} XP y +${chestGems} ������ Gemas Astrales`,
       '👑',
       '#FFD54F'
     );
@@ -3405,7 +3449,7 @@ export function App() {
                       const pctLabel = `${m * 100}%`;
                       return (
                         <div
-                          key={m}
+                          key={`milestone-${m}`}
                           style={{
                             left: `${m * 100}%`,
                             borderColor: reached
@@ -3620,7 +3664,7 @@ export function App() {
                 const isSelected = selectedQuickAmount === amt;
                 return (
                   <button
-                    key={amt}
+                    key={`quick-preset-${amt}`}
                     type="button"
                     onClick={() => handleSelectQuickAmount(amt)}
                     style={
@@ -5441,6 +5485,110 @@ export function App() {
         }}
       />
     )}
+      {/* Modal / Pantalla de Bienvenida (Welcome Screen) para Nuevos Usuarios */}
+      {!state.hasCompletedWelcome && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+          <div className="w-full max-w-lg rounded-[24px] border border-[#4A3D73] bg-gradient-to-b from-[#211C38] via-[#1A162B] to-[#131021] p-6 sm:p-8 space-y-6 shadow-2xl animate-in fade-in zoom-in-95 duration-300">
+            <div className="text-center space-y-2">
+              <div className="inline-flex w-14 h-14 rounded-2xl bg-gradient-to-br from-[#7549B8] to-[#65DB85] items-center justify-center text-2xl shadow-lg shadow-[#7549B8]/30 mb-1">
+                🎯
+              </div>
+              <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+                ¡Bienvenido a Objective Reacher!
+              </h2>
+              <p className="text-sm text-[#B8B2D1] max-w-md mx-auto leading-relaxed">
+                Tu aplicación definitiva para definir metas, registrar progresos diarios, evolucionar a tu mascota guardiana y disfrutar de rituales ASMR relajantes.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <div className="p-3 rounded-[14px] bg-[#292242]/80 border border-white/5 space-y-1">
+                <div className="text-sm font-bold text-white flex items-center gap-2">
+                  <span>🎯</span> Tarjetas de Metas
+                </div>
+                <p className="text-xs text-[#A8A3B8]">Crea tus propios objetivos, mide avances y alcanza el 100%.</p>
+              </div>
+              <div className="p-3 rounded-[14px] bg-[#292242]/80 border border-white/5 space-y-1">
+                <div className="text-sm font-bold text-white flex items-center gap-2">
+                  <span>🐾</span> Mascota & ASMR
+                </div>
+                <p className="text-xs text-[#A8A3B8]">Módulos opcionales colapsables para acompañamiento y calma.</p>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-[18px] bg-[#181524] border border-[#3E345C] space-y-4">
+              <h3 className="text-sm font-extrabold text-[#E6D9FF] uppercase tracking-wider flex items-center gap-2">
+                <span>✨</span> Crea tu primera tarjeta ahora
+              </h3>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold text-[#A8A3B8] mb-1">Título de tu objetivo o hábito</label>
+                  <input
+                    type="text"
+                    value={welcomeTitle}
+                    onChange={(e) => setWelcomeTitle(e.target.value)}
+                    placeholder="Ej. Aprender React, Leer 12 libros, Gimnasio..."
+                    className="w-full px-3.5 py-2.5 rounded-[10px] bg-[#12101D] border border-[#3A3059] text-white text-sm focus:outline-none focus:border-[#7549B8]"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-[#A8A3B8] mb-1">Meta numérica</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="100000"
+                      value={welcomeGoalAmount}
+                      onChange={(e) => setWelcomeGoalAmount(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-[10px] bg-[#12101D] border border-[#3A3059] text-white text-sm focus:outline-none focus:border-[#7549B8]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-[#A8A3B8] mb-1">Unidad (ej. horas, $, páginas)</label>
+                    <input
+                      type="text"
+                      value={welcomeUnitLabel}
+                      onChange={(e) => setWelcomeUnitLabel(e.target.value)}
+                      placeholder="horas, km, páginas..."
+                      className="w-full px-3.5 py-2.5 rounded-[10px] bg-[#12101D] border border-[#3A3059] text-white text-sm focus:outline-none focus:border-[#7549B8]"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[#A8A3B8] mb-1">Elige un ícono</label>
+                  <div className="flex gap-2 flex-wrap">
+                    {['🚀', '🎯', '📚', '💻', '💡', '🏆', '🏋️‍♂️', '🧘‍♀️', '⭐'].map((ic, idx) => (
+                      <button
+                        key={`welcome-icon-${ic}-${idx}`}
+                        type="button"
+                        onClick={() => setWelcomeIcon(ic)}
+                        className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg transition ${
+                          welcomeIcon === ic
+                            ? 'bg-[#7549B8] border-2 border-white scale-110 shadow-md'
+                            : 'bg-[#221D36] border border-white/5 hover:bg-[#2D264A]'
+                        }`}
+                      >
+                        {ic}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleCreateFirstCard}
+                className="w-full py-3.5 rounded-[14px] bg-gradient-to-r from-[#7549B8] to-[#65DB85] text-[#12101D] font-extrabold text-sm sm:text-base shadow-lg shadow-[#7549B8]/40 hover:opacity-95 transition transform active:scale-98"
+              >
+                🚀 ¡Crear mi primera tarjeta y empezar!
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
