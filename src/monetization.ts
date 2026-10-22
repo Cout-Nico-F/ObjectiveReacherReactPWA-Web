@@ -1,3 +1,24 @@
+export function isGooglePlayEnvironment(): boolean {
+  if (typeof window === 'undefined') return false;
+  const anyWindow = window as unknown as {
+    getDigitalGoodsService?: unknown;
+    AndroidBridge?: unknown;
+    Capacitor?: unknown;
+  };
+  const envObj = (import.meta as unknown as { env?: { VITE_BUILD_TARGET?: string; VITE_GOOGLE_PLAY_BUILD?: string } }).env;
+  const forceGooglePlay =
+    envObj?.VITE_BUILD_TARGET === 'google_play' ||
+    envObj?.VITE_GOOGLE_PLAY_BUILD === 'true';
+  const isTwaOrAndroid =
+    forceGooglePlay ||
+    typeof anyWindow.getDigitalGoodsService === 'function' ||
+    Boolean(anyWindow.AndroidBridge) ||
+    Boolean(anyWindow.Capacitor) ||
+    navigator.userAgent.includes('wv') ||
+    navigator.userAgent.includes('Android');
+  return Boolean(isTwaOrAndroid);
+}
+
 // Ethical Indie Monetization Engine & 216-Item Sanctuary Content Vault
 // Distribution: ~30% Free (65 items) / ~70% Premium (151 items) = 216 Total Functional Items
 // Categories:
@@ -113,13 +134,16 @@ export interface IndieSupportPack {
   seasonalMilestone?: string;
 }
 
-export type PaymentGatewayChoice = 'mercadopago' | 'paypal_googlepay';
+export type PaymentGatewayChoice = 'mercadopago' | 'paypal_googlepay' | 'google_play';
 
 export interface DualCheckoutResult {
   success: boolean;
   redirecting?: boolean;
   mode:
     | 'google_play_billing'
+    | 'google_play_only'
+    | 'google_play_billing_required'
+    | 'google_play_billing_error'
     | 'mercadopago_live'
     | 'paypal_googlepay_live'
     | 'dual_placeholder_sandbox';
@@ -1483,13 +1507,58 @@ export async function triggerStoreCheckout(pack: {
   googlePlaySku: string;
   preferredGateway?: PaymentGatewayChoice;
 }): Promise<DualCheckoutResult> {
-  const gateway: PaymentGatewayChoice =
-    pack.preferredGateway || 'mercadopago';
+  const isGP = isGooglePlayEnvironment();
+  const gateway: PaymentGatewayChoice = isGP
+    ? 'google_play'
+    : (pack.preferredGateway || 'mercadopago');
   const packId = pack.id || 'custom_tip';
   const numericUsd =
     typeof pack.usdNumeric === 'number'
       ? pack.usdNumeric
       : Number(pack.usdPrice.replace(/[^0-9.]/g, '')) || 1.99;
+
+  // Si está en entorno Google Play (AAB), bloquear pasarelas web y exigir Google Play Billing exclusivamente
+  if (isGP) {
+    try {
+      const anyWindow = window as unknown as {
+        getDigitalGoodsService?: (serviceUrl: string) => Promise<{
+          getDetails: (skus: string[]) => Promise<unknown[]>;
+        }>;
+      };
+      if (typeof anyWindow.getDigitalGoodsService === 'function' && typeof PaymentRequest !== 'undefined') {
+        const service = await anyWindow.getDigitalGoodsService('https://play.google.com/billing');
+        if (service) {
+          const paymentMethods = [{ supportedMethods: 'https://play.google.com/billing', data: { sku: pack.googlePlaySku } }];
+          const details = { total: { label: pack.title, amount: { currency: 'USD', value: numericUsd.toFixed(2) } } };
+          const request = new PaymentRequest(paymentMethods, details);
+          const response = await request.show();
+          await response.complete('success');
+          const gpTxId = `GP-${Date.now().toString(36).toUpperCase()}`;
+          const receiptRes = await fetch('/api/payments/issue-receipt-license', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ packId, customUsdAmount: numericUsd, gateway: 'google_play', externalTxId: gpTxId }),
+          }).catch(() => null);
+          const receiptData = receiptRes ? await receiptRes.json().catch(() => null) : null;
+          return {
+            success: true,
+            mode: 'google_play_billing',
+            gateway: 'google_play',
+            receiptId: gpTxId,
+            licenseCode: receiptData?.licenseCode,
+          };
+        }
+      }
+    } catch {}
+
+    return {
+      success: false,
+      mode: 'google_play_only',
+      gateway: 'google_play',
+      receiptId: 'GP_RESTRICTED',
+      notice: 'Las pasarelas web de pago no están disponibles en la aplicación de Google Play Store. Las compras se gestionan exclusivamente mediante Google Play Billing.',
+    };
+  }
 
   // 1. Detectar si estamos dentro de la App Android instalada desde Google Play (Digital Goods API)
   try {

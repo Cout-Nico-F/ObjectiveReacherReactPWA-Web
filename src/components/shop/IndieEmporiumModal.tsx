@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ObjectiveEntry, Objective, GamificationState } from '../../types';
 import * as Constants from '../../constants';
 import { TranslationDictionary, loadAppLanguage } from "../../i18n";
-import { MascotSkinDefinition, CardCosmeticDefinition, SoundPackCatalogItem, CardStyleVaultItem, GuardianTitleItem, SanctuaryBuffDefinition, IndieSupportPack, PaymentGatewayChoice, findMascotSkin, findCardCosmetic, findCardStyleVaultItem, SOUND_PACKS, findGuardianTitle, MASCOT_SKINS, CARD_COSMETICS, CARD_STYLE_VAULT, GUARDIAN_TITLES, SANCTUARY_BUFFS, VAULT_STATS, INDIE_SUPPORT_PACKS } from "../../monetization";
+import { MascotSkinDefinition, CardCosmeticDefinition, SoundPackCatalogItem, CardStyleVaultItem, GuardianTitleItem, SanctuaryBuffDefinition, IndieSupportPack, PaymentGatewayChoice, findMascotSkin, findCardCosmetic, findCardStyleVaultItem, SOUND_PACKS, findGuardianTitle, MASCOT_SKINS, CARD_COSMETICS, CARD_STYLE_VAULT, GUARDIAN_TITLES, SANCTUARY_BUFFS, VAULT_STATS, INDIE_SUPPORT_PACKS, isGooglePlayEnvironment } from "../../monetization";
 import { findAccentTheme, findBannerPreset, formatObjectiveAmount } from "../../catalog";
 import { playSoundPackPreview, playUiTap, playMascotVoice } from "../../soundEffects";
 import { MascotAvatarSvg } from "../extracted/MascotAvatarSvg";
@@ -128,7 +128,7 @@ export function IndieEmporiumModal({
   const [isCustomTipEditing, setIsCustomTipEditing] = useState<boolean>(false);
   const tipCustomInputRef = useRef<HTMLInputElement | null>(null);
   const [selectedGateway, setSelectedGateway] =
-    useState<PaymentGatewayChoice>('mercadopago');
+    useState<PaymentGatewayChoice>(isGooglePlayEnvironment() ? 'google_play' : 'mercadopago');
   const [mpArsRate, setMpArsRate] = useState<number>(1250);
   const [gatewayConfigStatus, setGatewayConfigStatus] = useState<{
     mpReady: boolean;
@@ -1673,95 +1673,103 @@ export function IndieEmporiumModal({
                 </div>
               </div>
 
-              <div className="p-3.5 rounded-[18px] bg-[#161524] border border-[#3B315A] space-y-2.5">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div>
-                    <div className="text-[10px] font-extrabold uppercase tracking-wider text-[#C7A4FF]">
-                      🌐 PASARELA DE PAGO DUAL · ELIGE TU MÉTODO PREFERIDO
-                    </div>
-                    <div className="text-xs sm:text-sm font-extrabold text-white">
-                      Selecciona cómo prefieres abonar tu Pack o Propina:
-                    </div>
+              {isGooglePlayEnvironment() ? (
+                <div className="p-4 rounded-[18px] bg-[#162235] border border-[#00B1EA]/50 space-y-2 text-center">
+                  <div className="text-sm font-extrabold text-[#64D8FF] flex items-center justify-center gap-2">
+                    <span>🔒</span> Google Play Billing (Facturación Oficial Android)
                   </div>
-                  <span className="px-2.5 py-1 rounded-full bg-[#1F1B33] border border-[#53427E] text-[10px] font-bold text-[#9AF0AE] self-start sm:self-auto">
-                    {selectedGateway === 'mercadopago'
-                      ? gatewayConfigStatus.mpReady
-                        ? '🟢 Mercado Pago API Activa'
-                        : '🛠️ Mercado Pago (Modo Placeholder Local)'
-                      : gatewayConfigStatus.globalReady
-                      ? '🟢 PayPal / Google Pay Activo'
-                      : '🛠️ PayPal / Google Pay (Modo Placeholder Local)'}
-                  </span>
+                  <p className="text-xs text-[#B8D4E8]">
+                    Las pasarelas web de pago (Mercado Pago / PayPal) están reservadas para la versión Web / PWA. En la versión de Google Play Store (.aab), todos los pagos se realizan exclusivamente mediante Google Play Billing.
+                  </p>
                 </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      playUiTap(2);
-                      setSelectedGateway('mercadopago');
-                    }}
-                    className={`p-3 rounded-[14px] border text-left transition flex items-start gap-3 ${
-                      selectedGateway === 'mercadopago'
-                        ? 'bg-gradient-to-r from-[#14304B] to-[#1A263D] border-[#00B1EA] shadow-[0_4px_18px_rgba(0,177,234,0.22)]'
-                        : 'bg-[#12111D] border-[#2A263D] hover:border-[#494069]'
-                    }`}
-                  >
-                    <div className="w-10 h-10 rounded-[11px] bg-[#009EE3]/20 border border-[#00B1EA]/50 flex items-center justify-center text-xl shrink-0">
-                      🤝
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-1">
-                        <span className="text-xs sm:text-sm font-extrabold text-white">
-                          Mercado Pago (LatAm / ARS)
-                        </span>
-                        {selectedGateway === 'mercadopago' && (
-                          <span className="px-1.5 py-0.5 rounded bg-[#009EE3] text-white text-[9px] font-extrabold">
-                            ACTIVO
-                          </span>
-                        )}
+              ) : (
+                <div className="p-3.5 rounded-[18px] bg-[#161524] border border-[#3B315A] space-y-2.5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <div className="text-[10px] font-extrabold uppercase tracking-wider text-[#C7A4FF]">
+                        🌐 PASARELA DE PAGO DUAL · ELIGE TU MÉTODO PREFERIDO
                       </div>
-                      <p className="text-[10px] text-[#B8D4E8] mt-0.5 leading-snug">
-                        Dinero en cuenta MP, Transferencia, Débito y Crédito en pesos (~${mpArsRate} ARS/USD ref).
-                      </p>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      playUiTap(2);
-                      setSelectedGateway('paypal_googlepay');
-                    }}
-                    className={`p-3 rounded-[14px] border text-left transition flex items-start gap-3 ${
-                      selectedGateway === 'paypal_googlepay'
-                        ? 'bg-gradient-to-r from-[#241E46] to-[#1C1936] border-[#FFD54F] shadow-[0_4px_18px_rgba(255,213,79,0.18)]'
-                        : 'bg-[#12111D] border-[#2A263D] hover:border-[#494069]'
-                    }`}
-                  >
-                    <div className="w-10 h-10 rounded-[11px] bg-[#FFD54F]/15 border border-[#FFD54F]/50 flex items-center justify-center text-xl shrink-0">
-                      🌍
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-1">
-                        <span className="text-xs sm:text-sm font-extrabold text-white">
-                          PayPal · Google Pay · Tarjetas (USD)
-                        </span>
-                        {selectedGateway === 'paypal_googlepay' && (
-                          <span className="px-1.5 py-0.5 rounded bg-[#FFD54F] text-[#181226] text-[9px] font-extrabold">
-                            ACTIVO
-                          </span>
-                        )}
+                      <div className="text-xs sm:text-sm font-extrabold text-white">
+                        Selecciona cómo prefieres abonar tu Pack o Propina:
                       </div>
-                      <p className="text-[10px] text-[#D8C5FF] mt-0.5 leading-snug">
-                        Checkout internacional en USD con PayPal, billetera Google Pay y tarjetas globales.
-                      </p>
                     </div>
-                  </button>
+                    <span className="px-2.5 py-1 rounded-full bg-[#1F1B33] border border-[#53427E] text-[10px] font-bold text-[#9AF0AE] self-start sm:self-auto">
+                      {selectedGateway === 'mercadopago'
+                        ? gatewayConfigStatus.mpReady
+                          ? '🟢 Mercado Pago API Activa'
+                          : '🛠️ Mercado Pago (Modo Placeholder Local)'
+                        : gatewayConfigStatus.globalReady
+                        ? '🟢 PayPal / Google Pay Activo'
+                        : '🛠️ PayPal / Google Pay (Modo Placeholder Local)'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playUiTap(2);
+                        setSelectedGateway('mercadopago');
+                      }}
+                      className={`p-3 rounded-[14px] border text-left transition flex items-start gap-3 ${
+                        selectedGateway === 'mercadopago'
+                          ? 'bg-gradient-to-r from-[#14304B] to-[#1A263D] border-[#00B1EA] shadow-[0_4px_18px_rgba(0,177,234,0.22)]'
+                          : 'bg-[#12111D] border-[#2A263D] hover:border-[#494069]'
+                      }`}
+                    >
+                      <div className="w-10 h-10 rounded-[11px] bg-[#009EE3]/20 border border-[#00B1EA]/50 flex items-center justify-center text-xl shrink-0">
+                        🤝
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-xs sm:text-sm font-extrabold text-white">
+                            Mercado Pago (LatAm / ARS)
+                          </span>
+                          {selectedGateway === 'mercadopago' && (
+                            <span className="px-1.5 py-0.5 rounded bg-[#009EE3] text-white text-[9px] font-extrabold">
+                              ACTIVO
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-[#B8D4E8] mt-0.5 leading-snug">
+                          Dinero en cuenta MP, Transferencia, Débito y Crédito en pesos (~$${mpArsRate} ARS/USD ref).
+                        </p>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playUiTap(2);
+                        setSelectedGateway('paypal_googlepay');
+                      }}
+                      className={`p-3 rounded-[14px] border text-left transition flex items-start gap-3 ${
+                        selectedGateway === 'paypal_googlepay'
+                          ? 'bg-gradient-to-r from-[#241E46] to-[#1C1936] border-[#FFD54F] shadow-[0_4px_18px_rgba(255,213,79,0.18)]'
+                          : 'bg-[#12111D] border-[#2A263D] hover:border-[#494069]'
+                      }`}
+                    >
+                      <div className="w-10 h-10 rounded-[11px] bg-[#FFD54F]/15 border border-[#FFD54F]/50 flex items-center justify-center text-xl shrink-0">
+                        🌍
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-xs sm:text-sm font-extrabold text-white">
+                            PayPal · Google Pay · Tarjetas (USD)
+                          </span>
+                          {selectedGateway === 'paypal_googlepay' && (
+                            <span className="px-1.5 py-0.5 rounded bg-[#FFD54F] text-[#181226] text-[9px] font-extrabold">
+                              ACTIVO
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-[#D8C5FF] mt-0.5 leading-snug">
+                          Checkout internacional en USD con PayPal, billetera Google Pay y tarjetas globales.
+                        </p>
+                      </div>
+                    </button>
+                  </div>
                 </div>
-              </div>
-
-              {/* Tip Card */}
+              )}
+              {/* Tip Card */}              {/* Tip Card */}
               <div className="p-3.5 sm:p-5 rounded-[20px] bg-gradient-to-b from-[#231D38] to-[#171526] border-2 border-[#8C5CE0] shadow-[0_8px_28px_rgba(140,92,224,0.2)] space-y-3.5">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                   <div>
